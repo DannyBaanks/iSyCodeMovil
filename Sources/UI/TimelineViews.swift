@@ -264,79 +264,103 @@ public struct ToolCallCollapsedView: View {
     }
 
     public var body: some View {
-        HStack(spacing: OCSpacing.base) {
-            // Status area
+        HStack(spacing: OCSpacing.md) {
             ZStack {
                 Circle()
-                    .fill(statusColor.opacity(0.15))
-                    .frame(width: 18, height: 18)
-
+                    .fill(statusColor.opacity(0.14))
+                    .frame(width: 32, height: 32)
                 if event.toolState == .running {
                     ProgressView()
-                        .scaleEffect(0.6)
-                        .progressViewStyle(CircularProgressViewStyle(tint: statusColor))
+                        .controlSize(.mini)
+                        .tint(statusColor)
                 } else {
-                    Image(systemName: statusIcon)
-                        .font(.system(size: 10, weight: .bold))
+                    Image(systemName: toolIcon(for: event.toolName))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundColor(statusColor)
                 }
             }
-            .frame(width: 18)
 
-            // Tool info
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: OCSpacing.xs) {
-                    Image(systemName: toolIcon(for: event.toolName))
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(OCColor.iconPrimary)
-
-                    Text(event.toolName ?? "tool")
+                    Text(toolTitle)
                         .font(OCTypography.toolLabel)
                         .foregroundColor(OCColor.textPrimary)
-
-                    if let args = event.toolArguments, !args.isEmpty {
-                        Text(args.map { "\($0.key)=\($0.value)" }.joined(separator: ", "))
-                            .font(OCTypography.toolDetail)
+                        .lineLimit(1)
+                    Spacer(minLength: OCSpacing.xs)
+                    if let duration = event.toolDuration {
+                        Text(formatDuration(duration))
+                            .font(OCTypography.metaMono)
+                            .foregroundColor(OCColor.textFaint)
+                    }
+                }
+                HStack(spacing: 5) {
+                    Text(statusTitle)
+                        .foregroundColor(statusColor)
+                    if let detail = toolDetail {
+                        Text("·")
+                            .foregroundColor(OCColor.textFaint)
+                        Text(detail)
                             .foregroundColor(OCColor.textFaint)
                             .lineLimit(1)
                     }
                 }
+                .font(OCTypography.toolDetail)
             }
 
-            Spacer()
-
-            // Duration
-            if let duration = event.toolDuration {
-                Text(formatDuration(duration))
-                    .font(OCTypography.metaMono)
-                    .foregroundColor(OCColor.textFaint)
-            }
-
-            // Disclosure
             Button(action: onExpand) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(OCColor.iconMuted)
                     .rotationEffect(.degrees(event.isExpanded ? 90 : 0))
                     .animation(.easeInOut(duration: 0.18), value: event.isExpanded)
+                    .frame(width: 36, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
+            .accessibilityLabel(event.isExpanded ? "Ocultar detalles" : "Ver detalles")
         }
-        .padding(.horizontal, 2)
-        .frame(minHeight: 38)
-        .background(
-            event.toolState == .permission ? OCColor.warning.opacity(0.08) : Color.clear
-        )
+        .padding(.horizontal, OCSpacing.md)
+        .padding(.vertical, OCSpacing.xs)
+        .frame(minHeight: 58)
+        .background(event.toolState == .permission ? OCColor.warning.opacity(0.08) : Color.clear)
     }
 
     private var statusColor: Color {
         event.toolState?.color ?? agentColor
     }
 
-    private var statusIcon: String {
-        event.toolState?.icon ?? "circle.dotted"
+    private var statusTitle: String {
+        switch event.toolState {
+        case .some(.running): return "En curso"
+        case .some(.success): return "Completado"
+        case .some(.failed): return "Falló"
+        case .some(.permission): return "Requiere permiso"
+        case .none: return "Herramienta"
+        }
+    }
+
+    private var toolTitle: String {
+        let name = (event.toolName ?? "").lowercased()
+        if name.contains("read") || name.contains("glob") || name.contains("search") || name.contains("list") {
+            return "Consultando archivos"
+        }
+        if name.contains("write") || name.contains("edit") || name.contains("patch") {
+            return "Editando archivos"
+        }
+        if name.contains("bash") || name.contains("shell") || name.contains("command") || name.contains("exec") {
+            return "Ejecutando comando"
+        }
+        return event.toolName?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Herramienta"
+    }
+
+    private var toolDetail: String? {
+        guard let arguments = event.toolArguments, !arguments.isEmpty else { return nil }
+        let preferredKeys = ["path", "file", "file_path", "filepath", "pattern", "command", "url"]
+        let candidate = preferredKeys.compactMap { key in
+            arguments.first(where: { $0.key.lowercased() == key })?.value
+        }.first ?? arguments.keys.sorted().compactMap { arguments[$0] }.first
+        guard let candidate, !candidate.isEmpty else { return nil }
+        return candidate
     }
 
     private func toolIcon(for name: String?) -> String {
@@ -871,7 +895,7 @@ public struct PermissionView: View {
                     .font(.system(size: 18, weight: .medium))
                     .foregroundColor(OCColor.warning)
 
-                Text("Permission Required")
+                Text("Permiso requerido")
                     .font(OCTypography.permissionTitle)
                     .foregroundColor(OCColor.textPrimary)
             }
@@ -903,7 +927,7 @@ public struct PermissionView: View {
 
             // Scope
             if let scope = event.permissionScope {
-                Text("Scope: \(scope)")
+                Text("Alcance: \(scope)")
                     .font(OCTypography.metaMono)
                     .foregroundColor(OCColor.textFaint)
             }
@@ -911,8 +935,20 @@ public struct PermissionView: View {
             // Actions
             VStack(spacing: OCSpacing.base) {
                 HStack(spacing: OCSpacing.base) {
+                    Button(action: onAllow) {
+                        Text("Permitir una vez")
+                            .font(OCTypography.control)
+                            .foregroundColor(OCColor.bgDeep)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(OCColor.agentBuild)
+                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("permission-allow-once")
+
                     Button(action: onDeny) {
-                        Text(isCodex ? "Decline" : "Deny")
+                        Text(isCodex ? "Rechazar" : "Denegar")
                             .font(OCTypography.control)
                             .foregroundColor(OCColor.textPrimary)
                             .frame(maxWidth: .infinity)
@@ -925,22 +961,12 @@ public struct PermissionView: View {
                             )
                     }
                     .buttonStyle(.plain)
-
-                    Button(action: onAllow) {
-                        Text("Allow Once")
-                            .font(OCTypography.control)
-                            .foregroundColor(OCColor.bgDeep)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                            .background(OCColor.agentBuild)
-                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
-                    }
-                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("permission-deny")
                 }
 
                 if isCodex {
                     Button(action: onCodexCancel ?? onDeny) {
-                        Text("Cancel turn")
+                        Text("Cancelar turno")
                             .font(OCTypography.control)
                             .foregroundColor(OCColor.textPrimary)
                             .frame(maxWidth: .infinity)
@@ -950,9 +976,9 @@ public struct PermissionView: View {
                 }
 
                 Menu {
-                    Button(isCodex ? "Allow for this session" : "Always Allow", action: onPersistent)
+                    Button(isCodex ? "Permitir en esta sesión" : "Permitir siempre", action: onPersistent)
                 } label: {
-                    Label(isCodex ? "Session approval…" : "Persist Permission…", systemImage: "ellipsis.circle")
+                    Label(isCodex ? "Aprobación de sesión…" : "Más opciones de permiso…", systemImage: "ellipsis.circle")
                         .font(OCTypography.control)
                         .foregroundColor(OCColor.textSecondary)
                         .frame(maxWidth: .infinity)

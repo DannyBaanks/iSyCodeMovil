@@ -23,10 +23,10 @@ public struct MobileHostPairingSection: View {
                 .frame(width: 48, height: 48)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(hostStore.credential == nil ? "Conecta tu entorno" : "Entorno conectado")
+                    Text(hostStore.credential == nil ? "Conectar mi equipo" : "Equipo conectado")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(OCColor.textPrimary)
-                    Text(hostStore.credential == nil ? "iSyCode Móvil · Host v1" : "ISYCODE HOST")
+                    Text(hostStore.credential == nil ? "Usa la dirección del host y el PIN" : "ISYCODE HOST")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .tracking(0.8)
                         .foregroundColor(OCColor.textFaint)

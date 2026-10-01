@@ -116,7 +116,7 @@ public struct ComposerView: View {
 
     private var composerPlaceholder: String {
         if store.backendMode == .native { return "Escribe a iSyCode…" }
-        return sessionState.selectedModel?.route == "codex" ? "Message Codex…" : "Ask OpenCode…"
+        return sessionState.selectedModel?.route == "codex" ? "Escribe a Codex…" : "Escribe a OpenCode…"
     }
 }
 

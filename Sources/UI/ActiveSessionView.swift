@@ -306,29 +306,43 @@ struct ChatSurfaceView: View {
     
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    if sessionState.timelineEvents.isEmpty {
-                        EmptyChatView(sessionTitle: sessionState.currentSession?.title)
-                    }
-                    ForEach(sessionState.timelineEvents) { event in
-                        TimelineEventContainer(event: event)
-                            .id(event.id)
-                    }
-                }
+            VStack(spacing: 0) {
+                ChatActivityBar(
+                    isProcessing: sessionState.isProcessing,
+                    needsApproval: sessionState.pendingPermission != nil,
+                    needsAnswer: sessionState.pendingQuestion != nil,
+                    agentMode: sessionState.agentMode,
+                    modelName: sessionState.selectedModel?.name
+                )
                 .padding(.horizontal, OCSpacing.contentMargin)
-                .padding(.top, OCSpacing.lg)
-                .padding(.bottom, OCSpacing.lg)
-            }
-            .onAppear { scrollProxy = proxy }
-            .onChange(of: sessionState.timelineEvents.count) { _ in
-                scrollToBottom()
-            }
-            .onChange(of: sessionState.timelineEvents.last?.assistantText) { _ in
-                scrollToBottom()
-            }
-            .onChange(of: sessionState.isProcessing) { processing in
-                if !processing { scrollToBottom() }
+                .padding(.top, OCSpacing.sm)
+                .padding(.bottom, OCSpacing.xs)
+
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        if sessionState.timelineEvents.isEmpty {
+                            EmptyChatView(sessionTitle: sessionState.currentSession?.title)
+                        }
+                        ForEach(sessionState.timelineEvents) { event in
+                            TimelineEventContainer(event: event)
+                                .id(event.id)
+                        }
+                    }
+                    .padding(.horizontal, OCSpacing.contentMargin)
+                    .padding(.top, OCSpacing.sm)
+                    .padding(.bottom, OCSpacing.lg)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onAppear { scrollProxy = proxy }
+                .onChange(of: sessionState.timelineEvents.count) { _ in
+                    scrollToBottom()
+                }
+                .onChange(of: sessionState.timelineEvents.last?.assistantText) { _ in
+                    scrollToBottom()
+                }
+                .onChange(of: sessionState.isProcessing) { processing in
+                    if !processing { scrollToBottom() }
+                }
             }
         }
     }
@@ -339,6 +353,93 @@ struct ChatSurfaceView: View {
         withAnimation(.easeOut(duration: 0.2)) {
             proxy.scrollTo(lastEvent.id, anchor: .bottom)
         }
+    }
+}
+
+private struct ChatActivityBar: View {
+    let isProcessing: Bool
+    let needsApproval: Bool
+    let needsAnswer: Bool
+    let agentMode: AgentMode
+    let modelName: String?
+
+    private var title: String {
+        if needsApproval { return "Esperando tu aprobación" }
+        if needsAnswer { return "Esperando tu respuesta" }
+        if isProcessing { return "Agente trabajando" }
+        return "Listo para seguir"
+    }
+
+    private var symbol: String {
+        if needsApproval { return "exclamationmark.shield.fill" }
+        if needsAnswer { return "bubble.left.and.bubble.right" }
+        if isProcessing { return "arrow.triangle.2.circlepath" }
+        return "checkmark.circle.fill"
+    }
+
+    private var modeTitle: String {
+        switch agentMode {
+        case .build: return "Construir"
+        case .plan: return "Planear"
+        case .explore: return "Explorar"
+        case .review: return "Revisar"
+        case .custom: return "Personalizado"
+        }
+    }
+
+    private var statusColor: Color {
+        if needsApproval { return OCColor.warning }
+        if needsAnswer { return OCColor.info }
+        if isProcessing { return agentMode.color }
+        return OCColor.success
+    }
+
+    var body: some View {
+        HStack(spacing: OCSpacing.base) {
+            Group {
+                if isProcessing && !needsApproval && !needsAnswer {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(statusColor)
+                } else {
+                    Image(systemName: symbol)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(statusColor)
+                }
+            }
+            .frame(width: 18, height: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(OCColor.textPrimary)
+                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(modeTitle)
+                    if let modelName, !modelName.isEmpty {
+                        Text("·")
+                        Text(modelName)
+                            .lineLimit(1)
+                    }
+                }
+                .font(OCTypography.meta)
+                .foregroundColor(OCColor.textFaint)
+                .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, OCSpacing.md)
+        .padding(.vertical, OCSpacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(OCColor.bgBase)
+        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+        .overlay {
+            RoundedRectangle(cornerRadius: OCRadius.r12)
+                .stroke(statusColor.opacity(0.22), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("chat-activity-status")
     }
 }
 

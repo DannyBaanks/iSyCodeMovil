@@ -98,20 +98,26 @@ public struct ProjectListContent: View {
                 Section {
                     ForEach(filteredProjects, content: projectRow)
                 } header: {
-                    Text("PROJECTS")
-                        .font(OCTypography.sectionLabel)
-                        .foregroundColor(OCColor.textFaint)
-                        .padding(.horizontal, OCSpacing.contentMargin)
-                        .padding(.top, OCSpacing.xl)
-                        .padding(.bottom, OCSpacing.xs)
-                        .textCase(nil)
+                    VStack(alignment: .leading, spacing: OCSpacing.xs) {
+                        Text("PROYECTOS")
+                            .font(OCTypography.sectionLabel)
+                            .foregroundColor(OCColor.textFaint)
+                            .textCase(nil)
+                        Text("\(store.projects.count) \(store.projects.count == 1 ? "proyecto" : "proyectos") · \(store.projects.reduce(0) { $0 + $1.sessionCount }) sesiones")
+                            .font(OCTypography.meta)
+                            .foregroundColor(OCColor.textFaint)
+                            .textCase(nil)
+                    }
+                    .padding(.horizontal, OCSpacing.contentMargin)
+                    .padding(.top, OCSpacing.xl)
+                    .padding(.bottom, OCSpacing.xs)
                 }
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(OCColor.bgDeep.ignoresSafeArea())
-        .navigationTitle("iSyCode Móvil")
+        .navigationTitle("Proyectos")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -163,13 +169,15 @@ public struct ProjectListContent: View {
                 .foregroundColor(OCColor.iconMuted)
             
             VStack(spacing: OCSpacing.xs) {
-                Text("No Projects")
+                Text(searchText.isEmpty ? "Aún no hay proyectos" : "No encontramos proyectos")
                     .font(OCTypography.bodyStrong)
                     .foregroundColor(OCColor.textPrimary)
                 
-                Text(store.backendMode == .remote
-                     ? "Connect to an OpenCode server to see projects"
-                     : "Start the native runtime to create a workspace")
+                Text(searchText.isEmpty
+                     ? (store.backendMode == .remote
+                        ? "Conecta un servidor OpenCode para ver sus proyectos."
+                        : "Inicia el entorno nativo para crear un espacio de trabajo.")
+                     : "Prueba con otro nombre o ruta.")
                     .font(OCTypography.meta)
                     .foregroundColor(OCColor.textFaint)
                     .multilineTextAlignment(.center)

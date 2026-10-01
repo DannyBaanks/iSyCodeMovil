@@ -31,13 +31,13 @@ public struct ConnectionView: View {
                         Text("iSyCode Móvil")
                             .font(.system(size: 21, weight: .semibold))
                             .foregroundColor(OCColor.textPrimary)
-                        Text("Tu agente de desarrollo en el bolsillo")
+                        Text("Tu miniagente de desarrollo")
                             .font(.system(size: 11))
                             .foregroundColor(OCColor.textFaint)
                     }
                 }
                 
-                Spacer().frame(height: 42)
+                Spacer().frame(height: 24)
 
                 MobileHostPairingSection()
                     .padding(.bottom, 24)
@@ -47,7 +47,7 @@ public struct ConnectionView: View {
                 } label: {
                     HStack {
                         Image(systemName: "point.3.connected.trianglepath.dotted")
-                        Text("Conectar con Bridge anterior")
+                        Text("Más opciones de conexión")
                         Spacer()
                         Image(systemName: "chevron.down")
                             .rotationEffect(.degrees(showLegacyBridge ? 180 : 0))
@@ -69,12 +69,12 @@ public struct ConnectionView: View {
                 }
                 
                 HStack {
-                    label("LINK DESKTOP")
+                    label("CONECTAR CON BRIDGE ANTERIOR")
                     Spacer()
                     Button {
                         UIPasteboard.general.string = "npx --yes github:DannyBaanks/IysCodeMovil link"
                     } label: {
-                        Text("copy")
+                        Text("Copiar")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundColor(Color.white.opacity(0.55))
                             .padding(.horizontal, 10)
@@ -86,7 +86,7 @@ public struct ConnectionView: View {
                 }
                 commandBox("npx --yes github:DannyBaanks/IysCodeMovil link")
                 
-                Text("Run it in the project directory on the computer that already has IysCode installed. Paste the pairing link printed by the command.")
+                Text("Ejecuta este comando en la carpeta del proyecto, en el equipo donde ya tienes ISyCode. Después pega aquí el enlace que aparezca.")
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundColor(Color.white.opacity(0.42))
                     .fixedSize(horizontal: false, vertical: true)
@@ -95,14 +95,14 @@ public struct ConnectionView: View {
                 Spacer().frame(height: 24)
                 
                 HStack {
-                    label("PAIRING LINK")
+                    label("ENLACE DE CONEXIÓN")
                     Spacer()
                     Button {
                         if let pasted = UIPasteboard.general.string, !pasted.isEmpty {
                             pairingLink = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
                         }
                     } label: {
-                        Text("paste")
+                        Text("Pegar")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundColor(Color.white.opacity(0.55))
                             .padding(.horizontal, 10)
@@ -127,8 +127,8 @@ public struct ConnectionView: View {
                 
                 Button { connect() } label: {
                     HStack {
-                        Text(store.isConnecting ? "connecting..." : "connect")
-                            .font(.system(size: 14, weight: .medium, design: .monospaced))
+                        Text(store.isConnecting ? "Conectando…" : "Conectar")
+                            .font(.system(size: 14, weight: .semibold))
                         Spacer()
                         Text("↵")
                             .font(.system(size: 14, design: .monospaced))
@@ -160,7 +160,7 @@ public struct ConnectionView: View {
                 
                 HStack(spacing: 12) {
                     Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
-                    Text("OR")
+                    Text("O")
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundColor(Color.white.opacity(0.35))
                     Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
@@ -176,10 +176,10 @@ public struct ConnectionView: View {
                             .overlay(Image(systemName: "cube.transparent").foregroundColor(IysThemePreferences.active.accent))
                             .frame(width: 38, height: 38)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Entorno de prueba")
+                            Text("Probar en este iPhone")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(OCColor.textPrimary)
-                            Text("Explora iSyCode sin conectar un escritorio")
+                            Text("Configura un modelo de prueba sin conectar tu equipo")
                                 .font(.system(size: 10))
                                 .foregroundColor(OCColor.textFaint)
                         }
@@ -196,8 +196,8 @@ public struct ConnectionView: View {
                 
                 Spacer()
                 
-                Text("link desktop = IysCode on your computer. sandbox = Grok here, with this phone's files.")
-                    .font(.system(size: 9.5, design: .monospaced))
+                    Text("La conexión usa tu equipo. El entorno de prueba usa un modelo y archivos de este iPhone.")
+                    .font(.system(size: 10))
                     .foregroundColor(Color.white.opacity(0.28))
                     .padding(.bottom, 8)
                 }
