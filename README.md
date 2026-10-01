@@ -139,11 +139,13 @@ iOS borra los datos de una app cuando la eliminas o cuando la reinstalas con otr
 
 La app reconoce cada modelo por su huella, **aunque le hayas cambiado el nombre**, y lo deja listo sin descargar nada.
 
-### 🔒 Lo que GUS no hace
+### 🔒 Herramientas y límites de GUS
 
-- **No usa herramientas ni toca tus archivos.** Por ahora es un modo de orientación.
-- **No manda nada a la nube** ni tiene respaldo remoto.
-- **No lee otras apps** ni datos privados del teléfono.
+- Las herramientas de archivos empiezan **apagadas**. Activa por separado lectura, búsqueda, edición y organización en **Ajustes → Capacidades nativas → Herramientas de GUS local**.
+- Cada escritura, edición, movimiento, creación de carpeta o borrado muestra una aprobación en el iPhone. Activar una herramienta no aprueba sus acciones.
+- `edit_file` solo cambia una coincidencia exacta y única; si no la encuentra o aparece varias veces, se detiene.
+- **No manda nada a la nube** ni tiene respaldo remoto. No puede usar shell, ejecutar procesos ni leer otras apps.
+- Las llamadas locales a herramientas son experimentales: falta completar su evaluación con la app y los modelos en iPhones reales.
 
 Detalles, licencias y procedencia: [aviso de modelos](docs/MODEL_NOTICE.md) · [cómo funciona el catálogo](docs/GUS_MARKETPLACE.md).
 
@@ -208,6 +210,7 @@ Un agente Swift que trabaja dentro del espacio privado de la app:
 - Prueba el **demo sin internet** o conecta un proveedor en la nube: NVIDIA NIM, xAI, OpenAI API, Gemini u OpenRouter.
 - **Dale una carpeta** desde Archivos si quieres; puedes quitarle el permiso cuando sea.
 - **Aprueba cada cambio** de archivos antes de que ocurra.
+- Con GUS local, puedes habilitar cada herramienta de archivo por separado; cada mutación sigue esperando su aprobación.
 
 Tus claves se guardan en el **Keychain** del iPhone. Si eliges un modelo en la nube, lo que le mandes sale hacia ese proveedor. Si eliges **GUS**, no sale nada.
 

@@ -14,7 +14,7 @@ final class GUSModelSelectionTests: XCTestCase {
     func testLocalProviderNeverLooksLikeARemoteModel() {
         let provider = GUSLocalModelProvider(modelURL: URL(fileURLWithPath: "/fixture/model.gguf"))
         XCTAssertTrue(provider.capabilities.localOnly)
-        XCTAssertFalse(provider.capabilities.toolCalls)
+        XCTAssertTrue(provider.capabilities.toolCalls)
         XCTAssertFalse(provider.capabilities.streaming)
     }
     func testGUSModelsAreExplicitlyPinnedAndDoNotAddRemoteOptions() {

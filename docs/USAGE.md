@@ -82,11 +82,14 @@ digest before making it selectable. Multiple approved models can remain
 installed, but GUS loads the explicitly selected model only. Delete each model
 individually to reclaim storage.
 
-All three models receive the same GUS role and safety boundary. This version is
-guidance-only: it does not execute native tools, add iOS permissions, or fall
-back to a cloud model. Background transfers can continue while iOS suspends the
-app or the screen is locked. A user force-quit cancels the transfer; reopen the
-app to retry, and the download may restart from zero. See
+All three models receive the same GUS role and safety boundary. File tools are
+off until individually enabled under **Settings → iPhone Sandbox → Native
+Capabilities → Herramientas de GUS local**. Every file mutation asks for a
+separate approval. Tool calling is experimental and still needs physical-device
+evaluation; it does not add iOS permissions or fall back to a cloud model.
+Background transfers can continue while iOS suspends the app or the screen is
+locked. A user force-quit cancels the transfer; reopen the app to retry, and the
+download may restart from zero. See
 [MODEL_NOTICE.md](MODEL_NOTICE.md) for provenance, licenses, and safeguards.
 
 ### Test Suites
@@ -99,7 +102,7 @@ app to retry, and the download may restart from zero. See
 | `OpenCodeBootAttemptTests` | Boot transcript content |
 | `WorkspaceTests` | Create, read, list, move, delete, path traversal |
 | `PersistenceTests` | Conversation save/load, JSONL events, config |
-| `ToolsDefinitionTests` | 8 tools present, write marked destructive |
+| `ToolsDefinitionTests` | 9 filesystem tools present, write marked destructive |
 | `AgentEndToEndTests` | Scripted agent writes `notes.txt` end-to-end |
 
 ---

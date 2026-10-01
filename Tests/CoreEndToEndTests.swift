@@ -93,13 +93,13 @@ final class PersistenceTests: XCTestCase {
 }
 
 final class ToolsDefinitionTests: XCTestCase {
-    func testAllEightToolsPresent() async throws {
+    func testAllFilesystemToolsPresent() async throws {
         let ws = try IOSWorkspace(rootName: "tools_test_\(UUID().uuidString)")
         let rootURL = await ws.rootURL
         defer { try? FileManager.default.removeItem(at: rootURL) }
         let exec = FileSystemToolExecutor(workspace: ws)
         let names = await exec.availableTools.map { $0.name }.sorted()
-        let expected = ["create_directory","delete_file","file_info","list_directory","move_file","read_file","search_files","write_file"]
+        let expected = ["create_directory","delete_file","edit_file","file_info","list_directory","move_file","read_file","search_files","write_file"]
         XCTAssertEqual(names, expected)
     }
 

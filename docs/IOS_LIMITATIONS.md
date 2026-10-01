@@ -31,9 +31,10 @@
 
 ## C. Lo que el runtime nativo alternativo (no OpenCode) hace
 
-- 8 tools de filesystem (`read_file`/`write_file`/`list_directory`/`search_files`/`file_info`/`create_directory`/`delete_file`/`move_file`).
+- 9 tools de filesystem (`read_file`/`write_file`/`edit_file`/`list_directory`/`search_files`/`file_info`/`create_directory`/`delete_file`/`move_file`). `edit_file` requiere una única coincidencia exacta en texto UTF-8.
 - Agente async con loop, multi-turn tool calls, persistencia JSONL.
 - Provider LLM remoto **o** provider scripteado offline (sin red ni API key) para demo/tests.
+- GUS local puede proponer esas herramientas solo cuando la persona las activa por separado; cada mutación exige aprobación por operación. La ejecución de llamadas generadas por cada modelo sigue pendiente de evaluación en dispositivo.
 
 ## D. Qué se DELIBERADAMENTE queda fuera (no es falta de control)
 

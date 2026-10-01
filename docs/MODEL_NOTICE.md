@@ -30,9 +30,12 @@ The Qwen1.5 license text is included at
 
 All three models use the same GUS role prompt. The selected model changes the
 local inference weights only; it does not change GUS instructions or grant
-capabilities. GUS currently provides local guidance with tool calls disabled.
-The app's permissions and approval flow remain the authority for any future
-action. Local inference does not fall back to a remote provider.
+capabilities. File tools are individually disabled by default and appear to the
+model only after the user enables them in the app. Every file mutation still
+requires its own visible approval. A strict parser accepts only one tagged call
+whose name and arguments match the current tool schema. This feature remains
+experimental until model behavior and the approval/denial paths are evaluated
+on physical iPhones. Local inference does not fall back to a remote provider.
 
 Starting a download is an explicit user action. iOS background transfers can
 continue while the app is suspended or the screen is locked, and iOS may relaunch

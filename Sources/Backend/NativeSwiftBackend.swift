@@ -99,6 +99,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         }
         let configuration = try await ps.loadConfiguration()
         let preference = configuration?.defaultModelProvider ?? "nvidia"
+        await toolExecutor?.setGUSPermissionMode(preference == "gus-local")
         if preference == "gus-local" {
             await modelDownloadManager.refresh()
             guard let manifest = modelDownloadManager.selectedManifest,

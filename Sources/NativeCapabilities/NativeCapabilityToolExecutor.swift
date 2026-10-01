@@ -28,6 +28,7 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
     private let broker = NativeCapabilityBroker()
     private let defaults: UserDefaults
     private var projectedNativeNames = Set<String>()
+    private var enforceGUSPermissionToggles = false
 
     public init(workspace: any Workspace, defaults: UserDefaults = .standard) {
         self.fileSystem = FileSystemToolExecutor(workspace: workspace)
@@ -36,11 +37,22 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
 
     public var availableTools: [AgentTool] { Self.nativeTools }
 
+    public func setGUSPermissionMode(_ enabled: Bool) {
+        enforceGUSPermissionToggles = enabled
+    }
+
     public func tools(relevantTo messages: [ModelMessage]) async -> [AgentTool] {
         let projectedIDs = NativeCapabilityToolProjection.relevantCapabilityIDs(for: messages)
-        let projectedNative = Self.nativeTools.filter { projectedIDs.contains($0.name) }
+        let projectedNative = Self.nativeTools.filter { tool in
+            projectedIDs.contains(tool.name)
+                && (!enforceGUSPermissionToggles || GUSToolPermissionCatalog.isEnabled(tool.name, defaults: defaults))
+        }
         projectedNativeNames = Set(projectedNative.map(\.name))
-        let fileTools = await fileSystem.availableTools
+        let allFileTools = await fileSystem.availableTools
+        let fileTools = enforceGUSPermissionToggles
+            ? allFileTools.filter { GUSToolPermissionCatalog.isEnabled($0.name, defaults: defaults) }
+                .map(requirePerActionApproval)
+            : allFileTools
         return fileTools + projectedNative
     }
 
@@ -50,9 +62,20 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
 
     public func execute(_ invocation: ToolInvocation, approval: PermissionResponse.Decision?) async -> ToolExecutionResult {
         if FileSystemToolExecutor.toolNames.contains(invocation.name) {
+            guard !enforceGUSPermissionToggles || GUSToolPermissionCatalog.isEnabled(invocation.name, defaults: defaults) else {
+                return failure(invocation, "La persona desactivó este permiso de GUS en Ajustes.", started: Date())
+            }
+            let mutatingFileTools: Set<String> = ["write_file", "edit_file", "create_directory", "move_file", "delete_file"]
+            if enforceGUSPermissionToggles, mutatingFileTools.contains(invocation.name),
+               approval != .allowOnce, approval != .allowAlways {
+                return failure(invocation, "Esta operación de GUS requiere aprobación visible en el iPhone.", started: Date())
+            }
             return await fileSystem.execute(invocation)
         }
         let started = Date()
+        guard !enforceGUSPermissionToggles || GUSToolPermissionCatalog.isEnabled(invocation.name, defaults: defaults) else {
+            return failure(invocation, "La persona desactivó este permiso de GUS en Ajustes.", started: started)
+        }
         guard projectedNativeNames.contains(invocation.name) else {
             return failure(invocation, "This native tool was not projected for the current user request.", started: started)
         }
@@ -163,6 +186,34 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
 
     private func failure(_ invocation: ToolInvocation, _ message: String, started: Date) -> ToolExecutionResult {
         ToolExecutionResult(toolCallId: invocation.id, output: "", error: message, duration: Date().timeIntervalSince(started))
+    }
+
+    private func requirePerActionApproval(_ tool: AgentTool) -> AgentTool {
+        guard ["write_file", "edit_file", "create_directory", "move_file", "delete_file"].contains(tool.name) else {
+            return tool
+        }
+        let reason = switch tool.name {
+        case "write_file": "¿Apruebas escribir o reemplazar el contenido de este archivo?"
+        case "edit_file": "¿Apruebas reemplazar el texto exacto indicado en este archivo?"
+        case "create_directory": "¿Apruebas crear esta carpeta?"
+        case "move_file": "¿Apruebas mover o renombrar este elemento?"
+        default: "¿Apruebas eliminar este elemento? Revisa si la operación es recursiva."
+        }
+        let capabilities = AgentTool.ToolCapabilities(
+            requiresNetwork: tool.capabilities.requiresNetwork,
+            requiresFileSystem: tool.capabilities.requiresFileSystem,
+            isDestructive: true,
+            restrictions: tool.capabilities.restrictions,
+            approvalReason: reason,
+            requiresApprovalEveryTime: true
+        )
+        return AgentTool(
+            name: tool.name,
+            description: tool.description,
+            properties: tool.parameters.properties,
+            required: tool.parameters.required,
+            capabilities: capabilities
+        )
     }
 
     #if canImport(UIKit)

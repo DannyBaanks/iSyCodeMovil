@@ -18,13 +18,13 @@ private actor FixtureLocalInferenceEngine: LocalInferenceEngine {
 }
 
 final class GUSLocalModelProviderTests: XCTestCase {
-    func testProviderDeclaresLocalOnlyAndGuidanceOnlyUntilToolFormatIsValidated() async throws {
+    func testProviderDeclaresLocalOnlyAndAcceptsToolsFromTheAppAllowlist() async throws {
         let engine = FixtureLocalInferenceEngine()
         let provider = GUSLocalModelProvider(modelURL: URL(fileURLWithPath: "/fixture/verified.gguf"), engine: engine)
         XCTAssertTrue(provider.capabilities.localOnly)
-        XCTAssertFalse(provider.capabilities.toolCalls)
+        XCTAssertTrue(provider.capabilities.toolCalls)
         XCTAssertEqual(provider.id, "gus-local")
-        XCTAssertTrue(provider.capabilities.restrictions.contains { $0.localizedCaseInsensitiveContains("guía") })
+        XCTAssertTrue(provider.capabilities.restrictions.contains { $0.localizedCaseInsensitiveContains("explícitamente") })
 
         let response = try await provider.generate(
             messages: [ModelMessage(role: .user, content: "hola")],
@@ -41,7 +41,7 @@ final class GUSLocalModelProviderTests: XCTestCase {
             XCTAssertEqual(provider.availableModels, [manifest.id])
             XCTAssertTrue(provider.name.contains(manifest.modelName))
             XCTAssertTrue(provider.capabilities.localOnly)
-            XCTAssertFalse(provider.capabilities.toolCalls)
+            XCTAssertTrue(provider.capabilities.toolCalls)
         }
     }
 
