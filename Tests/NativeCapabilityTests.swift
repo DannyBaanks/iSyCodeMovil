@@ -101,6 +101,85 @@ final class NativeCapabilityBrokerTests: XCTestCase {
         XCTAssertEqual(NativeCapabilityToolProjection.relevantCapabilityIDs(for: shortcut), ["shortcuts.run"])
     }
 
+    func testSharedMemoryToolsRequireLocalModelAndConversationSearchOptIn() async throws {
+        let suite = "SharedMemoryTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "gus.searchConversationsEnabled")
+        let workspace = try IOSWorkspace(rootName: "shared_memory_tools_\(UUID().uuidString)")
+        let workspaceRoot = await workspace.rootURL
+        defer { try? FileManager.default.removeItem(at: workspaceRoot) }
+        let executor = NativeCapabilityToolExecutor(workspace: workspace, persistence: try IOSPersistence(), defaults: defaults)
+        let userMessage = [ModelMessage(role: .user, content: "¿Qué hablamos en otros chats?")]
+
+        await executor.configureSharedMemory(localOnly: true, conversationID: "current")
+        let local = await executor.tools(relevantTo: userMessage)
+        let localTools = local.map(\.name)
+        XCTAssertTrue(localTools.contains("search_conversations"))
+        XCTAssertTrue(localTools.contains("update_shared_context"))
+
+        await executor.configureSharedMemory(localOnly: false, conversationID: "current")
+        let remote = await executor.tools(relevantTo: userMessage)
+        let remoteTools = remote.map(\.name)
+        XCTAssertFalse(remoteTools.contains("search_conversations"))
+        XCTAssertFalse(remoteTools.contains("update_shared_context"))
+    }
+
+    func testConversationSearchReturnsShortMatchesAndSkipsCurrentChat() async throws {
+        let suite = "ConversationSearchTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "gus.searchConversationsEnabled")
+        let persistence = try IOSPersistence()
+        let previous = Conversation(id: "memory-search-\(UUID().uuidString)", title: "Historia")
+        let current = Conversation(id: "memory-current-\(UUID().uuidString)", title: "Actual")
+        var previousWithMessage = previous
+        previousWithMessage.messages.append(Message(role: .user, content: "Platicamos sobre los olmecas y La Venta."))
+        var currentWithMessage = current
+        currentWithMessage.messages.append(Message(role: .user, content: "Olmecas, pero este chat debe quedar fuera."))
+        try await persistence.saveConversation(previousWithMessage)
+        try await persistence.saveConversation(currentWithMessage)
+
+        let workspace = try IOSWorkspace(rootName: "conversation_search_\(UUID().uuidString)")
+        let workspaceRoot = await workspace.rootURL
+        defer { try? FileManager.default.removeItem(at: workspaceRoot) }
+        let executor = NativeCapabilityToolExecutor(workspace: workspace, persistence: persistence, defaults: defaults)
+        await executor.configureSharedMemory(localOnly: true, conversationID: current.id)
+        _ = await executor.tools(relevantTo: [ModelMessage(role: .user, content: "Busca en otros chats")])
+        let result = await executor.execute(ToolInvocation(name: "search_conversations", arguments: ["query": "olmecas"]))
+
+        XCTAssertNil(result.error)
+        XCTAssertTrue(result.output.contains("Historia"))
+        XCTAssertTrue(result.output.contains("Platicamos sobre los olmecas"))
+        XCTAssertFalse(result.output.contains("este chat debe quedar fuera"))
+
+        try await persistence.deleteConversation(id: previous.id)
+        try await persistence.deleteConversation(id: current.id)
+    }
+
+    func testModelCannotChangeSharedContextWithoutFreshApproval() async throws {
+        let suite = "SharedContextApprovalTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let workspace = try IOSWorkspace(rootName: "shared_context_approval_\(UUID().uuidString)")
+        let workspaceRoot = await workspace.rootURL
+        defer { try? FileManager.default.removeItem(at: workspaceRoot) }
+        let executor = NativeCapabilityToolExecutor(workspace: workspace, defaults: defaults)
+        await executor.configureSharedMemory(localOnly: true, conversationID: "current")
+        _ = await executor.tools(relevantTo: [ModelMessage(role: .user, content: "Remember my preference")])
+        let invocation = ToolInvocation(name: "update_shared_context", arguments: ["content": "Prefiero respuestas breves."])
+
+        let denied = await executor.execute(invocation)
+        XCTAssertNotNil(denied.error)
+        XCTAssertNil(defaults.string(forKey: "gus.sharedContext"))
+
+        let approved = await executor.execute(invocation, approval: .allowOnce)
+        XCTAssertNil(approved.error)
+        XCTAssertEqual(defaults.string(forKey: "gus.sharedContext"), "Prefiero respuestas breves.")
+        let systemContext = await executor.sharedContextForPrompt()
+        XCTAssertTrue(systemContext?.contains("Prefiero respuestas breves.") == true)
+    }
+
     func testConfiguredShortcutRegistryRoundTripsInIsolatedDefaults() throws {
         let suite = "NativeCapabilityTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

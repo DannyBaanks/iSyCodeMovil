@@ -9,7 +9,7 @@ public struct GUSLocalModelProvider: ModelProvider {
     public let capabilities = ModelProviderCapabilities(
         streaming: false,
         toolCalls: true,
-        maxTokens: 256,
+        maxTokens: 512,
         maxContextTokens: 2048,
         supportsSystemPrompt: true,
         supportsImages: false,
@@ -67,13 +67,23 @@ public struct GUSLocalModelProvider: ModelProvider {
             localMessages.insert(ModelMessage(role: .system, content: localBoundary), at: 0)
         }
 
-        let text = try await engine.generate(messages: localMessages, options: options)
-        let call = GUSLocalToolCallParser.parse(text, allowedTools: allowedTools)
+        let generation = try await engine.generateMeasured(messages: localMessages, options: options)
+        let call = GUSLocalToolCallParser.parse(generation.text, allowedTools: allowedTools)
+        let hitTokenLimit = !generation.stats.stoppedAtEndOfTurn && call == nil
+        let content = hitTokenLimit
+            ? generation.text + "\n\n[Respuesta incompleta: se alcanzó el límite de generación. Pídeme «continúa» para seguir.]"
+            : (call == nil ? generation.text : "")
         return ModelResponse(
-            content: call == nil ? text : "",
+            content: content,
             toolCalls: call.map { [$0] },
-            finishReason: "stop",
-            metadata: ["execution": "on-device", "model": manifest.modelName, "model_id": manifest.id]
+            finishReason: hitTokenLimit ? "length" : "stop",
+            metadata: [
+                "execution": "on-device",
+                "model": manifest.modelName,
+                "model_id": manifest.id,
+                "generated_tokens": String(generation.stats.generatedTokens),
+                "stopped_at_end_of_turn": String(generation.stats.stoppedAtEndOfTurn)
+            ]
         )
     }
 

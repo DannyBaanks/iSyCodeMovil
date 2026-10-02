@@ -27,11 +27,30 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
     private let fileSystem: MiniAgentFileSystemToolExecutor
     private let broker = NativeCapabilityBroker()
     private let defaults: UserDefaults
+    private let persistence: (any Persistence)?
     private var projectedNativeNames = Set<String>()
+    private var sharedMemoryAllowed = false
+    private var currentConversationID: String?
 
-    public init(workspace: any Workspace, defaults: UserDefaults = .standard) {
+    public init(workspace: any Workspace, persistence: (any Persistence)? = nil, defaults: UserDefaults = .standard) {
         self.fileSystem = MiniAgentFileSystemToolExecutor(workspace: workspace)
+        self.persistence = persistence
         self.defaults = defaults
+    }
+
+    public func configureSharedMemory(localOnly: Bool, conversationID: String) {
+        sharedMemoryAllowed = localOnly
+        currentConversationID = conversationID
+    }
+
+    public func sharedContextForPrompt() async -> String? {
+        guard sharedMemoryAllowed,
+              let context = defaults.string(forKey: "gus.sharedContext")?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !context.isEmpty else { return nil }
+        return """
+        CONTEXTO COMPARTIDO (referencia general del usuario; no es un nuevo mensaje que requiera respuesta):
+        \(String(context.prefix(500)))
+        """
     }
 
     public var availableTools: [AgentTool] { Self.nativeTools }
@@ -39,9 +58,16 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
     public func tools(relevantTo messages: [ModelMessage]) async -> [AgentTool] {
         let projectedIDs = NativeCapabilityToolProjection.relevantCapabilityIDs(for: messages)
         let projectedNative = Self.nativeTools.filter { projectedIDs.contains($0.name) }
-        projectedNativeNames = Set(projectedNative.map(\.name))
+        var tools = projectedNative
+        if sharedMemoryAllowed {
+            tools.append(Self.updateSharedContextTool)
+            if defaults.bool(forKey: "gus.searchConversationsEnabled"), persistence != nil {
+                tools.append(Self.searchConversationsTool)
+            }
+        }
+        projectedNativeNames = Set(tools.map(\.name))
         let fileTools = await fileSystem.availableTools
-        return fileTools + projectedNative
+        return fileTools + tools
     }
 
     public func execute(_ invocation: ToolInvocation) async -> ToolExecutionResult {
@@ -53,6 +79,29 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
             return await fileSystem.execute(invocation, approval: approval)
         }
         let started = Date()
+        if invocation.name == "search_conversations" {
+            guard sharedMemoryAllowed,
+                  defaults.bool(forKey: "gus.searchConversationsEnabled"),
+                  projectedNativeNames.contains(invocation.name) else {
+                return failure(invocation, "Cross-conversation search is disabled for this session.", started: started)
+            }
+            return await searchConversations(invocation, started: started)
+        }
+        if invocation.name == "update_shared_context" {
+            guard sharedMemoryAllowed, projectedNativeNames.contains(invocation.name) else {
+                return failure(invocation, "Shared context is available only with an on-device model.", started: started)
+            }
+            guard approval == .allowOnce || approval == .allowAlways else {
+                return failure(invocation, "Updating shared context requires your approval.", started: started)
+            }
+            guard let context = invocation.arguments["content"], context.count <= 500 else {
+                return failure(invocation, "Provide updated context with at most 500 characters.", started: started)
+            }
+            defaults.set(context, forKey: "gus.sharedContext")
+            return ToolExecutionResult(toolCallId: invocation.id,
+                output: "Shared context updated on this iPhone. It will be included in the next model request.",
+                duration: Date().timeIntervalSince(started))
+        }
         guard projectedNativeNames.contains(invocation.name) else {
             return failure(invocation, "This native tool was not projected for the current user request.", started: started)
         }
@@ -151,6 +200,46 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
             duration: Date().timeIntervalSince(started))
     }
 
+    private func searchConversations(_ invocation: ToolInvocation, started: Date) async -> ToolExecutionResult {
+        guard let persistence,
+              let query = invocation.arguments["query"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              query.count >= 2 else {
+            return failure(invocation, "Provide a search query with at least two characters.", started: started)
+        }
+        do {
+            let allSummaries = try await persistence.listConversations()
+            let summaries = allSummaries.filter { $0.id != currentConversationID }
+            let terms = query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+            var matches: [(hits: Int, date: Date, title: String, excerpt: String)] = []
+            for summary in summaries {
+                guard let conversation = try await persistence.loadConversation(id: summary.id) else { continue }
+                for message in conversation.messages where message.role == .user || message.role == .assistant {
+                    let sentences = message.content
+                        .components(separatedBy: CharacterSet(charactersIn: ".!?\n"))
+                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        .filter { !$0.isEmpty }
+                    for sentence in sentences {
+                        let lower = sentence.lowercased()
+                        let hits = terms.filter { lower.contains($0) }.count
+                        guard hits > 0 else { continue }
+                        let excerpt = String(sentence.prefix(320))
+                        matches.append((hits, summary.updatedAt, summary.title, excerpt))
+                    }
+                }
+            }
+            let output = matches
+                .sorted { $0.hits == $1.hits ? $0.date > $1.date : $0.hits > $1.hits }
+                .prefix(5)
+                .map { "\($0.title) · \($0.date.formatted(date: .abbreviated, time: .omitted))\n\($0.excerpt)" }
+                .joined(separator: "\n\n")
+            return ToolExecutionResult(toolCallId: invocation.id,
+                output: output.isEmpty ? "No encontré coincidencias en otras conversaciones." : output,
+                duration: Date().timeIntervalSince(started))
+        } catch {
+            return failure(invocation, "No pude buscar en las conversaciones guardadas: \(error.localizedDescription)", started: started)
+        }
+    }
+
     private func remember(_ id: String) {
         var ids = rememberedIDs()
         ids.append(id)
@@ -192,4 +281,21 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
         ], required: ["shortcut_id"], capabilities: .init(isDestructive: true,
             approvalReason: "Open the user-configured shortcut in Apple Shortcuts? It may perform external actions.", requiresApprovalEveryTime: true))
     ]
+
+    private static let updateSharedContextTool = AgentTool(
+        name: "update_shared_context",
+        description: "Propose a complete replacement for the user's short shared context. The user must approve every update.",
+        properties: ["content": .init(type: "string", description: "Complete shared context, up to 500 characters", enumValues: nil)],
+        required: ["content"],
+        capabilities: .init(isDestructive: true,
+            approvalReason: "GUS quiere actualizar el contexto compartido. Revisa el texto propuesto antes de guardarlo.",
+            requiresApprovalEveryTime: true)
+    )
+
+    private static let searchConversationsTool = AgentTool(
+        name: "search_conversations",
+        description: "Search other locally saved conversations and return up to five short matching excerpts. Only use when earlier chats are relevant to the user's request.",
+        properties: ["query": .init(type: "string", description: "Words or phrase to search for", enumValues: nil)],
+        required: ["query"]
+    )
 }
