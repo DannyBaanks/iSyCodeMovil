@@ -3,16 +3,31 @@ import XCTest
 
 private actor FixtureLocalInferenceEngine: LocalInferenceEngine {
     private let response: String
+    private let stoppedAtEndOfTurn: Bool
     private(set) var loadedURL: URL?
     private(set) var lastMessages: [ModelMessage] = []
     private(set) var didUnload = false
 
-    init(response: String = "respuesta local") { self.response = response }
+    init(response: String = "respuesta local", stoppedAtEndOfTurn: Bool = true) {
+        self.response = response
+        self.stoppedAtEndOfTurn = stoppedAtEndOfTurn
+    }
     func load(modelURL: URL, contextTokens: Int) async throws { loadedURL = modelURL; didUnload = false }
     func unload() async { didUnload = true; loadedURL = nil }
     func generate(messages: [ModelMessage], options: GenerationOptions) async throws -> String {
         lastMessages = messages
         return response
+    }
+    func generateMeasured(messages: [ModelMessage], options: GenerationOptions) async throws -> LocalGeneration {
+        lastMessages = messages
+        return LocalGeneration(text: response, stats: LocalGenerationStats(
+            promptTokens: 50,
+            generatedTokens: stoppedAtEndOfTurn ? 12 : 512,
+            prefillMilliseconds: 10,
+            generateMilliseconds: 20,
+            templateSource: .embedded,
+            stoppedAtEndOfTurn: stoppedAtEndOfTurn
+        ))
     }
     func cancel() async {}
 }
@@ -24,6 +39,7 @@ final class GUSLocalModelProviderTests: XCTestCase {
         XCTAssertTrue(provider.capabilities.localOnly)
         XCTAssertTrue(provider.capabilities.toolCalls)
         XCTAssertEqual(provider.id, "gus-local")
+        XCTAssertEqual(provider.capabilities.maxTokens, 512)
         XCTAssertTrue(provider.capabilities.restrictions.contains { $0.localizedCaseInsensitiveContains("herramient") })
 
         let response = try await provider.generate(
@@ -33,6 +49,21 @@ final class GUSLocalModelProviderTests: XCTestCase {
         )
         XCTAssertEqual(response.content, "respuesta local")
         XCTAssertNil(response.toolCalls)
+    }
+
+    func testGenerationLimitIsReportedAsIncompleteInsteadOfSuccessfulStop() async throws {
+        let engine = FixtureLocalInferenceEngine(response: "Los olmecas vivieron en el Golfo. Su legado incluye", stoppedAtEndOfTurn: false)
+        let provider = GUSLocalModelProvider(modelURL: URL(fileURLWithPath: "/fixture/verified.gguf"), engine: engine)
+        let response = try await provider.generate(
+            messages: [ModelMessage(role: .user, content: "Háblame de los olmecas")],
+            tools: nil,
+            options: GenerationOptions(maxTokens: 512)
+        )
+
+        XCTAssertEqual(response.finishReason, "length")
+        XCTAssertTrue(response.content.contains("Respuesta incompleta"))
+        XCTAssertEqual(response.metadata["stopped_at_end_of_turn"], "false")
+        XCTAssertEqual(response.metadata["generated_tokens"], "512")
     }
 
     func testApprovedModelsExposeTheirIdentityWithoutChangingLocalSafetyBoundary() {

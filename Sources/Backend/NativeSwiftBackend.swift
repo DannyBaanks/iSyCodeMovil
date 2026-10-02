@@ -78,7 +78,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             self.workspace = ws
             self.persistence = ps
             
-            let exec = NativeCapabilityToolExecutor(workspace: ws)
+            let exec = NativeCapabilityToolExecutor(workspace: ws, persistence: ps)
             self.toolExecutor = exec
             try await reloadSandboxModel()
             eventContinuation?.yield(.connected)
@@ -244,6 +244,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     /// made `session.idle` miss the open session, so the composer never left Stop.
     private func installLoop(sessionID: String) async {
         guard let ws = workspace, let ps = persistence, let provider = modelProvider, let exec = toolExecutor else { return }
+        await exec.configureSharedMemory(localOnly: provider.capabilities.localOnly, conversationID: sessionID)
         let modelName = activeModelName
         if boundSessionID == sessionID, agentLoop != nil {
             currentSessionIDStorage = sessionID

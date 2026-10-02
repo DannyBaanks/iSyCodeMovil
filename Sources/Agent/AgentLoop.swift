@@ -116,10 +116,12 @@ public protocol ToolExecutor: Sendable {
     func tools(relevantTo messages: [ModelMessage]) async -> [AgentTool]
     func execute(_ invocation: ToolInvocation) async -> ToolExecutionResult
     func execute(_ invocation: ToolInvocation, approval: PermissionResponse.Decision?) async -> ToolExecutionResult
+    func sharedContextForPrompt() async -> String?
 }
 
 public extension ToolExecutor {
     func tools(relevantTo messages: [ModelMessage]) async -> [AgentTool] { availableTools }
+    func sharedContextForPrompt() async -> String? { nil }
     func execute(_ invocation: ToolInvocation, approval: PermissionResponse.Decision?) async -> ToolExecutionResult {
         await execute(invocation)
     }
@@ -281,8 +283,13 @@ public actor AgentLoop {
             await eventHandler?(.turnStarted(turn: turn))
             
             // Construir mensajes para el modelo
+            var messagesForModel = buildModelMessages(from: conversation)
+            if let sharedContext = await context.toolExecutor.sharedContextForPrompt(), !sharedContext.isEmpty {
+                let systemCount = messagesForModel.prefix { $0.role == .system }.count
+                messagesForModel.insert(ModelMessage(role: .user, content: sharedContext), at: systemCount)
+            }
             let modelMessages = ModelContextBudget.fit(
-                buildModelMessages(from: conversation),
+                messagesForModel,
                 budget: ModelContextBudget.characterBudget(for: context.modelProvider.capabilities,
                                                            reservedOutputTokens: Self.maxOutputTokens)
             )
