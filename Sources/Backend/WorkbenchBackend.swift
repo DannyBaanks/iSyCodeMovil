@@ -10,6 +10,7 @@ public enum BackendMode: String, Sendable {
 public enum BackendPairing: Sendable {
     case openCode(OpenCodePairing)
     case codex(CodexPairing)
+    case grok(GrokPairing)
     case remote(RemotePairing)
 }
 

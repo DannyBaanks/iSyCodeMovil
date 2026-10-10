@@ -100,3 +100,45 @@ provider/model selection, agent selection, rename/delete, and Codex settings are
 not available in this adapter. If the local CLI schema or initialize version
 does not match the pairing profile, reconnecting fails closed; check that Codex
 and the Bridge are running, then create a fresh pairing.
+
+## Experimental Grok agent server
+
+Grok CLI 1.0.50 speaks ACP JSON-RPC 2.0 on `grok agent serve`, but that process
+refuses a plaintext WebSocket off `127.0.0.1`. The phone never dials Grok
+directly. The Bridge starts Grok on loopback, keeps the server key on the
+computer, and publishes a separate WebSocket proxy on the Tailscale IPv4
+address. The pairing link carries a capability token as `Authorization: Bearer`.
+That token is not the Grok server key.
+
+On the computer, install Grok CLI and Tailscale, sign in to Grok, move to the
+workspace, and start the Bridge from this checkout:
+
+```bash
+node Bridge/bin/iyscodemovil.mjs link --runtime grok --host tailscale --directory "$PWD"
+```
+
+From a published checkout the same command is
+`npx --yes github:DannyBaanks/IysCodeMovil#main link --runtime grok --host tailscale`.
+Paste the printed `grok://pair?...` link into ISyCodeMovil 0.5.2 or newer.
+Treat it as a secret. iOS stores the token in Keychain.
+Stopping the terminal stops both the proxy and `grok agent serve`. Pair again
+for a new token. Do not pass `--always-approve`.
+
+The proxy binds only a Tailscale CGNAT address (`100.64.0.0/10`). `ws://` has
+no TLS, so flat LAN, port-forwarding, and the public Internet are rejected.
+Grok itself stays on `127.0.0.1`.
+
+The iOS profile, filled in by a loopback inspect, supports `session/new`, text
+`session/prompt`, `session/cancel`, and permission replies whose options are
+`allow_once` and `reject_once` (`allow_always` only when Grok offers it,
+`cancel` as an ACP cancelled outcome). `session/list` is filtered to the paired
+directory. `session/load` does not return history here, so the thread opens
+empty. File browsing, shell, rename, delete, and model picking are not in this
+adapter. Unknown server requests are rejected and are not run on the phone.
+
+On 2026-10-09 a loopback proxy test sent one text prompt through the same
+Bearer path the phone uses. Grok CLI 1.0.50 answered `pong` with
+`stopReason` end_turn and did not ask for a tool. `session/list` returned a
+global window; the app keeps only rows whose `cwd` is the paired directory.
+This Linux host has no Xcode, so the iOS app was not compiled here, and the
+Tailscale listener was not left running.

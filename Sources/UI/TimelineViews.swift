@@ -140,7 +140,11 @@ public struct AssistantTextView: View {
     }
 
     private var speakerLabel: String {
-        sessionState.selectedModel?.route == "codex" ? "CODEX" : "ASISTENTE"
+        switch sessionState.selectedModel?.route {
+        case "codex": return "CODEX"
+        case "grok": return "GROK"
+        default: return "ASISTENTE"
+        }
     }
 
     public var body: some View {
@@ -148,7 +152,7 @@ public struct AssistantTextView: View {
             let text = event.assistantText ?? ""
             if !text.isEmpty || isLiveTail {
                 HStack(spacing: 8) {
-                    Image(systemName: sessionState.selectedModel?.route == "codex" ? "chevron.left.forwardslash.chevron.right" : "sparkle")
+                    Image(systemName: sessionState.selectedModel?.route == "codex" || sessionState.selectedModel?.route == "grok" ? "chevron.left.forwardslash.chevron.right" : "sparkle")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(OCColor.agentBuild)
                         .frame(width: 28, height: 28)
@@ -888,6 +892,8 @@ public struct PermissionView: View {
 
     public var body: some View {
         let isCodex = event.permissionTool?.hasPrefix("Codex") == true
+        let isGrok = event.permissionTool?.hasPrefix("Grok") == true
+        let isLimitedRemote = isCodex || isGrok
         VStack(alignment: .leading, spacing: OCSpacing.lg) {
             // Header
             HStack(spacing: OCSpacing.base) {
@@ -948,7 +954,7 @@ public struct PermissionView: View {
                     .accessibilityIdentifier("permission-allow-once")
 
                     Button(action: onDeny) {
-                        Text(isCodex ? "Rechazar" : "Denegar")
+                        Text(isLimitedRemote ? "Rechazar" : "Denegar")
                             .font(OCTypography.control)
                             .foregroundColor(OCColor.textPrimary)
                             .frame(maxWidth: .infinity)
@@ -964,7 +970,7 @@ public struct PermissionView: View {
                     .accessibilityIdentifier("permission-deny")
                 }
 
-                if isCodex {
+                if isLimitedRemote {
                     Button(action: onCodexCancel ?? onDeny) {
                         Text("Cancelar turno")
                             .font(OCTypography.control)
@@ -976,9 +982,9 @@ public struct PermissionView: View {
                 }
 
                 Menu {
-                    Button(isCodex ? "Permitir en esta sesión" : "Permitir siempre", action: onPersistent)
+                    Button(isLimitedRemote ? "Permitir en esta sesión" : "Permitir siempre", action: onPersistent)
                 } label: {
-                    Label(isCodex ? "Aprobación de sesión…" : "Más opciones de permiso…", systemImage: "ellipsis.circle")
+                    Label(isLimitedRemote ? "Aprobación de sesión…" : "Más opciones de permiso…", systemImage: "ellipsis.circle")
                         .font(OCTypography.control)
                         .foregroundColor(OCColor.textSecondary)
                         .frame(maxWidth: .infinity)

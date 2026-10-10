@@ -31,9 +31,9 @@ public final class WorkbenchStore: ObservableObject {
     @Published public var diffFiles: [SessionDiffFile] = []
     @Published public var shellHistory: [(command: String, result: ShellResult?)] = []
 
-    /// Codex App Server v1 deliberately does not implement rename/delete.
+    /// Codex and Grok adapters deliberately do not implement rename/delete.
     public var supportsSessionManagement: Bool {
-        backendMode != .remote || activeRemoteBackendType != .codex
+        backendMode != .remote || (activeRemoteBackendType != .codex && activeRemoteBackendType != .grok)
     }
     
     private var currentProjectID: String?
@@ -41,6 +41,7 @@ public final class WorkbenchStore: ObservableObject {
     var currentBackend: (any WorkbenchBackend)?
     private var pairingStore = PairingStore()
     private var codexPairingStore = CodexPairingStore()
+    private var grokPairingStore = GrokPairingStore()
     private var activeRemotePairing: BackendPairing?
     private var activeRemoteBackendType: RemoteBackendType?
     private var backendEventTask: Task<Void, Never>?
@@ -141,6 +142,10 @@ public final class WorkbenchStore: ObservableObject {
                 host = value.host
                 port = value.port
                 directory = value.directory
+            case .grok(let value):
+                host = value.host
+                port = value.port
+                directory = value.directory
             case .remote(let value):
                 host = value.host
                 port = value.port
@@ -183,6 +188,8 @@ public final class WorkbenchStore: ObservableObject {
                 try await pairingStore.save(value)
             case .codex(let value):
                 try await codexPairingStore.save(value)
+            case .grok(let value):
+                try await grokPairingStore.save(value)
             case .remote(let value) where value.type == .opencode || value.type == .openisy:
                 try await pairingStore.save(OpenCodePairing(
                     scheme: value.scheme,
@@ -409,6 +416,10 @@ public final class WorkbenchStore: ObservableObject {
             await connectRemote(pairing: .codex(codex), backendType: .codex)
             return
         }
+        if let grok = try? await grokPairingStore.load() {
+            await connectRemote(pairing: .grok(grok), backendType: .grok)
+            return
+        }
         if let stored = try? await pairingStore.load() {
             let pairing = OpenCodePairing(
                 host: stored.host,
@@ -448,12 +459,18 @@ public final class WorkbenchStore: ObservableObject {
         } catch {
             addErrorEvent("Could not remove Codex pairing secret: \(error.localizedDescription)")
         }
+        do {
+            try await grokPairingStore.clear()
+        } catch {
+            addErrorEvent("Could not remove Grok pairing secret: \(error.localizedDescription)")
+        }
     }
     
     public func hasStoredPairing() async -> Bool {
         let hasOpenCodePairing = await pairingStore.hasStoredPairing()
         let hasCodexPairing = await codexPairingStore.hasStoredPairing()
-        return hasOpenCodePairing || hasCodexPairing
+        let hasGrokPairing = await grokPairingStore.hasStoredPairing()
+        return hasOpenCodePairing || hasCodexPairing || hasGrokPairing
     }
     
     public func selectProject(_ project: Project) async {
@@ -751,13 +768,15 @@ public final class WorkbenchStore: ObservableObject {
             if models.isEmpty {
                 if backend is CodexRemoteBackend {
                     models.append(ModelInfo(name: "Codex server default", provider: "Codex", providerIcon: "terminal", isLocal: false, route: "codex"))
+                } else if backend is GrokRemoteBackend {
+                    models.append(ModelInfo(name: "Grok en tu computadora", provider: "Grok", providerIcon: "terminal", isLocal: false, route: "grok"))
                 } else {
                     models.append(ModelInfo(name: "OpenCode server default", provider: "OpenCode", providerIcon: "terminal", isLocal: false, route: "opencode-server"))
                 }
             }
             availableModels = models
 
-            if backend is CodexRemoteBackend {
+            if backend is CodexRemoteBackend || backend is GrokRemoteBackend {
                 availableAgents = []
                 availableCommands = []
                 return
@@ -781,6 +800,18 @@ public final class WorkbenchStore: ObservableObject {
                     providerIcon: "terminal",
                     isLocal: false,
                     route: "codex"
+                )
+                availableModels = [defaultModel]
+                if sessionState.selectedModel == nil {
+                    sessionState.selectedModel = defaultModel
+                }
+            } else if backend is GrokRemoteBackend {
+                let defaultModel = ModelInfo(
+                    name: "Grok en tu computadora",
+                    provider: "Grok",
+                    providerIcon: "terminal",
+                    isLocal: false,
+                    route: "grok"
                 )
                 availableModels = [defaultModel]
                 if sessionState.selectedModel == nil {

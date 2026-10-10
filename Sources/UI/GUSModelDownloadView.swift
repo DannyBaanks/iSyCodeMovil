@@ -17,6 +17,10 @@ public struct GUSModelDownloadView: View {
     @State private var exportFiles: [URL] = []
     @State private var isImporting = false
     @State private var importMessage: String?
+    @State private var expandedFamilies = Set<String>()
+    @State private var isSharedContextExpanded = false
+    @AppStorage("gus.sharedContext") private var sharedContext = ""
+    @AppStorage("gus.searchConversationsEnabled") private var searchConversationsEnabled = false
 
     public init(manager: GUSModelDownloadManager = .shared) { self.manager = manager }
 
@@ -31,20 +35,19 @@ public struct GUSModelDownloadView: View {
             Text("Ojo: los modelos pequeños pueden inventar datos (fechas, nombres, cifras). Úsalos para redactar, resumir o explicar, y verifica los hechos importantes.")
                 .font(.system(size: 10, design: .monospaced)).foregroundColor(.orange)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("GUS local sigue en modo orientación: sin herramientas, permisos nuevos ni fallback remoto.")
+            Text("GUS Local usa solo herramientas disponibles en iSyCode. Los cambios de archivos requieren aprobación y no hay fallback remoto.")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundColor(IysThemePreferences.active.accent)
+
+            privacyNotice
+            sharedContextControls
 
             previousRunBanner
             deviceSummary
 
-            ForEach(recommendedModels) { manifest in
-                modelCard(manifest)
-            }
-
             Toggle(isOn: $showExperimental) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Mostrar modelos experimentales (\(experimentalModels.count))")
+                    Text("Mostrar modelos experimentales (\(experimentalModelCount))")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     Text("Más grandes o sin medir en iPhone. Pensados para equipos con más RAM.")
                         .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
@@ -54,10 +57,8 @@ public struct GUSModelDownloadView: View {
                 Text("Riesgo real y acotado: si no cabe, iOS cierra la app (sin dañar datos ni el teléfono). También puede calentarse y usar varios GB de almacenamiento. Si pasa, el informe de fallos dirá en qué fase y con cuánta memoria.")
                     .font(.system(size: 9, design: .monospaced)).foregroundColor(.orange)
                     .fixedSize(horizontal: false, vertical: true)
-                ForEach(experimentalModels) { manifest in
-                    modelCard(manifest)
-                }
             }
+            familySections(showExperimental ? GUSModelManifest.all : recommendedModels)
 
             modelBackupControls
 
@@ -119,8 +120,121 @@ public struct GUSModelDownloadView: View {
         .task {
             budget = GUSDeviceBudget.current()
             await manager.refresh()
+            if expandedFamilies.isEmpty, let family = manager.selectedManifest?.family {
+                expandedFamilies.insert(displayFamilyName(family))
+            }
             dualSmolEnabled = GUSDualModelExperimentSettings.isEnabled
         }
+    }
+
+    private var privacyNotice: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("GUS Local · 100% en tu iPhone")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                Text("La conversación se procesa íntegramente aquí: GUS Local no envía tus mensajes por internet ni a proveedores externos. Nadie fuera de este dispositivo recibe tus chats a través de GUS. Después de descargar el GGUF, puedes conversar sin conexión.")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } icon: {
+            Image(systemName: "lock.shield.fill")
+                .foregroundColor(IysThemePreferences.active.accent)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(IysThemePreferences.active.accent.opacity(0.08))
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(IysThemePreferences.active.accent.opacity(0.25), lineWidth: 1))
+    }
+
+    private var sharedContextControls: some View {
+        DisclosureGroup(isExpanded: $isSharedContextExpanded) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Una nota breve que GUS Local consulta en tus conversaciones. Para recuperar detalles largos, activa la búsqueda de otros chats. El modelo puede proponer cambios, pero siempre te pedirá aprobación.")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                TextEditor(text: Binding(
+                    get: { sharedContext },
+                    set: { sharedContext = String($0.prefix(500)) }
+                ))
+                    .font(.system(size: 11, design: .monospaced))
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 90, maxHeight: 150)
+                    .padding(6)
+                    .background(OCColor.bgBase)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(IysThemePreferences.active.accent.opacity(0.2), lineWidth: 1))
+                    .accessibilityLabel("Contexto compartido para GUS Local")
+                Toggle(isOn: $searchConversationsEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Permitir buscar en otros chats")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        Text("Solo devuelve fragmentos breves y solo está disponible con un modelo local.")
+                            .font(.system(size: 8, design: .monospaced)).foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack {
+                Label("Contexto compartido", systemImage: "text.book.closed")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                Spacer()
+                Text("\(sharedContext.count)/500")
+                    .font(.system(size: 8, design: .monospaced)).foregroundColor(.secondary)
+            }
+        }
+        .tint(IysThemePreferences.active.accent)
+        .padding(10)
+        .background(OCColor.bgDeep)
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(IysThemePreferences.active.accent.opacity(0.2), lineWidth: 1))
+    }
+
+    @ViewBuilder
+    private func familySections(_ models: [GUSModelManifest]) -> some View {
+        let families = Array(Set(models.map { displayFamilyName($0.family) })).sorted()
+        ForEach(families, id: \.self) { family in
+            let members = models.filter { displayFamilyName($0.family) == family }
+            DisclosureGroup(isExpanded: expandedBinding(for: family)) {
+                VStack(spacing: 8) {
+                    ForEach(members) { manifest in modelCard(manifest) }
+                }
+                .padding(.top, 7)
+            } label: {
+                HStack {
+                    Text(family).font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    Spacer()
+                    Text("\(members.count) \(members.count == 1 ? "modelo" : "modelos")")
+                        .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .tint(IysThemePreferences.active.accent)
+            .padding(10)
+            .background(OCColor.bgDeep)
+            .overlay(RoundedRectangle(cornerRadius: 7).stroke(IysThemePreferences.active.accent.opacity(0.2), lineWidth: 1))
+        }
+    }
+
+    private func expandedBinding(for family: String) -> Binding<Bool> {
+        Binding(
+            get: { expandedFamilies.contains(family) },
+            set: { isExpanded in
+                if isExpanded { expandedFamilies.insert(family) }
+                else { expandedFamilies.remove(family) }
+            }
+        )
+    }
+
+    private func displayFamilyName(_ family: String) -> String {
+        let normalized = family.lowercased()
+        if normalized.hasPrefix("qwen") { return "Qwen" }
+        if normalized.contains("tinyllama") { return "TinyLlama" }
+        if normalized.contains("llama") { return "Llama" }
+        if normalized.hasPrefix("smollm") { return "SmolLM" }
+        if normalized.hasPrefix("phi-") { return "Phi" }
+        return family
     }
 
     /// Models live in the app container, which iOS wipes when the app is deleted
@@ -175,8 +289,8 @@ public struct GUSModelDownloadView: View {
         GUSModelManifest.all.filter { !isExperimentalHere($0) }
     }
 
-    private var experimentalModels: [GUSModelManifest] {
-        GUSModelManifest.all.filter { isExperimentalHere($0) }
+    private var experimentalModelCount: Int {
+        GUSModelManifest.all.filter { isExperimentalHere($0) }.count
     }
 
     /// Experimental if the catalog says so or if it will not fit this device right now.
@@ -316,7 +430,7 @@ public struct GUSModelDownloadView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(manifest.modelName)
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    Text("\(manifest.vendor) · \(manifest.parameterLabel) · GGUF \(manifest.byteCount / 1_000_000) MB · \(manifest.licenseName)")
+                    Text("\(manifest.parameterLabel) · \(manifest.byteCount / 1_000_000) MB")
                         .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
                     HStack(spacing: 4) {
                         fitBadge(manifest)
@@ -332,17 +446,22 @@ public struct GUSModelDownloadView: View {
                 }
             }
 
-            HStack(spacing: 12) {
-                Link("Fuente / revisión", destination: URL(string: "https://huggingface.co/\(manifest.repository)/tree/\(manifest.revision)")!)
-                Link("Licencia", destination: manifest.licenseURL)
+            DisclosureGroup("Ver fuente, licencia y verificación") {
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(spacing: 12) {
+                        Link("Fuente / revisión", destination: URL(string: "https://huggingface.co/\(manifest.repository)/tree/\(manifest.revision)")!)
+                        Link("Licencia · \(manifest.licenseName)", destination: manifest.licenseURL)
+                    }
+                    .font(.system(size: 9, design: .monospaced))
+                    Text(manifest.attribution)
+                        .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                    Text("SHA-256  \(manifest.sha256)")
+                        .font(.system(size: 8, design: .monospaced)).foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                }
+                .padding(.top, 5)
             }
             .font(.system(size: 9, design: .monospaced))
-
-            Text("SHA-256  \(manifest.sha256)")
-                .font(.system(size: 8, design: .monospaced)).foregroundColor(.secondary)
-                .textSelection(.enabled)
-            Text(manifest.attribution)
-                .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
 
             stateControls(for: manifest)
         }

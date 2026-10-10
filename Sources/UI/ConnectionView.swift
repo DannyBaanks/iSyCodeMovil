@@ -112,7 +112,7 @@ public struct ConnectionView: View {
                     .buttonStyle(.plain)
                     .padding(.bottom, 8)
                 }
-                TextField("iyscodemovil://pair?...", text: $pairingLink, axis: .vertical)
+                TextField("iyscodemovil://, codex:// o grok://", text: $pairingLink, axis: .vertical)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(size: 13, design: .monospaced))
@@ -377,7 +377,7 @@ struct ReconnectSheet: View {
                     .buttonStyle(.plain)
                     .padding(.bottom, 8)
                 }
-                TextField("iyscodemovil://pair?...", text: $pairingLink, axis: .vertical)
+                TextField("iyscodemovil://, codex:// o grok://", text: $pairingLink, axis: .vertical)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(size: 13, design: .monospaced))

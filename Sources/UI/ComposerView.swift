@@ -81,7 +81,8 @@ public struct ComposerView: View {
                 selectedModel: sessionState.selectedModel,
                 onModelTap: { sessionState.showModelPicker = true },
                 onAttachTap: { sessionState.showAttachments = true },
-                codexMode: sessionState.selectedModel?.route == "codex"
+                codexMode: sessionState.selectedModel?.route == "codex",
+                limitedLabel: sessionState.selectedModel?.route == "grok" ? "Grok · en tu computadora" : nil
             )
             .padding(.horizontal, OCSpacing.contentMargin)
             .padding(.bottom, OCSpacing.base)
@@ -116,7 +117,11 @@ public struct ComposerView: View {
 
     private var composerPlaceholder: String {
         if store.backendMode == .native { return "Escribe a iSyCode…" }
-        return sessionState.selectedModel?.route == "codex" ? "Escribe a Codex…" : "Escribe a OpenCode…"
+        switch sessionState.selectedModel?.route {
+        case "codex": return "Escribe a Codex…"
+        case "grok": return "Escribe a Grok…"
+        default: return "Escribe a OpenCode…"
+        }
     }
 }
 
@@ -181,6 +186,7 @@ public struct ComposerControlRow: View {
     let onModelTap: () -> Void
     let onAttachTap: () -> Void
     let codexMode: Bool
+    let limitedLabel: String?
 
     public init(
         agentMode: AgentMode,
@@ -188,7 +194,8 @@ public struct ComposerControlRow: View {
         selectedModel: ModelInfo?,
         onModelTap: @escaping () -> Void,
         onAttachTap: @escaping () -> Void,
-        codexMode: Bool = false
+        codexMode: Bool = false,
+        limitedLabel: String? = nil
     ) {
         self.agentMode = agentMode
         self.onAgentTap = onAgentTap
@@ -196,6 +203,7 @@ public struct ComposerControlRow: View {
         self.onModelTap = onModelTap
         self.onAttachTap = onAttachTap
         self.codexMode = codexMode
+        self.limitedLabel = limitedLabel
     }
 
     public var body: some View {
@@ -214,7 +222,16 @@ public struct ComposerControlRow: View {
             }
             .buttonStyle(.plain)
 
-            if codexMode {
+            if let limitedLabel {
+                Label(limitedLabel, systemImage: "terminal")
+                    .font(OCTypography.control)
+                    .foregroundColor(OCColor.textSecondary)
+                if let model = selectedModel {
+                    ModelPill(model: model, onTap: onModelTap)
+                } else {
+                    ModelPillPlaceholder(onTap: onModelTap)
+                }
+            } else if codexMode {
                 Label("Codex · App Server", systemImage: "terminal")
                     .font(OCTypography.control)
                     .foregroundColor(OCColor.textSecondary)

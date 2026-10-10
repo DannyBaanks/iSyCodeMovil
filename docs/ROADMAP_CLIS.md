@@ -23,6 +23,13 @@ interrupción e approvals representables. No cuenta como compatibilidad de
 producción ni como implementación de los otros CLIs. El build iOS de esta
 revisión sigue pendiente porque el host de trabajo es Linux y no tiene Xcode.
 
+**Actualización 2026-10-10:** Grok CLI 1.0.50 tiene un adapter experimental
+en 0.5.2. `grok agent serve` se queda en `127.0.0.1` y el
+Bridge publica un proxy WebSocket solo en Tailscale. iOS habla ACP. El
+2026-10-09 un turno de texto pasó por el proxy en loopback y Grok contestó
+`pong`. No se compiló iOS ni se dejó el listener de Tailscale abierto. Los
+otros CLIs del probe no se cablearon.
+
 ## Hitos
 
 ### M0 — Base del Bridge y seguridad inmediata

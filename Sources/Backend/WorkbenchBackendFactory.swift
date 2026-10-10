@@ -30,6 +30,8 @@ public enum WorkbenchBackendFactory {
             return OpenCodeRemoteBackend(pairing: opencodePairing)
         case .codex:
             return CodexRemoteBackend()
+        case .grok:
+            return GrokRemoteBackend()
         case .remote(let remotePairing):
             switch remotePairing.type {
             case .opencode, .openisy:
@@ -50,6 +52,8 @@ public enum WorkbenchBackendFactory {
                 return GeminiRemoteBackend()
             case .codex:
                 throw FactoryError.missingConfiguration("Codex requires a typed Codex pairing.")
+            case .grok:
+                throw FactoryError.missingConfiguration("Grok requires a typed Grok pairing.")
             }
         }
     }
@@ -94,6 +98,8 @@ public enum WorkbenchBackendFactory {
             backendType = .crush
         case "codex":
             backendType = .codex
+        case "grok":
+            backendType = .grok
         case "claude-code":
             backendType = .claudeCode
         case "gemini":
@@ -106,6 +112,13 @@ public enum WorkbenchBackendFactory {
         if backendType == .codex {
             do {
                 return (.codex, .codex(try CodexPairing.parse(value)))
+            } catch {
+                throw FactoryError.invalidPairingLink(error.localizedDescription)
+            }
+        }
+        if backendType == .grok {
+            do {
+                return (.grok, .grok(try GrokPairing.parse(value)))
             } catch {
                 throw FactoryError.invalidPairingLink(error.localizedDescription)
             }
@@ -154,7 +167,7 @@ public enum WorkbenchBackendFactory {
     
     /// Tipos de backend soportados (backends que existen y se conectan)
     public static var supportedBackendTypes: [RemoteBackendType] {
-        [.opencode, .openisy, .codex]
+        [.opencode, .openisy, .codex, .grok]
     }
 
     /// Tipos de backend con stub compilado pero sin transporte implementado

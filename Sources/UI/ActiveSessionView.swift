@@ -11,8 +11,14 @@ public struct ActiveSessionView: View {
         store.backendMode == .remote && sessionState.selectedModel?.route == "codex"
     }
 
+    private var isGrokRemote: Bool {
+        store.backendMode == .remote && sessionState.selectedModel?.route == "grok"
+    }
+
     private var availableSurfaces: [WorkSurface] {
-        isCodexRemote ? [.chat, .files] : WorkSurface.allCases
+        if isGrokRemote { return [.chat] }
+        if isCodexRemote { return [.chat, .files] }
+        return WorkSurface.allCases
     }
     
     // El switch vive en un @ViewBuilder propio: `Group { switch ... }` choca
@@ -71,6 +77,11 @@ public struct ActiveSessionView: View {
 
             if isCodexRemote {
                 CodexCapabilityNotice()
+                    .padding(.horizontal, OCSpacing.contentMargin)
+                    .padding(.bottom, OCSpacing.sm)
+            }
+            if isGrokRemote {
+                GrokCapabilityNotice()
                     .padding(.horizontal, OCSpacing.contentMargin)
                     .padding(.bottom, OCSpacing.sm)
             }
@@ -147,7 +158,7 @@ public struct ActiveSessionView: View {
                             .font(.system(size: 16, weight: .medium))
                     }
 
-                    if sessionState.activeSurface == .files && !isCodexRemote {
+                    if sessionState.activeSurface == .files && !isCodexRemote && !isGrokRemote {
                         Button { Task { await store.loadFiles(path: store.filesPath) } } label: {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 17))
@@ -210,14 +221,14 @@ public struct ActiveSessionView: View {
             store.cancelCurrentRun()
         }
         .onChange(of: sessionState.activeSurface) { newSurface in
-            if newSurface == .files && !isCodexRemote {
+            if newSurface == .files && !isCodexRemote && !isGrokRemote {
                 Task { await store.loadFiles() }
-            } else if newSurface == .review, let sessionID = sessionState.currentSession?.id {
+            } else if newSurface == .review, let sessionID = sessionState.currentSession?.id, !isGrokRemote {
                 Task { await store.loadDiff(sessionID: sessionID) }
             }
         }
         .onAppear {
-            if store.backendMode == .remote, sessionState.selectedModel?.route == "codex" {
+            if isCodexRemote || isGrokRemote {
                 sessionState.activeSurface = .chat
             }
         }
@@ -1165,6 +1176,41 @@ struct WorkSurfaceSwitcher: View {
                 .contentShape(Rectangle())
             }
         }
+    }
+}
+
+private struct GrokCapabilityNotice: View {
+    var body: some View {
+        HStack(spacing: OCSpacing.sm) {
+            Image(systemName: "sparkle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(OCColor.warning)
+
+            Text("EXPERIMENTAL")
+                .font(OCTypography.controlMono)
+                .foregroundColor(OCColor.warning)
+
+            Text("·")
+                .foregroundColor(OCColor.textFaint)
+
+            Text("Solo el chat. Las herramientas corren en tu computadora.")
+                .font(OCTypography.metaMono)
+                .foregroundColor(OCColor.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, OCSpacing.md)
+        .padding(.vertical, OCSpacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Capsule()
+                .fill(OCColor.bgBase)
+                .overlay(Capsule().stroke(OCColor.warning.opacity(0.18), lineWidth: 1))
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Conexión experimental de Grok. Solo el chat. Las herramientas corren en tu computadora.")
     }
 }
 

@@ -3,8 +3,23 @@ import Foundation
 protocol LocalInferenceEngine: Sendable {
     func load(modelURL: URL, contextTokens: Int) async throws
     func generate(messages: [ModelMessage], options: GenerationOptions) async throws -> String
+    func generateMeasured(messages: [ModelMessage], options: GenerationOptions) async throws -> LocalGeneration
     func cancel() async
     func unload() async
+}
+
+extension LocalInferenceEngine {
+    func generateMeasured(messages: [ModelMessage], options: GenerationOptions) async throws -> LocalGeneration {
+        let text = try await generate(messages: messages, options: options)
+        return LocalGeneration(text: text, stats: LocalGenerationStats(
+            promptTokens: 0,
+            generatedTokens: 0,
+            prefillMilliseconds: 0,
+            generateMilliseconds: 0,
+            templateSource: .fallbackChatML,
+            stoppedAtEndOfTurn: true
+        ))
+    }
 }
 
 final class LlamaCppInferenceEngine: LocalInferenceEngine, @unchecked Sendable {
@@ -74,7 +89,7 @@ final class LlamaCppInferenceEngine: LocalInferenceEngine, @unchecked Sendable {
     /// the on-device benchmark. Message contents are never logged.
     func generateMeasured(messages: [ModelMessage], options: GenerationOptions) async throws -> LocalGeneration {
         let chat = Self.chatMessages(messages)
-        let maxTokens = min(max(options.maxTokens ?? 256, 1), 256)
+        let maxTokens = min(max(options.maxTokens ?? 512, 1), 512)
         let templateOverride = chatTemplateOverride
         // temperature 0 = greedy (benchmark, classifier); otherwise sample with a
         // repetition penalty so small models do not loop.

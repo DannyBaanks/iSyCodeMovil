@@ -380,20 +380,22 @@ public struct SessionListView: View {
             prompt: "Search sessions"
         )
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            Button { showNewSessionSheet = true } label: {
-                Label("Nueva sesión", systemImage: "plus")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(OCColor.bgDeep)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(IysThemePreferences.active.accent.gradient)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+            if !store.sessions.isEmpty {
+                Button { showNewSessionSheet = true } label: {
+                    Label("Nueva sesión", systemImage: "plus")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(OCColor.bgDeep)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(IysThemePreferences.active.accent.gradient)
+                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, OCSpacing.contentMargin)
+                .padding(.top, OCSpacing.sm)
+                .padding(.bottom, OCSpacing.sm)
+                .background(OCColor.bgDeep.opacity(0.96))
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, OCSpacing.contentMargin)
-            .padding(.top, OCSpacing.sm)
-            .padding(.bottom, OCSpacing.sm)
-            .background(OCColor.bgDeep.opacity(0.96))
         }
         .sheet(isPresented: $showNewSessionSheet) {
             NewSessionSheet(project: project) { title in
@@ -433,9 +435,20 @@ public struct SessionListView: View {
                     .foregroundColor(OCColor.textFaint)
                     .multilineTextAlignment(.center)
             }
-            
+            Button { showNewSessionSheet = true } label: {
+                Label("Iniciar conversación", systemImage: "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(OCColor.bgDeep)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(IysThemePreferences.active.accent.gradient)
+                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, OCSpacing.sm)
         }
         .padding(OCSpacing.huge)
+        .padding(.horizontal, OCSpacing.contentMargin)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .listRowInsets(EdgeInsets())
         .listRowBackground(Color.clear)

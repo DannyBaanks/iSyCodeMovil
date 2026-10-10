@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
+import { assertGrokTransport, startGrokLink } from "./grok_bridge.mjs";
 
 const RUNTIMES = {
     opencode: {
@@ -38,6 +39,15 @@ const RUNTIMES = {
     },
     "claude-code": { label: "Claude Code", check: () => false, args: () => [], executable: "claude-code", shell: false, cwd: (dir) => dir, env: () => ({}), notImplemented: "Claude Code server mode not yet available." },
     gemini: { label: "Gemini", check: () => false, args: () => [], executable: "gemini", shell: false, cwd: (dir) => dir, env: () => ({}), notImplemented: "Gemini CLI server mode not yet available." },
+    grok: {
+        label: "Grok",
+        check: () => true,
+        args: () => [],
+        executable: "grok",
+        shell: false,
+        cwd: (dir) => dir,
+        env: (env) => env,
+    },
 };
 
 function readDeclaredMethods(schemaPath) {
@@ -133,7 +143,7 @@ export function resolvePairingHost(explicitHost, exec = execSync) {
 export function parseLinkOptions(args, env = process.env) {
     const command = args[0] ?? "link";
     if (command !== "link") {
-        throw new Error("usage: iyscodemovil link [--runtime opencode|openisy|crush|codex|claude-code|gemini] [--port 4096] [--directory PATH] [--host LAN|tailscale|IP] [--openisy-root PATH]");
+        throw new Error("usage: iyscodemovil link [--runtime opencode|openisy|crush|codex|claude-code|gemini|grok] [--port 4096] [--directory PATH] [--host LAN|tailscale|IP] [--openisy-root PATH]");
     }
 
     const values = new Map();
@@ -178,6 +188,9 @@ export function runtimeCommand(options, platform = process.platform, env = proce
         if (options.runtime === "openisy") throw new Error(`OpenISy entrypoint not found under ${options.openisyRoot}`);
         throw new Error(`${rt.label} not available. Make sure it's installed and in PATH.`);
     }
+    if (options.runtime === "grok") {
+        throw new Error("Grok is started by the Tailscale proxy, not as a direct serve command.");
+    }
     if (options.runtime === "codex" && (!host || !codexInfo?.tokenSHA256)) {
         throw new Error("Codex runtime requires a resolved Tailscale host and discovered protocol/auth settings.");
     }
@@ -192,7 +205,7 @@ export function runtimeCommand(options, platform = process.platform, env = proce
 
 export function childEnvironment(env, username, password, runtimeEnv = {}) { return { ...env, ...runtimeEnv, OPENCODE_SERVER_USERNAME: username, OPENCODE_SERVER_PASSWORD: password }; }
 
-export function main(args = process.argv.slice(2), env = process.env) {
+export async function main(args = process.argv.slice(2), env = process.env) {
     let options;
     let runtime;
     let codexInfo;
@@ -205,6 +218,14 @@ export function main(args = process.argv.slice(2), env = process.env) {
                 throw new Error("Codex App Server uses unencrypted ws:// transport. For remote use, select the encrypted Tailscale VPN with --host tailscale.");
             }
             codexInfo = inspectCodex();
+        }
+        if (options.runtime === "grok") {
+            assertGrokTransport(resolvedHost);
+            return await startGrokLink({
+                host: resolvedHost.host,
+                port: options.port,
+                directory: options.directory,
+            });
         }
         runtime = runtimeCommand(options, process.platform, env, resolvedHost.host, codexInfo);
     } catch (error) {
@@ -283,6 +304,10 @@ export function main(args = process.argv.slice(2), env = process.env) {
 }
 
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
-    const result = main();
-    if (typeof result === "number") process.exitCode = result;
+    Promise.resolve(main()).then((result) => {
+        if (typeof result === "number") process.exitCode = result;
+    }).catch((error) => {
+        console.error(error?.message ?? error);
+        process.exitCode = 1;
+    });
 }
