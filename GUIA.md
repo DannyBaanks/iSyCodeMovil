@@ -139,6 +139,37 @@ El runner de acciones imprime "Node.js 20 is deprecated..." — es ruido de
 
 ---
 
+## Grok en tu computadora (experimental)
+
+NO PROBADO de punta a punta en el iPhone: esta máquina no tiene Xcode, y el
+enlace de Tailscale no se dejó abierto. El IPA que ya está en Descargas se
+compiló antes de este adaptador, así que ese build no sabe abrir `grok://`.
+
+El comando de GitHub (`npx ... #main`) todavía no trae este adaptador. En este
+checkout, desde la carpeta del proyecto:
+
+```bash
+node Bridge/bin/iyscodemovil.mjs link --runtime grok --host tailscale --directory "$PWD"
+```
+
+Pega en el iPhone la línea `grok://pair?...`. El iPhone no habla con el
+`localhost` del teléfono: entra por la IP de Tailscale. Grok escucha solo en
+`127.0.0.1` de la computadora. El enlace lleva un token de la app. La clave
+interna de Grok no sale de la computadora. No reenvíes el enlace.
+
+Ctrl+C cierra el puente y Grok. Para volver a entrar hace falta un enlace
+nuevo. No uses `--always-approve`.
+
+Lo que sí se probó aquí, el 2026-10-09: `grok agent serve` en loopback responde
+ACP (`initialize`, `session/new`, `session/list`). El proxy del Bridge en
+`127.0.0.1` rechaza un WebSocket sin token. Con el token, el mismo proxy
+reenvió un turno de texto y Grok contestó `pong` (`stopReason` end_turn, sin
+herramientas). `session/list` devuelve una ventana global; la app se queda
+solo con la carpeta emparejada. El historial no se carga. Archivos, terminal,
+renombrar y borrar no están en este adaptador.
+
+---
+
 ## Qué es real y qué no
 
 - El servidor es **el OpenCode real** (1.18.31 probado): modelos, tools,
