@@ -117,9 +117,10 @@ workspace, and start the Bridge from this checkout:
 node Bridge/bin/iyscodemovil.mjs link --runtime grok --host tailscale --directory "$PWD"
 ```
 
-The published `npx github:DannyBaanks/IysCodeMovil#main` command does not include
-this adapter until the change is pushed. Paste the printed `grok://pair?...`
-link into ISyCodeMovil. Treat it as a secret. iOS stores the token in Keychain.
+From a published checkout the same command is
+`npx --yes github:DannyBaanks/IysCodeMovil#main link --runtime grok --host tailscale`.
+Paste the printed `grok://pair?...` link into ISyCodeMovil 0.5.2 or newer.
+Treat it as a secret. iOS stores the token in Keychain.
 Stopping the terminal stops both the proxy and `grok agent serve`. Pair again
 for a new token. Do not pass `--always-approve`.
 
