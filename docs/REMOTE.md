@@ -13,7 +13,7 @@ Requirements on the computer:
 From the project you want OpenCode to control:
 
 ```bash
-npx --yes github:DannyBaanks/IysCodeMovil#main link
+npx --yes github:DannyBaanks/iSyCodeMovil#main link
 ```
 
 The command:
@@ -31,20 +31,20 @@ OpenISy keeps the OpenCode headless HTTP/SSE contract consumed by the iOS app.
 Point the bridge at the private OpenISy checkout explicitly:
 
 ```bash
-npx --yes github:DannyBaanks/IysCodeMovil#main link --runtime openisy --openisy-root "/path/to/OpenISy"
+npx --yes github:DannyBaanks/iSyCodeMovil#main link --runtime openisy --openisy-root "/path/to/OpenISy"
 ```
 
 On Windows:
 
 ```powershell
-npx --yes github:DannyBaanks/IysCodeMovil#main link --runtime openisy --openisy-root "C:\path with spaces\OpenISy"
+npx --yes github:DannyBaanks/iSyCodeMovil#main link --runtime openisy --openisy-root "C:\path with spaces\OpenISy"
 ```
 
 You can set `OPENISY_ROOT` instead of passing `--openisy-root`:
 
 ```powershell
 $env:OPENISY_ROOT="C:\path\to\OpenISy"
-npx --yes github:DannyBaanks/IysCodeMovil#main link --runtime openisy
+npx --yes github:DannyBaanks/iSyCodeMovil#main link --runtime openisy
 ```
 
 The bridge validates `packages/opencode/src/index.ts` and launches OpenISy with Bun. The pairing URL and iOS behavior remain unchanged: the selected project travels in the `x-opencode-directory` header, and session IDs come directly from OpenISy's `/session` API.
@@ -73,7 +73,7 @@ On the computer, install Codex CLI and Tailscale, sign in to Codex, move to the
 workspace, and start the Bridge:
 
 ```bash
-npx --yes github:DannyBaanks/IysCodeMovil#main link --runtime codex --host tailscale --directory "$PWD"
+npx --yes github:DannyBaanks/iSyCodeMovil#main link --runtime codex --host tailscale --directory "$PWD"
 ```
 
 Paste the printed `codex://pair?...` link into ISyCodeMovil. The link contains a
@@ -118,7 +118,7 @@ node Bridge/bin/iyscodemovil.mjs link --runtime grok --host tailscale --director
 ```
 
 From a published checkout the same command is
-`npx --yes github:DannyBaanks/IysCodeMovil#main link --runtime grok --host tailscale`.
+`npx --yes github:DannyBaanks/iSyCodeMovil#main link --runtime grok --host tailscale`.
 Paste the printed `grok://pair?...` link into ISyCodeMovil 0.5.2 or newer.
 Treat it as a secret. iOS stores the token in Keychain.
 Stopping the terminal stops both the proxy and `grok agent serve`. Pair again

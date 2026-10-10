@@ -11,7 +11,7 @@
 En la carpeta del proyecto que quieres que OpenCode controle:
 
 ```bash
-npx --yes github:DannyBaanks/IysCodeMovil#main link
+npx --yes github:DannyBaanks/iSyCodeMovil#main link
 ```
 
 Eso es todo en el escritorio. El resto es pegar el link en el iPhone.
@@ -148,7 +148,7 @@ o con el comando publicado:
 ```bash
 node Bridge/bin/iyscodemovil.mjs link --runtime grok --host tailscale --directory "$PWD"
 # o, desde cualquier carpeta, con el main publicado:
-npx --yes github:DannyBaanks/IysCodeMovil#main link --runtime grok --host tailscale
+npx --yes github:DannyBaanks/iSyCodeMovil#main link --runtime grok --host tailscale
 ```
 
 Pega en el iPhone la línea `grok://pair?...`. El iPhone no habla con el

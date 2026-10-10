@@ -185,7 +185,7 @@ Como esas apps que te muestran un informe cuando algo falla. Antes de cada paso 
 En tu computadora (Node.js 18+ y OpenCode instalados), entra a la carpeta del proyecto y ejecuta:
 
 ```bash
-npx --yes github:DannyBaanks/IysCodeMovil#main link
+npx --yes github:DannyBaanks/iSyCodeMovil#main link
 ```
 
 Copia el enlace que aparece, abre **Conectar con Bridge anterior** en la app y pégalo. Deja la terminal abierta mientras lo uses.

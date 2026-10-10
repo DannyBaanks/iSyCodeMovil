@@ -72,7 +72,7 @@ public struct ConnectionView: View {
                     label("CONECTAR CON BRIDGE ANTERIOR")
                     Spacer()
                     Button {
-                        UIPasteboard.general.string = "npx --yes github:DannyBaanks/IysCodeMovil link"
+                        UIPasteboard.general.string = "npx --yes github:DannyBaanks/iSyCodeMovil#main link"
                     } label: {
                         Text("Copiar")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -84,7 +84,7 @@ public struct ConnectionView: View {
                     .buttonStyle(.plain)
                     .padding(.bottom, 8)
                 }
-                commandBox("npx --yes github:DannyBaanks/IysCodeMovil link")
+                commandBox("npx --yes github:DannyBaanks/iSyCodeMovil#main link")
                 
                 Text("Ejecuta este comando en la carpeta del proyecto, en el equipo donde ya tienes ISyCode. Después pega aquí el enlace que aparezca.")
                     .font(.system(size: 12, design: .monospaced))
@@ -337,7 +337,7 @@ struct ReconnectSheet: View {
                     label("LINK DESKTOP")
                     Spacer()
                     Button {
-                        UIPasteboard.general.string = "npx --yes github:DannyBaanks/IysCodeMovil link"
+                        UIPasteboard.general.string = "npx --yes github:DannyBaanks/iSyCodeMovil#main link"
                     } label: {
                         Text("copy")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -349,7 +349,7 @@ struct ReconnectSheet: View {
                     .buttonStyle(.plain)
                     .padding(.bottom, 8)
                 }
-                commandBox("npx --yes github:DannyBaanks/IysCodeMovil link")
+                commandBox("npx --yes github:DannyBaanks/iSyCodeMovil#main link")
                 
                 Text("Run it in the project directory on the computer that already has IysCode installed. Paste the pairing link printed by the command.")
                     .font(.system(size: 12, design: .monospaced))

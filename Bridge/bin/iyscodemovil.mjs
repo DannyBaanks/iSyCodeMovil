@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync, execSync, spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -303,7 +303,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     return child;
 }
 
-if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+const invokedDirectly = process.argv[1] && pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url;
+if (invokedDirectly) {
     Promise.resolve(main()).then((result) => {
         if (typeof result === "number") process.exitCode = result;
     }).catch((error) => {
