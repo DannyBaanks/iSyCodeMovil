@@ -34,7 +34,7 @@ Dejaste a un agente trabajando en tu computadora y saliste de casa. Abres **iSyC
 | 🩺 **Si se cierra, te dice por qué** | Al volver a abrirla sabes en qué estaba, con qué modelo y si fue por falta de memoria. |
 | 💾 **No vuelvas a descargar** | Guarda tus modelos en Archivos y recupéralos al reinstalar la app. |
 | 🧪 **Sandbox en el bolsillo** | Un agente que trabaja con los archivos privados de la app o con la carpeta que tú elijas. |
-| 🎨 **Tu estilo** | Temas Consola y Premium. |
+| 🎨 **Tu estilo** | Temas ISyCode (coral) y Violeta, la misma noche índigo del escritorio. |
 
 > iSyCode Móvil es el compañero de bolsillo de **iSyCode**, la experiencia de escritorio que estamos por publicar.
 
@@ -271,6 +271,15 @@ Más documentación:
 - [Propuesta MCP](docs/CHATGPT_MCP.md)
 
 </details>
+
+## Archivos añadidos al repositorio (2026-10-31)
+
+El commit `8ec1d0b` versiona el backend remoto de Grok que estaba sin control de versiones:
+
+- `Sources/Backend/Remote/GrokACPClient.swift` y `GrokRemoteBackend.swift`.
+- `Sources/Remote/GrokPairing.swift` y `GrokPairingStore.swift` (emparejamiento y su almacenamiento).
+- `Bridge/bin/grok_bridge.mjs` — puente del lado del host.
+
 
 ## Licencia
 
