@@ -12,7 +12,7 @@
 [![22 modelos locales](https://img.shields.io/badge/GUS-22%20modelos%20locales-7c5cff)](#-gus-una-ia-que-vive-en-tu-iphone)
 [![Licencia MIT](https://img.shields.io/badge/licencia-MIT-blue)](./LICENSE)
 
-[Instalar](#-instálala) · [GUS sin internet](#-gus-una-ia-que-vive-en-tu-iphone) · [Conectar tu compu](#-conecta-tu-computadora) · [Si algo no jala](#-si-algo-no-jala)
+[Instalar](#-instálala) · [GUS sin internet](#-gus-una-ia-que-vive-en-tu-iphone) · [Conectar tu compu](#-conecta-tu-computadora) · [Sandbox Docker](#-sandbox-docker-en-tu-computadora) · [Si algo no jala](#-si-algo-no-jala)
 
 </div>
 
@@ -34,6 +34,7 @@ Dejaste a un agente trabajando en tu computadora y saliste de casa. Abres **iSyC
 | 🩺 **Si se cierra, te dice por qué** | Al volver a abrirla sabes en qué estaba, con qué modelo y si fue por falta de memoria. |
 | 💾 **No vuelvas a descargar** | Guarda tus modelos en Archivos y recupéralos al reinstalar la app. |
 | 🧪 **Sandbox en el bolsillo** | Un agente que trabaja con los archivos privados de la app o con la carpeta que tú elijas. |
+| 📦 **Sandbox Docker en tu compu** | El agente piensa en el iPhone y trabaja en un contenedor aislado de tu computadora. Al terminar, tu computadora abre el pull request. |
 | 🎨 **Tu estilo** | Temas Consola y Premium. |
 
 > iSyCode Móvil es el compañero de bolsillo de **iSyCode**, la experiencia de escritorio que estamos por publicar.
@@ -62,6 +63,7 @@ Dejaste a un agente trabajando en tu computadora y saliste de casa. Abres **iSyC
 | Probar la app sin nada más | **Entorno de prueba → guion de demo**. Es offline y no pide clave. |
 | Una IA que funcione sin internet | **Entorno de prueba → GUS local**, y descargo un modelo. |
 | Ver a mis agentes de la compu | **Conectar**, y pego el enlace del Bridge ([ver cómo](#-conecta-tu-computadora)). |
+| Que el agente trabaje en un repo y abra el PR | Configuro un modelo en **Entorno de prueba** y pego el enlace `isysandbox://` ([ver cómo](#-sandbox-docker-en-tu-computadora)). |
 
 **3. Conversa.** Abre una sesión, mira lo que hace el agente y responde cuando te pida permiso.
 
@@ -196,19 +198,62 @@ Chat, streaming y aprobaciones por Tailscale. Ver la [guía remota](docs/REMOTE.
 
 ### Sandbox Docker (experimental)
 
-El agente piensa en el iPhone y trabaja en un contenedor de tu computadora: sin red, sin acceso a tu disco y sin credenciales. Cuando termina, tu computadora abre el pull request en una rama `movilclaw/…`. Necesita Docker y Tailscale:
-
-```bash
-npx --yes github:DannyBaanks/iSyCodeMovil#main link --runtime sandbox --host tailscale
-```
-
-Pega en la app la línea `isysandbox://pair?...`. Ver la [guía del sandbox](docs/SANDBOX.md).
+El agente del iPhone trabaja en un contenedor de tu computadora y abre pull requests. Tiene [su propia sección](#-sandbox-docker-en-tu-computadora).
 
 ### Host de iSyCode (en camino)
 
 El emparejamiento con PIN de 6 dígitos ya funciona. Las sesiones llegan con la versión de escritorio.
 
 > 🌎 **¿Fuera de casa?** Instala [Tailscale](https://tailscale.com) en la computadora y en el iPhone, y usa su dirección. **No expongas el puerto 4096 a Internet**: el Bridge es para tu red de confianza o una VPN.
+
+---
+
+## 📦 Sandbox Docker en tu computadora
+
+> 🧪 **Experimental.** Viene de [MovilClaw](https://github.com/DannyBaanks/MovilClaw), ahora dentro del Bridge.
+
+Aquí el agente no vive en tu computadora: **piensa en el iPhone** (con GUS o con tu proveedor en la nube) y **trabaja en un contenedor Docker** de tu compu. El contenedor es desechable y está aislado:
+
+```
+iPhone                                Tu computadora
+──────                                ──────────────
+modelo + conversación  ── Tailscale ─►  Bridge (token) ─► sandbox Docker
+                                        │                 sin red · sin tu disco · sin credenciales
+                                        └─ git push + PR con tu cuenta de GitHub
+```
+
+**Necesitas** Docker, Node.js 18+ y [Tailscale](https://tailscale.com) en la computadora y en el iPhone.
+
+**1.** En la carpeta del proyecto:
+
+```bash
+npx --yes github:DannyBaanks/iSyCodeMovil#main link --runtime sandbox --host tailscale
+```
+
+La primera vez construye la imagen del sandbox. Deja la terminal abierta.
+
+**2.** En el iPhone configura un modelo en **Entorno de prueba** (proveedor y clave, o GUS local).
+
+**3.** Abre **Más opciones de conexión**, pega la línea `isysandbox://pair?...` y conecta. La app copia tu carpeta al sandbox y abre la sesión.
+
+Qué puedes hacer desde ahí:
+
+| | |
+|---|---|
+| 🛠️ **Trabajar sin interrupciones** | Leer, buscar, editar, ejecutar comandos y hacer commits no piden permiso: nada sale del contenedor. |
+| 🔀 **Abrir el pull request** | Lo pide el agente (y tú lo apruebas) o lo abres tú desde el panel **Sandbox**. Va a una rama `movilclaw/…`; nunca a `main` y nunca se fusiona solo. |
+| 📤 **Compartir** | La conversación como texto, o el trabajo del sandbox como `.tar.gz`. |
+| ♻️ **Retomar o empezar de cero** | Si vuelves a conectar, la app retoma el sandbox que sigue vivo. Caduca tras 2 h sin uso. |
+
+Lo que conviene saber:
+
+- **Tu cuenta de GitHub no sale de la computadora.** El Bridge usa el token de `gh auth token` (o `GITHUB_TOKEN`); no entra al sandbox ni llega al iPhone. Sin token solo no hay pull requests.
+- **Tus secretos se quedan fuera.** Los `.env`, claves y similares no se copian al sandbox.
+- **No reenvíes el enlace.** Lleva el token que da acceso a los sandboxes de esa terminal. `Ctrl+C` lo invalida y destruye los sandboxes.
+- **El sandbox no tiene internet**, así que no puede instalar dependencias desde dentro.
+- **Lo que el agente lee viaja a tu proveedor de modelo**, igual que en cualquier otra sesión. Con GUS no sale nada, pero los modelos locales pequeños rara vez manejan bien un repositorio.
+
+Todo el detalle, con las garantías y los límites, en la [guía del sandbox](docs/SANDBOX.md).
 
 ---
 
@@ -232,6 +277,7 @@ Tus claves se guardan en el **Keychain** del iPhone. Si eliges un modelo en la n
 | GUS: 22 modelos locales, miniagente de archivos, benchmark e informes de fallos | 🧪 Experimental: runtime y CI en validación; mediciones físicas dependen del modelo/iPhone |
 | OpenCode en tu computadora | ✅ Disponible con el Bridge |
 | Codex en tu computadora | 🧪 Experimental |
+| Sandbox Docker en tu computadora, con pull requests | 🧪 Experimental: el Bridge está probado con Docker real; falta validarlo en un iPhone físico |
 | Host de la TUI de iSyCode | 🚧 En desarrollo: emparejamiento listo, sesiones en camino |
 
 ### ¿El agente puede usar todo mi iPhone?
@@ -252,6 +298,10 @@ No. Empieza en los archivos privados de la app y solo ve una carpeta externa si 
 | GUS tarda mucho en responder | Los modelos grandes van más lentos y el iPhone se calienta. Prueba uno más chico. |
 | `Rate limited` | El proveedor en la nube limitó tus llamadas. Espera un poco y revisa tu cuota. |
 | El sandbox no ve mi carpeta | Vuelve a elegirla desde Archivos dentro de la app. |
+| `Docker is not running` al enlazar el sandbox | Abre Docker en la computadora y vuelve a ejecutar el comando. |
+| El comando del sandbox pide `--host tailscale` | El sandbox solo escucha por Tailscale. Instálalo en la computadora y en el iPhone, y añade `--host tailscale`. |
+| La app rechaza el enlace `isysandbox://` | El enlace caduca al cerrar la terminal. Ejecuta el comando otra vez y pega el nuevo. |
+| El agente no puede abrir el pull request | Inicia sesión en la computadora con `gh auth login`, comprueba que la carpeta tenga un remoto de github.com y vuelve a enlazar. |
 
 ---
 
@@ -271,11 +321,13 @@ open IysCodeMovil.xcodeproj
 
 - **CI:** cada push a `main` compila la app, corre las pruebas en el iOS Simulator, genera las capturas de este README y publica una pre-release con la IPA y sus SHA-256.
 - **Catálogo de GUS:** `Catalog/models.json` es la fuente de verdad. El workflow *GUS model catalog* resuelve cada modelo en Hugging Face, compila el bridge real de la app en Linux y lo prueba con cada GGUF. Para agregar un modelo, sigue [docs/GUS_MARKETPLACE.md](docs/GUS_MARKETPLACE.md).
+- **Bridge:** `npm run test:bridge` corre las pruebas del Bridge y de la pasarela del sandbox; no necesita Docker. El orquestador en `Bridge/sandbox/` es una copia de MovilClaw; sus cambios locales están anotados en [Bridge/sandbox/README.md](Bridge/sandbox/README.md).
 - **Benchmarks:** los reportes se validan con `scripts/benchmarks/validate.py` y se agregan a [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 Más documentación:
 - [Uso detallado](docs/USAGE.md)
 - [Conexión y transporte](docs/REMOTE.md)
+- [Sandbox Docker en la computadora](docs/SANDBOX.md)
 - [Compatibilidad con OpenCode](docs/OPENCODE_COMPAT.md)
 - [Roadmap de runtimes](docs/ROADMAP_CLIS.md)
 - [Propuesta MCP](docs/CHATGPT_MCP.md)
