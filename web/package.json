@@ -1,0 +1,37 @@
+{
+  "name": "isycode-web-panel",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Panel web local de iSyCode Móvil: asistente con Google Workspace, memoria semántica y bitácora. Corre en tu compu, en 127.0.0.1.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "vite build",
+    "start": "NODE_ENV=production tsx server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test server/app.test.ts src/lib/theme.test.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0",
+    "@tailwindcss/vite": "^4.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "d3": "^7.9.0",
+    "express": "^4.21.2",
+    "lucide-react": "^0.546.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.1.0",
+    "tsx": "^4.20.0",
+    "vite": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/d3": "^7.4.3",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.9.0"
+  },
+  "engines": { "node": ">=20" },
+  "license": "MIT"
+}

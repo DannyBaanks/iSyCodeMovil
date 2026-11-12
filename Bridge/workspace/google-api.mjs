@@ -68,6 +68,9 @@ export function driveQuote(text) {
   return `'${String(text).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
 
+/**
+ * @param {{ getAccessToken: () => Promise<string | null>, fetchImpl?: typeof fetch, context?: any, now?: () => Date }} options
+ */
 export function createGoogleClient({ getAccessToken, fetchImpl = fetch, context = null, now = () => new Date() }) {
   async function api(url, { method = "GET", body } = {}) {
     const token = await getAccessToken();

@@ -128,6 +128,9 @@ function listenForCode({ expectedState, timeoutMs }) {
  * Sesión de Google en memoria. Una sola persona (la dueña de la compu) por proceso.
  * `openUrl` es opcional: si se pasa, se llama con la URL de permisos (p. ej. para abrir el navegador).
  */
+/**
+ * @param {{ client?: { clientId: string, clientSecret?: string } | null, fetchImpl?: typeof fetch, now?: () => number, loginTimeoutMs?: number }} [options]
+ */
 export function createGoogleSession({ client, fetchImpl = fetch, now = () => Date.now(), loginTimeoutMs = LOGIN_TTL_MS } = {}) {
   let tokens = null; // { accessToken, refreshToken, expiresAt, scopes }
   let profile = null;
