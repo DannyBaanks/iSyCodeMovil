@@ -17,6 +17,11 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     public var usesLiveModel: Bool { providerID != "scripted" }
     private var liveAnswerID: String?
     private var toolExecutor: NativeCapabilityToolExecutor?
+    /// When set, the agent's tools run in a Docker sandbox on the user's computer
+    /// instead of the iPhone workspace. The model and the conversation stay here.
+    private var sandboxExecutor: SandboxToolExecutor?
+    private var sandboxProjectName: String?
+    private var sandboxProjectPath: String?
     private var boundSessionID: String?
     private var runningTask: Task<Void, Never>?
     private var permissionWaiters: [String: CheckedContinuation<PermissionResponse.Decision, Never>] = [:]
@@ -56,6 +61,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         boundSessionID = nil
         activeModelName = nil
         toolExecutor = nil
+        sandboxExecutor = nil
         workspace = nil
         persistence = nil
         currentSessionIDStorage = nil
@@ -87,6 +93,34 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             throw error
         }
     }
+
+    /// Points the agent's tools at a sandbox on the computer. The running loop is
+    /// dropped so the next prompt is built with the sandbox tools and prompt.
+    public func attachSandbox(_ executor: SandboxToolExecutor, projectName: String, projectPath: String) {
+        failPendingPermissions()
+        runningTask?.cancel()
+        runningTask = nil
+        sandboxExecutor = executor
+        sandboxProjectName = projectName
+        sandboxProjectPath = projectPath
+        agentLoop = nil
+        boundSessionID = nil
+    }
+
+    /// Back to the iPhone workspace tools.
+    public func detachSandbox() {
+        guard sandboxExecutor != nil else { return }
+        failPendingPermissions()
+        runningTask?.cancel()
+        runningTask = nil
+        sandboxExecutor = nil
+        sandboxProjectName = nil
+        sandboxProjectPath = nil
+        agentLoop = nil
+        boundSessionID = nil
+    }
+
+    public var isUsingSandbox: Bool { sandboxExecutor != nil }
 
     /// Loads the selected provider when its key exists, then falls back to any
     /// configured supported provider. No key keeps the offline demo available.
@@ -253,13 +287,14 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         failPendingPermissions()
         runningTask?.cancel()
         runningTask = nil
+        let activeExecutor: any ToolExecutor = sandboxExecutor ?? exec
         let loop = AgentLoop(context: AgentContext(
             conversationId: sessionID,
             workspace: ws,
             persistence: ps,
             modelProvider: provider,
             modelName: modelName,
-            toolExecutor: exec,
+            toolExecutor: activeExecutor,
             systemPrompt: systemPromptText(),
             maxTurns: 12,
             permissionHandler: { [weak self] request in
@@ -301,15 +336,15 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     }
     
     private func systemPromptText() -> String {
-        GUSMobileRole.mobile.systemPrompt
+        sandboxExecutor?.systemPrompt ?? GUSMobileRole.mobile.systemPrompt
     }
     
     public func listProjects() async throws -> [Project] {
         guard let ws = workspace else { throw WorkbenchError.notConnected }
         let project = Project(
             id: "native:\(ws.rootURL.lastPathComponent)",
-            name: "iOS Sandbox",
-            path: ws.rootURL.path,
+            name: sandboxProjectName.map { "\($0) · sandbox" } ?? "iOS Sandbox",
+            path: sandboxProjectPath ?? ws.rootURL.path,
             avatarColor: .blue,
             sessionCount: 0
         )
@@ -468,6 +503,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     }
     
     public func listFiles(path: String) async throws -> [WorkbenchFileNode] {
+        if let sandboxExecutor { return try await sandboxExecutor.listFiles(path: path) }
         guard let ws = workspace else { throw WorkbenchError.notConnected }
         let items = try await ws.listDirectory(at: path)
         return items.map { item in
@@ -483,6 +519,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     }
     
     public func fileContent(path: String) async throws -> WorkbenchFileContent {
+        if let sandboxExecutor { return try await sandboxExecutor.fileContent(path: path) }
         guard let ws = workspace else { throw WorkbenchError.notConnected }
         let data = try await ws.readFile(at: path)
         return WorkbenchFileContent(path: path, content: String(data: data, encoding: .utf8) ?? "", mimeType: nil, encoding: "utf-8")
@@ -493,6 +530,12 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     }
     
     public func runShell(command: String, agent: String?) async throws -> ShellResult {
+        if let sandboxExecutor {
+            let output = try await sandboxExecutor.shell(command)
+            return ShellResult(sessionID: currentSessionIDStorage ?? "", messageID: "", parts: [
+                RemotePart(id: UUID().uuidString, messageID: nil, kind: .text, text: output, tool: nil, callID: nil, status: nil, input: [:], output: nil, error: nil)
+            ])
+        }
         throw WorkbenchError.unsupportedFeature("Shell requires remote OpenCode server")
     }
     
