@@ -33,7 +33,7 @@ public struct MobileHostPairingSection: View {
                 }
                 Spacer()
                 if hostStore.credential != nil {
-                    statusBadge(heartbeatLabel)
+                    statusBadge(heartbeatLabel, isHealthy: hostStore.heartbeatState == .connected)
                 }
             }
 
@@ -91,7 +91,7 @@ public struct MobileHostPairingSection: View {
             }
 
             Button {
-                Task { await hostStore.pair(baseURL: hostURL, code: pairingCode) }
+                Task { await hostStore.pair(baseURL: trimmedHostURL, code: pairingCode) }
             } label: {
                 HStack(spacing: 8) {
                     if hostStore.isPairing {
@@ -109,8 +109,14 @@ public struct MobileHostPairingSection: View {
                 .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
             }
             .buttonStyle(.plain)
-            .disabled(hostStore.isPairing || pairingCode.count != 6 || hostURL.isEmpty)
-            .opacity(hostStore.isPairing || pairingCode.count != 6 || hostURL.isEmpty ? 0.55 : 1)
+            .disabled(!canPair)
+            .opacity(canPair ? 1 : 0.55)
+
+            if !hostStore.isPairing, !trimmedHostURL.isEmpty, pairingCode.count != 6 {
+                Text("Faltan \(6 - pairingCode.count) dígitos del PIN")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(OCColor.textFaint)
+            }
 
             HStack(alignment: .top, spacing: 7) {
                 Image(systemName: "lock.shield")
@@ -127,6 +133,14 @@ public struct MobileHostPairingSection: View {
                     .foregroundColor(OCColor.textSecondary)
             }
         }
+    }
+
+    private var trimmedHostURL: String {
+        hostURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canPair: Bool {
+        !hostStore.isPairing && pairingCode.count == 6 && !trimmedHostURL.isEmpty
     }
 
     private func inputField<Field: View>(icon: String, @ViewBuilder field: () -> Field) -> some View {
@@ -146,7 +160,7 @@ public struct MobileHostPairingSection: View {
 
     private func pairedCard(_ credential: MobileHostCredential) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            connectionRow("Host", value: hostStore.hostLiveness.rawValue.capitalized, icon: "desktopcomputer")
+            connectionRow("Equipo", value: livenessLabel, icon: "desktopcomputer")
             connectionRow("Este iPhone", value: heartbeatLabel.capitalized, icon: "iphone")
             connectionRow("Transporte", value: URLComponents(string: credential.baseURL)?.scheme?.uppercased() ?? "HTTPS", icon: "lock.fill")
             connectionRow("Key ID", value: credential.keyID, icon: "key.fill")
@@ -193,15 +207,24 @@ public struct MobileHostPairingSection: View {
         }
     }
 
-    private func statusBadge(_ rawValue: String) -> some View {
-        Text(rawValue.uppercased())
+    private func statusBadge(_ label: String, isHealthy: Bool) -> some View {
+        Text(label.uppercased())
             .font(.system(size: 8, weight: .semibold, design: .monospaced))
             .tracking(0.6)
-            .foregroundColor(rawValue == MobileHeartbeatState.connected.rawValue ? OCColor.success : OCColor.warning)
+            .foregroundColor(isHealthy ? OCColor.success : OCColor.warning)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(OCColor.bgLayer1)
             .clipShape(Capsule())
+    }
+
+    private var livenessLabel: String {
+        switch hostStore.hostLiveness {
+        case .unknown: return "Sin comprobar"
+        case .checking: return "Comprobando…"
+        case .alive: return "Disponible"
+        case .unavailable: return "No disponible"
+        }
     }
 
     private var heartbeatLabel: String {

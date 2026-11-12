@@ -92,7 +92,7 @@ public struct ProjectListContent: View {
     
     public var body: some View {
         List {
-            if store.projects.isEmpty {
+            if filteredProjects.isEmpty {
                 emptyState
             } else {
                 Section {
@@ -125,6 +125,7 @@ public struct ProjectListContent: View {
                     Image(systemName: "gearshape")
                         .font(.system(size: 17))
                 }
+                .accessibilityLabel("Ajustes")
             }
         }
         .toolbarBackground(.visible, for: .navigationBar)
@@ -164,7 +165,7 @@ public struct ProjectListContent: View {
 
     private var emptyState: some View {
         VStack(spacing: OCSpacing.xl) {
-            Image(systemName: "folder.badge.plus")
+            Image(systemName: searchText.isEmpty ? "folder.badge.plus" : "magnifyingglass")
                 .font(.system(size: 48, weight: .light))
                 .foregroundColor(OCColor.iconMuted)
             
@@ -175,8 +176,8 @@ public struct ProjectListContent: View {
                 
                 Text(searchText.isEmpty
                      ? (store.backendMode == .remote
-                        ? "Conecta un servidor OpenCode para ver sus proyectos."
-                        : "Inicia el entorno nativo para crear un espacio de trabajo.")
+                        ? "Tu equipo todavía no publicó proyectos. Abre uno allí y vuelve a entrar."
+                        : "El entorno de prueba aún no tiene un espacio de trabajo.")
                      : "Prueba con otro nombre o ruta.")
                     .font(OCTypography.meta)
                     .foregroundColor(OCColor.textFaint)
@@ -252,6 +253,7 @@ public struct SessionRow: View {
                     Text(session.timestamp, style: .relative)
                         .font(OCTypography.metaMono)
                         .foregroundColor(OCColor.textFaint)
+                        .lineLimit(1)
                     
                     if session.isDirty {
                         Circle()
@@ -270,8 +272,12 @@ public struct SessionRow: View {
         .buttonStyle(.plain)
         .contextMenu {
             if showsManagementActions {
-                Button("Rename", action: onRename)
-                Button("Delete", role: .destructive, action: onDelete)
+                Button(action: onRename) {
+                    Label("Renombrar", systemImage: "pencil")
+                }
+                Button(role: .destructive, action: onDelete) {
+                    Label("Eliminar", systemImage: "trash")
+                }
             }
         }
     }
@@ -303,6 +309,7 @@ public struct SessionListView: View {
     
     public var body: some View {
         List {
+            if !filteredSessions.isEmpty {
             Section {
                 ForEach(filteredSessions) { session in
                     SessionRow(
@@ -322,19 +329,19 @@ public struct SessionListView: View {
                     .listRowInsets(EdgeInsets(top: 5, leading: OCSpacing.contentMargin, bottom: 5, trailing: OCSpacing.contentMargin))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if store.supportsSessionManagement {
                             Button(role: .destructive) {
                                 sessionToDelete = session
                                 showDeleteConfirm = true
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                Label("Eliminar", systemImage: "trash")
                             }
                         }
                     }
                 }
             } header: {
-                Text("SESSIONS")
+                Text("SESIONES")
                     .font(OCTypography.sectionLabel)
                     .foregroundColor(OCColor.textFaint)
                     .padding(.horizontal, OCSpacing.contentMargin)
@@ -342,9 +349,12 @@ public struct SessionListView: View {
                     .padding(.bottom, OCSpacing.xs)
                     .textCase(nil)
             }
-            
+            }
+
             if store.sessions.isEmpty {
                 emptyState
+            } else if filteredSessions.isEmpty {
+                noResultsState
             }
         }
         .listStyle(.plain)
@@ -363,12 +373,14 @@ public struct SessionListView: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 17, weight: .semibold))
                 }
+                .accessibilityLabel("Proyectos")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showNewSessionSheet = true } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 17, weight: .semibold))
                 }
+                .accessibilityLabel("Nueva sesión")
             }
         }
         .toolbarBackground(.visible, for: .navigationBar)
@@ -377,7 +389,7 @@ public struct SessionListView: View {
         .searchable(
             text: $searchText,
             placement: .navigationBarDrawer(displayMode: .automatic),
-            prompt: "Search sessions"
+            prompt: "Buscar sesiones"
         )
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if !store.sessions.isEmpty {
@@ -409,13 +421,13 @@ public struct SessionListView: View {
                 Task { await store.renameSession(session, title: newTitle) }
             }
         }
-        .alert("Delete Session", isPresented: $showDeleteConfirm, presenting: sessionToDelete) { session in
-            Button("Delete", role: .destructive) {
+        .alert("Eliminar sesión", isPresented: $showDeleteConfirm, presenting: sessionToDelete) { session in
+            Button("Eliminar", role: .destructive) {
                 Task { await store.deleteSession(session) }
             }
-            Button("Cancel", role: .cancel) { sessionToDelete = nil }
+            Button("Cancelar", role: .cancel) { sessionToDelete = nil }
         } message: { session in
-            Text("Delete this conversation? This action cannot be undone.")
+            Text("Se eliminará «\(session.title)». Esta acción no se puede deshacer.")
         }
     }
     
@@ -426,11 +438,11 @@ public struct SessionListView: View {
                 .foregroundColor(OCColor.iconMuted)
             
             VStack(spacing: OCSpacing.xs) {
-                Text("No Sessions")
+                Text("Aún no hay sesiones")
                     .font(OCTypography.bodyStrong)
                     .foregroundColor(OCColor.textPrimary)
                 
-                Text("Create a session to start working")
+                Text("Crea una sesión para empezar a trabajar en este proyecto.")
                     .font(OCTypography.meta)
                     .foregroundColor(OCColor.textFaint)
                     .multilineTextAlignment(.center)
@@ -455,34 +467,65 @@ public struct SessionListView: View {
     }
 }
 
+extension SessionListView {
+    fileprivate var noResultsState: some View {
+        VStack(spacing: OCSpacing.xs) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 30, weight: .light))
+                .foregroundColor(OCColor.iconMuted)
+                .padding(.bottom, OCSpacing.xs)
+            Text("No encontramos sesiones")
+                .font(OCTypography.bodyStrong)
+                .foregroundColor(OCColor.textPrimary)
+            Text("Prueba con otro título.")
+                .font(OCTypography.meta)
+                .foregroundColor(OCColor.textFaint)
+        }
+        .padding(OCSpacing.huge)
+        .frame(maxWidth: .infinity)
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
+}
+
 private struct NewSessionSheet: View {
     @Environment(\.dismiss) private var dismiss
     let project: Project
     let onCreate: (String) -> Void
     @State private var title = ""
+    @FocusState private var titleFocused: Bool
     
     var body: some View {
         NavigationStack {
             Form {
-                Section("Session Details") {
-                    TextField("Title (optional)", text: $title)
+                Section {
+                    TextField("Título (opcional)", text: $title)
+                        .focused($titleFocused)
+                        .submitLabel(.done)
+                        .onSubmit { create() }
+                } footer: {
+                    Text("Si lo dejas vacío, la sesión tomará un título automático.")
                 }
             }
-            .navigationTitle("New Session")
+            .navigationTitle("Nueva sesión")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancelar") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
-                        onCreate(title)
-                        dismiss()
-                    }
+                    Button("Crear") { create() }
                 }
             }
         }
         .presentationDetents([.medium])
+        .onAppear { titleFocused = true }
+    }
+
+    private func create() {
+        onCreate(title.trimmingCharacters(in: .whitespacesAndNewlines))
+        dismiss()
     }
 }
 
@@ -496,18 +539,18 @@ private struct RenameSessionSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Rename Session") {
-                    TextField("Title", text: $title)
+                Section {
+                    TextField("Título", text: $title)
                 }
             }
-            .navigationTitle("Rename Session")
+            .navigationTitle("Renombrar sesión")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancelar") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button("Guardar") {
                         onRename(title)
                         dismiss()
                     }
@@ -561,17 +604,17 @@ struct SettingsSheet: View {
                     Text("El tema se aplica al volver a abrir iSyCode.")
                 }
 
-                Section("ISyCode Host API") {
+                Section("Mi equipo") {
                     MobileHostPairingSection()
                         .environmentObject(hostStore)
                         .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                         .listRowBackground(Color.clear)
                 }
 
-                Section("Legacy Bridge") {
+                Section("Conexión por Bridge") {
                     if store.backendMode == .remote || store.backendMode == .native {
                         HStack {
-                            Text("Backend")
+                            Text("Estado")
                             Spacer()
                             Text(store.connectionStatus)
                                 .font(OCTypography.metaMono)
@@ -580,14 +623,14 @@ struct SettingsSheet: View {
                                 .multilineTextAlignment(.trailing)
                         }
                         HStack {
-                            Text("Connection")
+                            Text("Conexión")
                             Spacer()
-                            Text(store.connectionHealth.rawValue.capitalized)
+                            Text(healthLabel(for: store.connectionHealth))
                                 .font(OCTypography.metaMono)
                                 .foregroundColor(healthColor(for: store.connectionHealth))
                         }
                         if store.backendMode == .remote {
-                            Button("Forget Connection", role: .destructive) {
+                            Button("Olvidar conexión", role: .destructive) {
                                 Task {
                                     await store.forgetPairing()
                                     await store.disconnect()
@@ -595,15 +638,15 @@ struct SettingsSheet: View {
                             }
                         }
                     } else {
-                        Text("Not connected")
+                        Text("Sin conexión")
                             .foregroundColor(OCColor.textFaint)
                     }
                 }
                 
-                Section("Runtime") {
-                    Picker("Mode", selection: modeBinding) {
-                        Text("Remote (OpenCode Server)").tag(BackendMode.remote.rawValue)
-                        Text("Sandbox (this phone)").tag(BackendMode.native.rawValue)
+                Section("Modo de ejecución") {
+                    Picker("Modo", selection: modeBinding) {
+                        Text("Mi equipo (remoto)").tag(BackendMode.remote.rawValue)
+                        Text("Este iPhone (prueba)").tag(BackendMode.native.rawValue)
                     }
                     
                     if store.backendMode == .native {
@@ -613,13 +656,13 @@ struct SettingsSheet: View {
                     }
                     
                     if showRemoteUnavailableNote {
-                        Text("No stored pairing — link a desktop first.")
+                        Text("No hay un equipo vinculado. Vincula uno primero.")
                             .font(OCTypography.meta)
                             .foregroundColor(OCColor.warning)
                     }
                 }
 
-                Section("Sandbox del iPhone") {
+                Section("Entorno de este iPhone") {
                     NavigationLink {
                         NativeCapabilitySettingsView()
                     } label: {
@@ -666,38 +709,38 @@ struct SettingsSheet: View {
                         .foregroundColor(OCColor.textFaint)
                 }
                 
-                Section("Attribution") {
+                Section("Acerca de") {
                     HStack {
                         Text("ISyCode Móvil")
                         Spacer()
-                        Text("Independent open-source app")
+                        Text("App independiente de código abierto")
                             .foregroundColor(OCColor.textFaint)
                     }
                     HStack {
-                        Text("License")
+                        Text("Licencia")
                         Spacer()
                         Text("MIT")
                             .foregroundColor(OCColor.textFaint)
                     }
                 }
 
-                Section("External providers & projects") {
-                    LabeledContent("AI providers", value: "OpenAI · Anthropic · Google · xAI · NVIDIA · OpenRouter")
-                    LabeledContent("Desktop runtime", value: "OpenCode · Codex")
-                    LabeledContent("Local model", value: "Qwen · Hugging Face")
-                    LabeledContent("Inference runtime", value: "llama.cpp")
+                Section("Proveedores y proyectos externos") {
+                    LabeledContent("Proveedores de IA", value: "OpenAI · Anthropic · Google · xAI · NVIDIA · OpenRouter")
+                    LabeledContent("En tu equipo", value: "OpenCode · Codex")
+                    LabeledContent("Modelo local", value: "Qwen · Hugging Face")
+                    LabeledContent("Motor de inferencia", value: "llama.cpp")
 
-                    Text("All names and trademarks belong to their respective owners. ISyCode Móvil is an independent client and is not affiliated with or endorsed by these providers or projects. Provider access, terms, model licenses, and charges are set by their respective owners.")
+                    Text("Todos los nombres y marcas pertenecen a sus respectivos dueños. ISyCode Móvil es un cliente independiente: no está afiliado a estos proveedores o proyectos ni cuenta con su respaldo. El acceso, los términos, las licencias de los modelos y los cobros los define cada proveedor.")
                         .font(OCTypography.meta)
                         .foregroundColor(OCColor.textFaint)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .navigationTitle("Settings")
+            .navigationTitle("Ajustes")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Listo") { dismiss() }
                 }
             }
             .onAppear {
@@ -756,6 +799,14 @@ struct SettingsSheet: View {
         )
     }
     
+    private func healthLabel(for health: ConnectionHealth) -> String {
+        switch health {
+        case .connected: return "Conectado"
+        case .connecting: return "Conectando…"
+        case .disconnected: return "Desconectado"
+        }
+    }
+
     private func healthColor(for health: ConnectionHealth) -> Color {
         switch health {
         case .connected: return OCColor.success

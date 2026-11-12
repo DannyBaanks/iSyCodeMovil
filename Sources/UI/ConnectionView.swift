@@ -71,17 +71,10 @@ public struct ConnectionView: View {
                 HStack {
                     label("CONECTAR CON BRIDGE ANTERIOR")
                     Spacer()
-                    Button {
+                    ClipboardChipButton(title: "Copiar", confirmation: "Copiado") {
                         UIPasteboard.general.string = "npx --yes github:DannyBaanks/iSyCodeMovil#main link"
-                    } label: {
-                        Text("Copiar")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(Color.white.opacity(0.55))
-                            .padding(.horizontal, 10)
-                            .frame(height: 28)
-                            .overlay(Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1))
+                        return true
                     }
-                    .buttonStyle(.plain)
                     .padding(.bottom, 8)
                 }
                 commandBox("npx --yes github:DannyBaanks/iSyCodeMovil#main link")
@@ -97,19 +90,11 @@ public struct ConnectionView: View {
                 HStack {
                     label("ENLACE DE CONEXIÓN")
                     Spacer()
-                    Button {
-                        if let pasted = UIPasteboard.general.string, !pasted.isEmpty {
-                            pairingLink = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    } label: {
-                        Text("Pegar")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(Color.white.opacity(0.55))
-                            .padding(.horizontal, 10)
-                            .frame(height: 28)
-                            .overlay(Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1))
+                    ClipboardChipButton(title: "Pegar", confirmation: "Pegado") {
+                        guard let pasted = UIPasteboard.general.string, !pasted.isEmpty else { return false }
+                        pairingLink = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+                        return true
                     }
-                    .buttonStyle(.plain)
                     .padding(.bottom, 8)
                 }
                 TextField("iyscodemovil://, codex:// o grok://", text: $pairingLink, axis: .vertical)
@@ -213,7 +198,7 @@ public struct ConnectionView: View {
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
-                Button("Done") { fieldFocused = false }
+                Button("Listo") { fieldFocused = false }
                     .font(.system(size: 14, weight: .medium, design: .monospaced))
             }
         }
@@ -256,6 +241,37 @@ public struct ConnectionView: View {
     }
 }
 
+/// Botón pequeño de portapapeles que confirma la acción en el propio texto:
+/// copiar o pegar sin ninguna señal dejaba la duda de si había funcionado.
+private struct ClipboardChipButton: View {
+    let title: String
+    let confirmation: String
+    /// Devuelve `false` cuando no había nada que copiar o pegar.
+    let action: () -> Bool
+    @State private var confirmed = false
+
+    var body: some View {
+        Button {
+            guard action() else { return }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            confirmed = true
+            Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                confirmed = false
+            }
+        } label: {
+            Text(confirmed ? confirmation : title)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(confirmed ? IysThemePreferences.active.accent : Color.white.opacity(0.55))
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .overlay(Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct StoredPairingSection: View {
     @EnvironmentObject private var store: WorkbenchStore
     @Binding var showReconnectSheet: Bool
@@ -266,15 +282,15 @@ struct StoredPairingSection: View {
             if hasStored {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("reconnect to desktop")
+                        Text("EQUIPO VINCULADO")
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundColor(Color.white.opacity(0.5))
-                        Text("paired workspace")
+                        Text("Conexión guardada en este iPhone")
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundColor(Color.white.opacity(0.7))
                     }
                     Spacer()
-                    Button("reconnect") {
+                    Button("Reconectar") {
                         Task { await store.reconnectStoredPairing() }
                     }
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -291,7 +307,7 @@ struct StoredPairingSection: View {
                 .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
                 
                 HStack {
-                    Button("forget connection") {
+                    Button("Olvidar conexión") {
                         Task {
                             await store.forgetPairing()
                             hasStored = false
@@ -300,7 +316,7 @@ struct StoredPairingSection: View {
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(Color.white.opacity(0.4))
                     Spacer()
-                    Button("link another desktop") {
+                    Button("Vincular otro equipo") {
                         showReconnectSheet = true
                     }
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -327,31 +343,24 @@ struct ReconnectSheet: View {
             VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 36)
                 
-                Text("link another desktop")
+                Text("Vincular otro equipo")
                     .font(.system(size: 24, weight: .semibold, design: .monospaced))
                     .foregroundColor(.white)
                 
                 Spacer().frame(height: 24)
                 
                 HStack {
-                    label("LINK DESKTOP")
+                    label("COMANDO EN TU EQUIPO")
                     Spacer()
-                    Button {
+                    ClipboardChipButton(title: "Copiar", confirmation: "Copiado") {
                         UIPasteboard.general.string = "npx --yes github:DannyBaanks/iSyCodeMovil#main link"
-                    } label: {
-                        Text("copy")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(Color.white.opacity(0.55))
-                            .padding(.horizontal, 10)
-                            .frame(height: 28)
-                            .overlay(Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1))
+                        return true
                     }
-                    .buttonStyle(.plain)
                     .padding(.bottom, 8)
                 }
                 commandBox("npx --yes github:DannyBaanks/iSyCodeMovil#main link")
                 
-                Text("Run it in the project directory on the computer that already has IysCode installed. Paste the pairing link printed by the command.")
+                Text("Ejecútalo en la carpeta del proyecto, en el equipo donde ya tienes ISyCode. Después pega aquí el enlace que aparezca.")
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundColor(Color.white.opacity(0.42))
                     .fixedSize(horizontal: false, vertical: true)
@@ -360,21 +369,13 @@ struct ReconnectSheet: View {
                 Spacer().frame(height: 24)
                 
                 HStack {
-                    label("PAIRING LINK")
+                    label("ENLACE DE CONEXIÓN")
                     Spacer()
-                    Button {
-                        if let pasted = UIPasteboard.general.string, !pasted.isEmpty {
-                            pairingLink = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    } label: {
-                        Text("paste")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(Color.white.opacity(0.55))
-                            .padding(.horizontal, 10)
-                            .frame(height: 28)
-                            .overlay(Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1))
+                    ClipboardChipButton(title: "Pegar", confirmation: "Pegado") {
+                        guard let pasted = UIPasteboard.general.string, !pasted.isEmpty else { return false }
+                        pairingLink = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+                        return true
                     }
-                    .buttonStyle(.plain)
                     .padding(.bottom, 8)
                 }
                 TextField("iyscodemovil://, codex:// o grok://", text: $pairingLink, axis: .vertical)
@@ -392,7 +393,7 @@ struct ReconnectSheet: View {
                 
                 Button { connect() } label: {
                     HStack {
-                        Text(store.isConnecting ? "connecting..." : "connect")
+                        Text(store.isConnecting ? "Conectando…" : "Conectar")
                             .font(.system(size: 14, weight: .medium, design: .monospaced))
                         Spacer()
                         Text("↵")
@@ -418,10 +419,11 @@ struct ReconnectSheet: View {
                 Spacer()
             }
             .padding(.horizontal, 18)
+            .background(OCColor.bgDeep.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("cancel") { dismiss() }
+                    Button("Cancelar") { dismiss() }
                 }
             }
         }
@@ -475,10 +477,10 @@ struct SandboxKeySheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 28)
-                Text("sandbox")
+                Text("Probar en este iPhone")
                     .font(.system(size: 24, weight: .semibold, design: .monospaced))
                     .foregroundColor(.white)
-                Text("Elige un proveedor para el modelo del sandbox. Las claves se guardan en el llavero de iOS.")
+                Text("Elige el proveedor del modelo para el entorno de prueba. Las claves se guardan en el llavero de iOS.")
                     .font(.system(size: 13, design: .monospaced))
                     .foregroundColor(Color.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
@@ -516,7 +518,7 @@ struct SandboxKeySheet: View {
                         .foregroundColor(Color.white.opacity(0.55))
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.bottom, 10)
-                    SecureField(hasKey ? "clave guardada; pega otra para reemplazarla" : provider.keyPlaceholder, text: $key)
+                    SecureField(hasKey ? "Clave guardada; pega otra para reemplazarla" : provider.keyPlaceholder, text: $key)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(size: 13, design: .monospaced))
@@ -549,9 +551,9 @@ struct SandboxKeySheet: View {
                     }
                 } label: {
                     HStack {
-                        Text(isStarting ? "abriendo sandbox..." : (selectedProviderID == "gus-local"
-                            ? "usar GUS local"
-                            : (hasKey && key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "entrar con la clave guardada" : "guardar y entrar")))
+                        Text(isStarting ? "Abriendo…" : (selectedProviderID == "gus-local"
+                            ? "Usar GUS local"
+                            : (hasKey && key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Entrar con la clave guardada" : "Guardar y entrar")))
                             .font(.system(size: 14, weight: .medium, design: .monospaced))
                         Spacer()
                         Text("↵")
@@ -585,12 +587,12 @@ struct SandboxKeySheet: View {
                             dismiss()
                         } else {
                             store.sandboxSetupError = store.connectionStatus.isEmpty
-                                ? "No pude iniciar el sandbox. Inténtalo de nuevo."
+                                ? "No pude iniciar el entorno de prueba. Inténtalo de nuevo."
                                 : store.connectionStatus
                         }
                     }
                 } label: {
-                    Text("ver el guion de demo")
+                    Text("Ver el guion de demo, sin modelo")
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(Color.white.opacity(0.45))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -607,7 +609,7 @@ struct SandboxKeySheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("cancel") { dismiss() }
+                    Button("Cancelar") { dismiss() }
                         .font(.system(size: 14, design: .monospaced))
                 }
             }

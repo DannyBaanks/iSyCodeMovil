@@ -115,7 +115,7 @@ public struct ActiveSessionView: View {
             }
         }
         .background(OCColor.bgDeep.ignoresSafeArea())
-        .navigationTitle(sessionState.currentSession?.title ?? "Session")
+        .navigationTitle(sessionState.currentSession?.title ?? "Sesión")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -130,15 +130,15 @@ public struct ActiveSessionView: View {
                         .frame(width: 44, height: 44, alignment: .leading)
                         .contentShape(Rectangle())
                 }
-                .accessibilityLabel("Back")
+                .accessibilityLabel("Sesiones")
             }
 
             // El titulo va al centro: en el lado izquierdo se aplastaba contra
             // los botones y se cortaba en pantallas angostas.
             ToolbarItem(placement: .principal) {
                 SessionNavTitle(
-                    title: sessionState.currentSession?.title ?? "Session",
-                    subtitle: sessionState.currentProject?.name ?? "Project"
+                    title: sessionState.currentSession?.title ?? "Sesión",
+                    subtitle: sessionState.currentProject?.name ?? "Proyecto"
                 )
                 .frame(maxWidth: 220)
             }
@@ -150,19 +150,22 @@ public struct ActiveSessionView: View {
                             Button {
                                 sessionState.activeSurface = surface
                             } label: {
-                                Label(surface.rawValue, systemImage: surface.icon)
+                                // La vista activa lleva la marca; el resto, su icono.
+                                Label(surface.title, systemImage: sessionState.activeSurface == surface ? "checkmark" : surface.icon)
                             }
                         }
                     } label: {
                         Image(systemName: "square.grid.2x2")
                             .font(.system(size: 16, weight: .medium))
                     }
+                    .accessibilityLabel("Cambiar de vista")
 
                     if sessionState.activeSurface == .files && !isCodexRemote && !isGrokRemote {
                         Button { Task { await store.loadFiles(path: store.filesPath) } } label: {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 17))
                         }
+                        .accessibilityLabel("Actualizar archivos")
                     }
                     
                     if sessionState.activeSurface == .review {
@@ -170,12 +173,14 @@ public struct ActiveSessionView: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 17))
                         }
+                        .accessibilityLabel("Actualizar cambios")
                     }
                     
                     Button { showDisconnectConfirm = true } label: {
                         Image(systemName: "rectangle.portrait.and.arrow.right")
                             .font(.system(size: 17))
                     }
+                    .accessibilityLabel("Desconectar")
                 }
             }
         }
@@ -237,16 +242,16 @@ public struct ActiveSessionView: View {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
         }
         .confirmationDialog(
-            "Disconnect?",
+            "¿Desconectar?",
             isPresented: $showDisconnectConfirm,
             titleVisibility: .visible
         ) {
-            Button("Disconnect", role: .destructive) {
+            Button("Desconectar", role: .destructive) {
                 Task { await store.disconnect() }
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancelar", role: .cancel) {}
         } message: {
-            Text("End the session and return to the connection screen.")
+            Text("Saldrás de la sesión y volverás a la pantalla de conexión.")
         }
         .animation(.easeInOut(duration: 0.2), value: store.connectionHealth)
     }
@@ -344,6 +349,7 @@ struct ChatSurfaceView: View {
                     .padding(.bottom, OCSpacing.lg)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .scrollDismissesKeyboard(.interactively)
                 .onAppear { scrollProxy = proxy }
                 .onChange(of: sessionState.timelineEvents.count) { _ in
                     scrollToBottom()
@@ -464,7 +470,7 @@ struct ConnectionLostBanner: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(OCColor.warning)
             
-            Text(isReconnecting ? "Reconnecting…" : "Connection lost")
+            Text(isReconnecting ? "Reconectando…" : "Se perdió la conexión")
                 .font(OCTypography.control)
                 .foregroundColor(OCColor.textPrimary)
             
@@ -474,7 +480,7 @@ struct ConnectionLostBanner: View {
                 ProgressView()
                     .scaleEffect(0.7)
             } else {
-                Button("Reconnect", action: onReconnect)
+                Button("Reconectar", action: onReconnect)
                     .font(OCTypography.controlMono)
                     .foregroundColor(OCColor.warning)
             }
@@ -493,24 +499,63 @@ struct ConnectionLostBanner: View {
 }
 
 struct EmptyChatView: View {
+    @EnvironmentObject private var sessionState: ActiveSessionState
     let sessionTitle: String?
-    
+
+    // Ideas para arrancar: tocar una la deja en el compositor, sin enviarla,
+    // para que se pueda ajustar antes de mandarla.
+    private let suggestions = [
+        "Explícame cómo está organizado este proyecto",
+        "Busca los TODO pendientes y resúmelos",
+        "Propón tres mejoras para el README"
+    ]
+
     var body: some View {
         VStack(spacing: OCSpacing.base) {
             Image(systemName: "bubble.left")
                 .font(.system(size: 40, weight: .light))
                 .foregroundColor(OCColor.iconMuted)
             
-            Text(sessionTitle ?? "Session")
+            Text(sessionTitle ?? "Sesión")
                 .font(OCTypography.bodyStrong)
                 .foregroundColor(OCColor.textPrimary)
+                .multilineTextAlignment(.center)
             
-            Text("Send a message below to start")
+            Text("Escribe abajo para empezar, o parte de una idea:")
                 .font(OCTypography.meta)
                 .foregroundColor(OCColor.textFaint)
+                .multilineTextAlignment(.center)
+
+            VStack(spacing: OCSpacing.sm) {
+                ForEach(suggestions, id: \.self) { suggestion in
+                    Button {
+                        UISelectionFeedbackGenerator().selectionChanged()
+                        sessionState.composerText = suggestion
+                    } label: {
+                        HStack(spacing: OCSpacing.base) {
+                            Text(suggestion)
+                                .font(.system(size: 13))
+                                .foregroundColor(OCColor.textSecondary)
+                                .multilineTextAlignment(.leading)
+                            Spacer(minLength: 0)
+                            Image(systemName: "arrow.up.left")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(OCColor.iconMuted)
+                        }
+                        .padding(.horizontal, OCSpacing.lg)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .background(OCColor.bgBase)
+                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                        .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, OCSpacing.lg)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 96)
+        .padding(.top, 64)
     }
 }
 
@@ -545,7 +590,7 @@ struct FilesBreadcrumbView: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: OCSpacing.xs) {
-                Button("‹ root") { onSelect("") }
+                Button("‹ raíz") { onSelect("") }
                     .font(OCTypography.controlMono)
                     .foregroundColor(OCColor.agentBuild)
                 
@@ -598,6 +643,9 @@ struct FilesSurfaceView: View {
                             selectedFile: $selectedFile,
                             onTap: { file in
                                 if !file.isDirectory {
+                                    // Sin esto el visor mostraba el archivo anterior
+                                    // mientras cargaba el nuevo.
+                                    fileContent = nil
                                     selectedFile = file
                                     Task {
                                         if let content = await store.loadFileContent(path: file.path) {
@@ -613,7 +661,7 @@ struct FilesSurfaceView: View {
                 .scrollContentBackground(.hidden)
                 .background(OCColor.bgDeep)
                 .sheet(item: $selectedFile) { file in
-                    FileViewerView(file: file, content: fileContent?.content ?? "")
+                    FileViewerView(file: file, content: fileContent?.content)
                 }
                 .onAppear {
                     if !filesLoaded {
@@ -637,11 +685,11 @@ struct EmptyFilesView: View {
                 .font(.system(size: 40, weight: .light))
                 .foregroundColor(OCColor.iconMuted)
             
-            Text("No files")
+            Text("Sin archivos")
                 .font(OCTypography.bodyStrong)
                 .foregroundColor(OCColor.textPrimary)
             
-            Text("This workspace has no visible files")
+            Text("Esta carpeta no tiene archivos visibles")
                 .font(OCTypography.meta)
                 .foregroundColor(OCColor.textFaint)
         }
@@ -720,17 +768,32 @@ struct FileTreeRowView: View {
 struct FileViewerView: View {
     @Environment(\.dismiss) private var dismiss
     let file: WorkbenchFileNode
-    let content: String
+    /// `nil` mientras carga; cadena vacía cuando el archivo no tiene contenido.
+    let content: String?
+    @State private var copied = false
     
     var body: some View {
         NavigationStack {
             ScrollView {
-                Text(content.isEmpty ? "Loading…" : content)
-                    .font(OCTypography.code)
-                    .foregroundColor(OCColor.textPrimary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(OCSpacing.lg)
+                if let content, !content.isEmpty {
+                    Text(content)
+                        .font(OCTypography.code)
+                        .foregroundColor(OCColor.textPrimary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(OCSpacing.lg)
+                } else {
+                    VStack(spacing: OCSpacing.base) {
+                        if content == nil {
+                            ProgressView()
+                        }
+                        Text(content == nil ? "Cargando…" : "Archivo vacío")
+                            .font(OCTypography.meta)
+                            .foregroundColor(OCColor.textFaint)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 96)
+                }
             }
             .background(OCColor.bgDeep)
             .navigationTitle(file.name)
@@ -746,12 +809,16 @@ struct FileViewerView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: OCSpacing.base) {
                         Button {
-                            UIPasteboard.general.string = content
+                            UIPasteboard.general.string = content ?? ""
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            copied = true
                         } label: {
-                            Image(systemName: "doc.on.doc")
+                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
                                 .font(.system(size: 17))
                         }
-                        Button("Done") { dismiss() }
+                        .disabled((content ?? "").isEmpty)
+                        .accessibilityLabel(copied ? "Contenido copiado" : "Copiar contenido")
+                        Button("Listo") { dismiss() }
                     }
                 }
             }
@@ -801,19 +868,19 @@ struct EmptyReviewView: View {
                 .foregroundColor(OCColor.iconMuted)
             
             VStack(spacing: OCSpacing.xs) {
-                Text("No Changes")
+                Text("Sin cambios")
                     .font(OCTypography.bodyStrong)
                     .foregroundColor(OCColor.textPrimary)
                 
                 Text(store.backendMode == .native
-                     ? "Diff runs on the linked desktop, not in the sandbox"
-                     : "No diff available for this session")
+                     ? "Los cambios se revisan en un equipo vinculado, no en el entorno de prueba."
+                     : "Esta sesión todavía no tiene cambios para revisar.")
                     .font(OCTypography.meta)
                     .foregroundColor(OCColor.textFaint)
                     .multilineTextAlignment(.center)
             }
             
-            Button("Refresh") {
+            Button("Actualizar") {
                 if let sessionID = sessionState.currentSession?.id {
                     Task { await store.loadDiff(sessionID: sessionID) }
                 }
@@ -909,11 +976,11 @@ struct DiffViewerView: View {
                 .textSelection(.enabled)
             }
             .background(OCColor.bgDeep)
-            .navigationTitle("Diff")
+            .navigationTitle("Cambios")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Listo") { dismiss() }
                 }
             }
             .toolbarBackground(.visible, for: .navigationBar)
@@ -1034,10 +1101,12 @@ struct TerminalSurfaceView: View {
                         .font(.system(size: 14, weight: .bold, design: .monospaced))
                         .foregroundColor(OCColor.agentBuild)
                     
-                    TextField("command", text: $command)
+                    TextField("comando", text: $command)
                         .font(OCTypography.code)
                         .foregroundColor(OCColor.textPrimary)
                         .textFieldStyle(.plain)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                         .focused($isFocused)
                         .submitLabel(.send)
                         .onSubmit { executeCommand() }
@@ -1064,6 +1133,7 @@ struct TerminalSurfaceView: View {
                         .font(.system(size: 15))
                         .foregroundColor(OCColor.iconMuted)
                 }
+                .accessibilityLabel("Ajustes")
                 Button {
                     output.removeAll()
                 } label: {
@@ -1071,15 +1141,16 @@ struct TerminalSurfaceView: View {
                         .font(.system(size: 15))
                         .foregroundColor(OCColor.iconMuted)
                 }
+                .accessibilityLabel("Limpiar terminal")
             }
         }
         .onAppear {
             if output.isEmpty {
                 let banner = store.backendMode == .native
-                    ? "Shell runs on the linked OpenCode server. The sandbox has no shell."
-                    : "OpenCodeNative Terminal — commands run via OpenCode server"
+                    ? "La terminal corre en un equipo vinculado. El entorno de prueba no tiene shell."
+                    : "Terminal de iSyCode: los comandos se ejecutan en tu equipo"
                 output.append(TerminalOutput(text: banner, color: OCColor.textFaint))
-                output.append(TerminalOutput(text: "Type a command and press Enter", color: OCColor.textFaint))
+                output.append(TerminalOutput(text: "Escribe un comando y pulsa Intro", color: OCColor.textFaint))
                 output.append(TerminalOutput(text: "", color: OCColor.textPrimary))
             }
         }
@@ -1154,7 +1225,7 @@ struct WorkSurfaceSwitcher: View {
                     HStack(spacing: 4) {
                         Image(systemName: surface.icon)
                             .font(.system(size: 12, weight: .medium))
-                        Text(surface.rawValue)
+                        Text(surface.title)
                             .font(OCTypography.control)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
@@ -1228,7 +1299,7 @@ private struct CodexCapabilityNotice: View {
             Text("·")
                 .foregroundColor(OCColor.textFaint)
 
-            Text("Chat + approvals only")
+            Text("Solo chat y aprobaciones")
                 .font(OCTypography.metaMono)
                 .foregroundColor(OCColor.textSecondary)
                 .lineLimit(1)
@@ -1245,6 +1316,6 @@ private struct CodexCapabilityNotice: View {
                 .overlay(Capsule().stroke(OCColor.warning.opacity(0.18), lineWidth: 1))
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Experimental Codex connection. Chat and approvals only.")
+        .accessibilityLabel("Conexión experimental de Codex. Solo chat y aprobaciones.")
     }
 }

@@ -58,7 +58,7 @@ public final class MobileHostStore: ObservableObject {
                 if isAppActive { startHeartbeatLoop() }
             }
         } catch {
-            errorMessage = "Could not load the saved host credential from Keychain."
+            errorMessage = "No se pudo leer la credencial guardada del host en el llavero."
             heartbeatState = .credentialRejected
         }
     }
@@ -105,7 +105,7 @@ public final class MobileHostStore: ObservableObject {
             heartbeatState = .notPaired
             errorMessage = nil
         } catch {
-            errorMessage = "Could not remove the host credential from Keychain."
+            errorMessage = "No se pudo eliminar la credencial del host del llavero."
         }
     }
 

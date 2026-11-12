@@ -33,7 +33,7 @@ struct NativeCapabilitySettingsView: View {
                     .padding(.vertical, 3)
                 }
             } header: {
-                Text("Native iPhone")
+                Text("iPhone nativo")
             } footer: {
                 Text("Disponibilidad, permiso de iOS y aprobación de iSyCode son controles separados. El catálogo no concede acceso por sí mismo.")
             }
