@@ -119,7 +119,7 @@ public final class WorkbenchStore: ObservableObject {
         await currentBackend?.disconnect()
         isConnecting = true
         connectionHealth = .connecting
-        connectionStatus = "connecting..."
+        connectionStatus = "Conectando…"
         activeRemotePairing = pairing
         activeRemoteBackendType = backendType
 
@@ -527,7 +527,7 @@ public final class WorkbenchStore: ObservableObject {
     public func createNewSession(in project: Project, title: String) async -> Session? {
         guard let backend = currentBackend else { return nil }
         do {
-            let session = try await backend.createSession(projectID: project.id, title: title.isEmpty ? "New Session" : title)
+            let session = try await backend.createSession(projectID: project.id, title: title.isEmpty ? "Nueva sesión" : title)
             sessions.append(session)
             sessionState.currentSession = session
             currentSessionID = session.id

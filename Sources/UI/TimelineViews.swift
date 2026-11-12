@@ -327,6 +327,9 @@ public struct ToolCallCollapsedView: View {
         .padding(.vertical, OCSpacing.xs)
         .frame(minHeight: 58)
         .background(event.toolState == .permission ? OCColor.warning.opacity(0.08) : Color.clear)
+        // Toda la fila despliega el detalle, no solo la flecha de 12 pt.
+        .contentShape(Rectangle())
+        .onTapGesture { onExpand() }
     }
 
     private var statusColor: Color {
@@ -421,7 +424,7 @@ public struct ToolCallExpandedView: View {
                         Circle()
                             .fill(state.color)
                             .frame(width: 6, height: 6)
-                        Text(state.rawValue.capitalized)
+                        Text(state.title)
                             .font(OCTypography.controlMono)
                             .foregroundColor(state.color)
                     }
@@ -455,7 +458,7 @@ public struct ToolCallExpandedView: View {
                     ProgressView()
                         .scaleEffect(0.8)
                         .progressViewStyle(CircularProgressViewStyle(tint: agentColor))
-                    Text("Running…")
+                    Text("Ejecutando…")
                         .font(OCTypography.codeSmall)
                         .foregroundColor(OCColor.textFaint)
                 }
@@ -1017,7 +1020,7 @@ public struct QuestionView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: OCSpacing.lg) {
-            Text(event.questionText ?? "Question")
+            Text(event.questionText ?? "Pregunta")
                 .font(OCTypography.permissionTitle)
                 .foregroundColor(OCColor.textPrimary)
 
@@ -1067,11 +1070,11 @@ public struct QuestionView: View {
 
             if event.questionAllowFreeform == true {
                 VStack(alignment: .leading, spacing: OCSpacing.xs) {
-                    Text("Or type your answer:")
+                    Text("O escribe tu respuesta:")
                         .font(OCTypography.meta)
                         .foregroundColor(OCColor.textFaint)
 
-                    TextField("Your answer…", text: $freeformText, axis: .vertical)
+                    TextField("Tu respuesta…", text: $freeformText, axis: .vertical)
                         .font(OCTypography.body)
                         .textFieldStyle(.plain)
                         .padding(OCSpacing.base)
@@ -1083,7 +1086,7 @@ public struct QuestionView: View {
                         )
                         .lineLimit(3...6)
 
-                    Button("Send") {
+                    Button("Enviar") {
                         onFreeform(freeformText)
                         freeformText = ""
                     }

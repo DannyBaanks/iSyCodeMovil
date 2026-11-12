@@ -310,6 +310,18 @@ public enum AgentMode: String, CaseIterable, Identifiable, Sendable {
 
     public var displayName: String { rawValue }
 
+    /// Nombre visible en la interfaz. `rawValue` sigue siendo el identificador
+    /// que se envía al backend.
+    public var title: String {
+        switch self {
+        case .build:   return "Construir"
+        case .plan:    return "Planear"
+        case .explore: return "Explorar"
+        case .review:  return "Revisar"
+        case .custom:  return "Personalizado"
+        }
+    }
+
     public var id: String { rawValue }
 
     public var color: Color {
@@ -344,11 +356,11 @@ public enum AgentMode: String, CaseIterable, Identifiable, Sendable {
 
     public var description: String {
         switch self {
-        case .build:   return "Can edit files and run tools"
-        case .plan:    return "Read-only exploration and planning"
-        case .explore: return "Exploration and sub-agent tasks"
-        case .review:  return "Review and check changes"
-        case .custom:  return "Custom agent behavior"
+        case .build:   return "Edita archivos y ejecuta herramientas"
+        case .plan:    return "Solo lectura: explora y planifica"
+        case .explore: return "Explora el proyecto y delega subtareas"
+        case .review:  return "Revisa y comprueba los cambios"
+        case .custom:  return "Agente con comportamiento personalizado"
         }
     }
 
@@ -377,6 +389,15 @@ public enum ToolCallState: String, Sendable {
         case .success:    return OCColor.success
         case .failed:     return OCColor.danger
         case .permission: return OCColor.warning
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .running:    return "En curso"
+        case .success:    return "Listo"
+        case .failed:     return "Falló"
+        case .permission: return "Permiso"
         }
     }
 
@@ -415,6 +436,16 @@ public enum WorkSurface: String, CaseIterable, Identifiable, Sendable {
     case terminal = "Terminal"
 
     public var id: String { rawValue }
+
+    /// Nombre visible en la interfaz.
+    public var title: String {
+        switch self {
+        case .chat:      return "Chat"
+        case .files:     return "Archivos"
+        case .review:    return "Cambios"
+        case .terminal:  return "Terminal"
+        }
+    }
 
     public var icon: String {
         switch self {

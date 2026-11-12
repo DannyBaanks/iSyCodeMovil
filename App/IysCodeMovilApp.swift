@@ -31,6 +31,7 @@ public struct IysCodeMovilApp: App {
                 .environmentObject(hostStore)
                 .environmentObject(store.sessionState)
                 .preferredColorScheme(.dark)
+                .tint(IysThemePreferences.active.accent)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(OCColor.bgDeep.ignoresSafeArea())
         }
@@ -143,7 +144,7 @@ struct SplitPlaceholderView: View {
             Image(systemName: "sidebar.left")
                 .font(.system(size: 40, weight: .light))
                 .foregroundColor(OCColor.iconMuted)
-            Text("Select a project")
+            Text("Elige un proyecto")
                 .font(OCTypography.bodyStrong)
                 .foregroundColor(OCColor.textSecondary)
         }
