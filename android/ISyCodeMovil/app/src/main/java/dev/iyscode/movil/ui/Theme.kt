@@ -10,37 +10,37 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-/** The "Consola" theme of the iOS app (Sources/UI/DesignSystem.swift). */
+/** Night palette shared with the iOS app (Sources/UI/DesignSystem.swift, theme ISyCode). */
 object Iys {
-    val accent = Color(0xFF00D7A5)
-    val accentSoft = Color(0x1F00D7A5)
-    val bgDeep = Color(0xFF050807)
-    val bgBase = Color(0xFF101412)
-    val surface = Color(0xFF151D1A)
-    val surfaceHigh = Color(0xFF1B2521)
-    val border = Color(0x2E00D7A5)
-    val textPrimary = Color(0xFFF2F2F2)
-    val textSecondary = Color(0xFFAEAEAE)
-    val textFaint = Color(0xFF808080)
+    val accent = Color(0xFFE94560)
+    val accentSoft = Color(0x29E94560)
+    val violet = Color(0xFF9B5DE5)
+    val bgDeep = Color(0xFF12121C)
+    val bgBase = Color(0xFF1A1A2E)
+    val surface = Color(0xFF242433)
+    val surfaceHigh = Color(0xFF2C2C42)
+    val border = Color(0x479AA3AD)
+    val textPrimary = Color(0xFFE0E0E0)
+    val textSecondary = Color(0xFF9AA3AD)
+    val textFaint = Color(0xFF7A8490)
+    val onAccent = Color(0xFFF7F4EF)
     val green = Color(0xFF4ADE80)
-    val yellow = Color(0xFFFACC15)
+    val yellow = Color(0xFFFBBF24)
     val red = Color(0xFFF87171)
     val orange = Color(0xFFFB923C)
-    val purple = Color(0xFFC084FC)
-    val blue = Color(0xFF60A5FA)
+    val purple = Color(0xFF9B5DE5)
+    val blue = Color(0xFF22D3EE)
 }
 
-private val mono = FontFamily.Monospace
-
 private val typography = Typography(
-    titleLarge = TextStyle(fontFamily = mono, fontWeight = FontWeight.Bold, fontSize = 18.sp),
-    titleMedium = TextStyle(fontFamily = mono, fontWeight = FontWeight.SemiBold, fontSize = 14.sp),
-    bodyLarge = TextStyle(fontFamily = mono, fontSize = 14.sp, lineHeight = 20.sp),
-    bodyMedium = TextStyle(fontFamily = mono, fontSize = 12.sp, lineHeight = 17.sp),
-    bodySmall = TextStyle(fontFamily = mono, fontSize = 10.sp, lineHeight = 14.sp),
-    labelLarge = TextStyle(fontFamily = mono, fontWeight = FontWeight.SemiBold, fontSize = 12.sp),
-    labelMedium = TextStyle(fontFamily = mono, fontWeight = FontWeight.SemiBold, fontSize = 11.sp),
-    labelSmall = TextStyle(fontFamily = mono, fontWeight = FontWeight.SemiBold, fontSize = 9.sp),
+    titleLarge = TextStyle(fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, letterSpacing = 1.2.sp),
+    titleMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 16.sp),
+    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 22.sp),
+    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
+    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 16.sp),
+    labelLarge = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 13.sp),
+    labelMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 12.sp),
+    labelSmall = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, fontSize = 10.sp),
 )
 
 @Composable
@@ -48,7 +48,7 @@ fun IysTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = Iys.accent,
-            onPrimary = Iys.bgDeep,
+            onPrimary = Iys.onAccent,
             secondary = Iys.accent,
             background = Iys.bgDeep,
             onBackground = Iys.textPrimary,

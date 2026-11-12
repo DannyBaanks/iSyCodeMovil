@@ -313,7 +313,7 @@ public final class OpenCodeRemoteBackend: WorkbenchBackend, RemoteBackend {
             id: remote.id,
             projectId: projectID,
             title: remote.title,
-            lastEventSummary: "New session",
+            lastEventSummary: "Conversación nueva",
             timestamp: remote.updatedAt,
             agentMode: .build,
             isRunning: false

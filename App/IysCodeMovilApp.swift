@@ -78,8 +78,15 @@ struct RootView: View {
             if url.host == "native", url.path == "/sandbox" {
                 Task { await store.useNativeRuntime() }
             } else {
-                Task { await store.connectRemote(url.absoluteString) }
+                store.offeredPairingLink = url.absoluteString
             }
+        }
+        .sheet(isPresented: Binding(
+            get: { store.offeredPairingLink != nil },
+            set: { if !$0 { store.offeredPairingLink = nil } }
+        )) {
+            PairingConfirmSheet(link: store.offeredPairingLink ?? "")
+                .environmentObject(store)
         }
         .onChange(of: scenePhase) { phase in
             Task { await hostStore.setAppActive(phase == .active) }

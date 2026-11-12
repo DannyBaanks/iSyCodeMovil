@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -113,14 +114,14 @@ fun IsyCodeRoot(vm: GusViewModel) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("iSyCode Móvil", style = MaterialTheme.typography.titleLarge)
+                        Text("ISYCODE", style = MaterialTheme.typography.titleLarge, color = Iys.accent)
                         Text(
                             when (tab) {
-                                Tab.CHAT -> "GUS · IA local, sin internet"
+                                Tab.CHAT -> "GUS · en este teléfono"
                                 Tab.MODELS -> "Modelos locales"
                                 Tab.DIAGNOSTICS -> "Informes de fallos"
                             },
-                            style = MaterialTheme.typography.bodySmall, color = Iys.accent,
+                            style = MaterialTheme.typography.bodySmall, color = Iys.textSecondary,
                         )
                     }
                 },
@@ -144,7 +145,7 @@ fun IsyCodeRoot(vm: GusViewModel) {
                         },
                         label = { Text(t.label, style = MaterialTheme.typography.labelMedium) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Iys.bgDeep, indicatorColor = Iys.accent,
+                            selectedIconColor = Iys.onAccent, indicatorColor = Iys.accent,
                             selectedTextColor = Iys.accent, unselectedIconColor = Iys.textSecondary,
                             unselectedTextColor = Iys.textSecondary,
                         ),
@@ -173,8 +174,8 @@ private fun Card(modifier: Modifier = Modifier, borderColor: Color = Iys.border,
     Column(
         modifier
             .fillMaxWidth()
-            .background(Iys.bgBase, RoundedCornerShape(10.dp))
-            .border(1.dp, borderColor, RoundedCornerShape(10.dp))
+            .background(Iys.bgBase, RoundedCornerShape(16.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(16.dp))
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) { content() }
@@ -241,8 +242,18 @@ private fun ChatScreen(vm: GusViewModel, ui: UiState, states: Map<String, ModelS
         ) {
             if (ui.messages.isEmpty()) {
                 item {
-                    Muted("Pregúntale lo que quieras. Todo se procesa en este teléfono; nada sale a internet.", Iys.textFaint)
-                    Muted("Ojo: los modelos pequeños pueden inventar datos (fechas, nombres, cifras). Úsalos para redactar, resumir o explicar, y verifica los hechos importantes.", Iys.orange)
+                    Column(
+                        Modifier.fillMaxWidth().padding(top = 36.dp, bottom = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text("ISYCODE", style = MaterialTheme.typography.titleLarge, color = Iys.accent)
+                        Spacer(Modifier.height(8.dp))
+                        Text("GUS", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(6.dp))
+                        Muted("Pregunta lo que quieras. Se procesa en este teléfono.", Iys.textSecondary)
+                        Spacer(Modifier.height(8.dp))
+                        Muted("Los modelos pequeños inventan fechas, nombres y cifras. Úsalos para redactar o resumir, y verifica lo importante.", Iys.orange)
+                    }
                 }
             }
             items(ui.messages) { MessageBubble(it) }
@@ -251,7 +262,10 @@ private fun ChatScreen(vm: GusViewModel, ui: UiState, states: Map<String, ModelS
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Iys.accent)
                         Spacer(Modifier.width(8.dp))
-                        Muted(if (ui.loadingModel) "Cargando el modelo en memoria…" else "GUS está pensando…")
+                        Column {
+                            Muted(if (ui.loadingModel) "Cargando el modelo en memoria…" else "GUS está pensando…")
+                            if (!ui.loadingModel) Muted("Si el modelo es grande, puede tardar un minuto. Puedes detenerlo.")
+                        }
                     }
                 }
                 ui.error?.let { Muted(it, Iys.red) }
@@ -288,11 +302,11 @@ private fun MessageBubble(m: dev.iyscode.movil.ChatUiMessage) {
         Column(
             Modifier
                 .widthIn(max = 320.dp)
-                .background(if (mine) Iys.accentSoft else Iys.surface, RoundedCornerShape(12.dp))
-                .border(1.dp, if (mine) Iys.border else Color.Transparent, RoundedCornerShape(12.dp))
-                .padding(10.dp),
+                .background(if (mine) Iys.accentSoft else Iys.surface, RoundedCornerShape(18.dp))
+                .border(1.dp, if (mine) Iys.accent.copy(alpha = 0.45f) else Iys.border, RoundedCornerShape(18.dp))
+                .padding(horizontal = 14.dp, vertical = 10.dp),
         ) {
-            if (!mine) Text("GUS", style = MaterialTheme.typography.labelSmall, color = Iys.accent)
+            Text(if (mine) "Tú" else "GUS", style = MaterialTheme.typography.labelSmall, color = if (mine) Iys.accent else Iys.violet)
             SelectionContainer { Text(m.text, style = MaterialTheme.typography.bodyLarge) }
             m.meta?.let { Muted(it, Iys.textFaint) }
         }
@@ -302,22 +316,45 @@ private fun MessageBubble(m: dev.iyscode.movil.ChatUiMessage) {
 @Composable
 private fun Composer(generating: Boolean, onSend: (String) -> Unit, onStop: () -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+    Row(
+        verticalAlignment = Alignment.Bottom,
+        modifier = Modifier
+            .padding(bottom = 10.dp)
+            .background(Iys.surface, RoundedCornerShape(24.dp))
+            .border(1.dp, Iys.border, RoundedCornerShape(24.dp))
+            .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 2.dp),
+    ) {
         OutlinedTextField(
             value = text, onValueChange = { text = it },
             modifier = Modifier.weight(1f),
-            placeholder = { Text("Escribe a GUS…", style = MaterialTheme.typography.bodyMedium) },
-            textStyle = MaterialTheme.typography.bodyLarge,
+            placeholder = { Text("Escribe a GUS…", style = MaterialTheme.typography.bodyMedium, color = Iys.textFaint) },
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = Iys.textPrimary),
             maxLines = 5,
-            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Iys.accent, unfocusedBorderColor = Iys.border),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Color.Transparent,
+                unfocusedBorderColor = Color.Transparent,
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                cursorColor = Iys.accent,
+            ),
         )
-        Spacer(Modifier.width(8.dp))
-        if (generating) {
-            IconButton(onClick = onStop) { Icon(Icons.Filled.Stop, "Detener", tint = Iys.red) }
-        } else {
-            IconButton(onClick = { onSend(text); text = "" }, enabled = text.isNotBlank()) {
-                Icon(Icons.AutoMirrored.Filled.Send, "Enviar", tint = if (text.isNotBlank()) Iys.accent else Iys.textFaint)
-            }
+        val canSend = text.isNotBlank()
+        Box(
+            Modifier
+                .padding(bottom = 8.dp, end = 4.dp)
+                .size(40.dp)
+                .background(if (generating || canSend) Iys.accent else Iys.surfaceHigh, CircleShape)
+                .clickable(enabled = generating || canSend) {
+                    if (generating) onStop() else { onSend(text); text = "" }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                if (generating) Icons.Filled.Stop else Icons.AutoMirrored.Filled.Send,
+                if (generating) "Detener" else "Enviar",
+                tint = if (generating || canSend) Iys.onAccent else Iys.textFaint,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }

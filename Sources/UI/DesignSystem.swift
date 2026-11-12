@@ -10,75 +10,76 @@ public enum IysTheme: String, CaseIterable, Identifiable {
 
     public var title: String {
         switch self {
-        case .console: return "Consola"
-        case .premium: return "Premium"
+        case .console: return "ISyCode"
+        case .premium: return "Violeta"
         }
     }
 
     public var subtitle: String {
         switch self {
-        case .console: return "Enfoque total. Estilo terminal."
-        case .premium: return "Moderno. Elegante. Listo para todo."
+        case .console: return "Noche índigo. Acento coral."
+        case .premium: return "La misma noche, acento violeta."
         }
     }
 
     public var accent: Color {
         switch self {
-        case .console: return Color(hex: "00D7A5")
-        case .premium: return Color(hex: "4B8DFF")
+        case .console: return Color(hex: "E94560")
+        case .premium: return Color(hex: "9B5DE5")
         }
     }
 
     public var userSurface: Color {
         switch self {
-        case .console: return Color(hex: "00D7A5", opacity: 0.12)
-        case .premium: return Color(hex: "3978F6", opacity: 0.22)
+        case .console: return Color(hex: "E94560", opacity: 0.16)
+        case .premium: return Color(hex: "9B5DE5", opacity: 0.18)
         }
     }
 
     public var assistantSurface: Color {
         switch self {
-        case .console: return Color(hex: "0D1715")
-        case .premium: return Color(hex: "242B37")
+        case .console: return Color(hex: "242433")
+        case .premium: return Color(hex: "2A2438")
         }
     }
 
     public var background: Color {
         switch self {
-        case .console: return Color(hex: "050807")
-        case .premium: return Color(hex: "101319")
+        case .console: return Color(hex: "12121C")
+        case .premium: return Color(hex: "14141F")
         }
     }
 
     public var base: Color {
         switch self {
-        case .console: return Color(hex: "101412")
-        case .premium: return Color(hex: "1B2029")
+        case .console: return Color(hex: "1A1A2E")
+        case .premium: return Color(hex: "1C1A2E")
         }
     }
 
     public var layer: Color {
         switch self {
-        case .console: return Color(hex: "151D1A")
-        case .premium: return Color(hex: "252C38")
+        case .console: return Color(hex: "222236")
+        case .premium: return Color(hex: "262433")
         }
     }
 
     public var secondaryLayer: Color {
         switch self {
-        case .console: return Color(hex: "1B2521")
-        case .premium: return Color(hex: "303847")
+        case .console: return Color(hex: "2C2C42")
+        case .premium: return Color(hex: "312A44")
         }
     }
 
     public var border: Color {
         switch self {
-        case .console: return Color(hex: "00D7A5", opacity: 0.18)
-        case .premium: return Color(hex: "A9B9D4", opacity: 0.16)
+        case .console: return Color(hex: "9AA3AD", opacity: 0.28)
+        case .premium: return Color(hex: "9B5DE5", opacity: 0.28)
         }
     }
 
-    public var usesMonospacedBody: Bool { self == .console }
+    /// Prose stays in the system face. Code, tools, and meta keep the mono styles.
+    public var usesMonospacedBody: Bool { false }
 }
 
 public enum IysThemePreferences {
@@ -118,11 +119,13 @@ public struct OCColor {
     public static var borderMuted: Color { theme.border }
     public static var borderBase: Color { theme.border.opacity(0.75) }
     public static let borderStrong = Color(hex: "FFFFFF", opacity: 0.20)
-    public static let textPrimary  = Color(hex: "F2F2F2")
-    public static let textSecondary = Color(hex: "AEAEAE")
-    public static let textFaint    = Color(hex: "808080")
-    public static let iconPrimary  = Color(hex: "DBDBDB")
-    public static let iconMuted    = Color(hex: "808080")
+    public static let textPrimary  = Color(hex: "E0E0E0")
+    public static let textSecondary = Color(hex: "9AA3AD")
+    public static let textFaint    = Color(hex: "7A8490")
+    public static let iconPrimary  = Color(hex: "E0E0E0")
+    public static let iconMuted    = Color(hex: "9AA3AD")
+    /// Ink that sits on a filled accent. Coral and violet both need light text.
+    public static let onAccent     = Color(hex: "F7F4EF")
 
     // Agent / Mode colors
     public static var agentBuild: Color { theme.accent }
@@ -159,10 +162,10 @@ public struct OCColor {
     public static var diffSelectedBg: Color { theme.accent.opacity(0.10) }
 
     // Semantic
-    public static let success        = Color(hex: "4CD97B")
-    public static let warning        = Color(hex: "F7D060")
-    public static let danger         = Color(hex: "FF6B6B")
-    public static let info           = Color(hex: "60C8F7")
+    public static let success        = Color(hex: "4ADE80")
+    public static let warning        = Color(hex: "FBBF24")
+    public static let danger         = Color(hex: "F87171")
+    public static let info           = Color(hex: "22D3EE")
 
     // Liquid Glass approximations (for Figma parity; prefer system APIs in code)
     public static let glassNavFill   = Color.white.opacity(0.06)
@@ -221,14 +224,14 @@ public struct OCSpacing {
 public struct OCRadius {
     public static let r4: CGFloat  = 4
     private static var premium: Bool { IysThemePreferences.active == .premium }
-    public static var r8: CGFloat  { premium ? 8 : 4 }
-    public static var r10: CGFloat { premium ? 10 : 5 }
-    public static var r12: CGFloat { premium ? 12 : 6 }
-    public static var r14: CGFloat { premium ? 14 : 7 }
-    public static var r18: CGFloat { premium ? 18 : 8 }
-    public static var r22: CGFloat { premium ? 22 : 10 }
-    public static var r24: CGFloat { premium ? 24 : 10 }
-    public static var r28: CGFloat { premium ? 28 : 12 }
+    public static var r8: CGFloat  { premium ? 12 : 10 }
+    public static var r10: CGFloat { premium ? 14 : 12 }
+    public static var r12: CGFloat { premium ? 16 : 14 }
+    public static var r14: CGFloat { premium ? 18 : 16 }
+    public static var r18: CGFloat { premium ? 22 : 18 }
+    public static var r22: CGFloat { premium ? 26 : 22 }
+    public static var r24: CGFloat { premium ? 28 : 24 }
+    public static var r28: CGFloat { premium ? 32 : 26 }
 }
 
 // MARK: - Typography Tokens
@@ -310,18 +313,6 @@ public enum AgentMode: String, CaseIterable, Identifiable, Sendable {
 
     public var displayName: String { rawValue }
 
-    /// Nombre visible en la interfaz. `rawValue` sigue siendo el identificador
-    /// que se envía al backend.
-    public var title: String {
-        switch self {
-        case .build:   return "Construir"
-        case .plan:    return "Planear"
-        case .explore: return "Explorar"
-        case .review:  return "Revisar"
-        case .custom:  return "Personalizado"
-        }
-    }
-
     public var id: String { rawValue }
 
     public var color: Color {
@@ -356,11 +347,11 @@ public enum AgentMode: String, CaseIterable, Identifiable, Sendable {
 
     public var description: String {
         switch self {
-        case .build:   return "Edita archivos y ejecuta herramientas"
-        case .plan:    return "Solo lectura: explora y planifica"
-        case .explore: return "Explora el proyecto y delega subtareas"
-        case .review:  return "Revisa y comprueba los cambios"
-        case .custom:  return "Agente con comportamiento personalizado"
+        case .build:   return "Can edit files and run tools"
+        case .plan:    return "Read-only exploration and planning"
+        case .explore: return "Exploration and sub-agent tasks"
+        case .review:  return "Review and check changes"
+        case .custom:  return "Custom agent behavior"
         }
     }
 
@@ -389,15 +380,6 @@ public enum ToolCallState: String, Sendable {
         case .success:    return OCColor.success
         case .failed:     return OCColor.danger
         case .permission: return OCColor.warning
-        }
-    }
-
-    public var title: String {
-        switch self {
-        case .running:    return "En curso"
-        case .success:    return "Listo"
-        case .failed:     return "Falló"
-        case .permission: return "Permiso"
         }
     }
 
@@ -437,13 +419,12 @@ public enum WorkSurface: String, CaseIterable, Identifiable, Sendable {
 
     public var id: String { rawValue }
 
-    /// Nombre visible en la interfaz.
     public var title: String {
         switch self {
-        case .chat:      return "Chat"
-        case .files:     return "Archivos"
-        case .review:    return "Cambios"
-        case .terminal:  return "Terminal"
+        case .chat: return "Chat"
+        case .files: return "Archivos"
+        case .review: return "Revisión"
+        case .terminal: return "Terminal"
         }
     }
 

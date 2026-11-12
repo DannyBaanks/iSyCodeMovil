@@ -92,7 +92,7 @@ public struct ProjectListContent: View {
     
     public var body: some View {
         List {
-            if filteredProjects.isEmpty {
+            if store.projects.isEmpty {
                 emptyState
             } else {
                 Section {
@@ -117,7 +117,7 @@ public struct ProjectListContent: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(OCColor.bgDeep.ignoresSafeArea())
-        .navigationTitle("Proyectos")
+        .navigationTitle("ISYCODE")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -125,7 +125,6 @@ public struct ProjectListContent: View {
                     Image(systemName: "gearshape")
                         .font(.system(size: 17))
                 }
-                .accessibilityLabel("Ajustes")
             }
         }
         .toolbarBackground(.visible, for: .navigationBar)
@@ -165,9 +164,13 @@ public struct ProjectListContent: View {
 
     private var emptyState: some View {
         VStack(spacing: OCSpacing.xl) {
-            Image(systemName: searchText.isEmpty ? "folder.badge.plus" : "magnifyingglass")
-                .font(.system(size: 48, weight: .light))
-                .foregroundColor(OCColor.iconMuted)
+            Text("ISYCODE")
+                .font(.system(size: 22, weight: .heavy, design: .rounded))
+                .tracking(1.8)
+                .foregroundColor(IysThemePreferences.active.accent)
+            Image(systemName: "folder.badge.plus")
+                .font(.system(size: 36, weight: .light))
+                .foregroundColor(OCColor.textSecondary)
             
             VStack(spacing: OCSpacing.xs) {
                 Text(searchText.isEmpty ? "Aún no hay proyectos" : "No encontramos proyectos")
@@ -176,8 +179,8 @@ public struct ProjectListContent: View {
                 
                 Text(searchText.isEmpty
                      ? (store.backendMode == .remote
-                        ? "Tu equipo todavía no publicó proyectos. Abre uno allí y vuelve a entrar."
-                        : "El entorno de prueba aún no tiene un espacio de trabajo.")
+                        ? "Conecta un servidor OpenCode para ver sus proyectos."
+                        : "Inicia el entorno nativo para crear un espacio de trabajo.")
                      : "Prueba con otro nombre o ruta.")
                     .font(OCTypography.meta)
                     .foregroundColor(OCColor.textFaint)
@@ -253,7 +256,6 @@ public struct SessionRow: View {
                     Text(session.timestamp, style: .relative)
                         .font(OCTypography.metaMono)
                         .foregroundColor(OCColor.textFaint)
-                        .lineLimit(1)
                     
                     if session.isDirty {
                         Circle()
@@ -272,12 +274,8 @@ public struct SessionRow: View {
         .buttonStyle(.plain)
         .contextMenu {
             if showsManagementActions {
-                Button(action: onRename) {
-                    Label("Renombrar", systemImage: "pencil")
-                }
-                Button(role: .destructive, action: onDelete) {
-                    Label("Eliminar", systemImage: "trash")
-                }
+                Button("Rename", action: onRename)
+                Button("Delete", role: .destructive, action: onDelete)
             }
         }
     }
@@ -309,7 +307,6 @@ public struct SessionListView: View {
     
     public var body: some View {
         List {
-            if !filteredSessions.isEmpty {
             Section {
                 ForEach(filteredSessions) { session in
                     SessionRow(
@@ -329,13 +326,13 @@ public struct SessionListView: View {
                     .listRowInsets(EdgeInsets(top: 5, leading: OCSpacing.contentMargin, bottom: 5, trailing: OCSpacing.contentMargin))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         if store.supportsSessionManagement {
                             Button(role: .destructive) {
                                 sessionToDelete = session
                                 showDeleteConfirm = true
                             } label: {
-                                Label("Eliminar", systemImage: "trash")
+                                Label("Delete", systemImage: "trash")
                             }
                         }
                     }
@@ -349,12 +346,9 @@ public struct SessionListView: View {
                     .padding(.bottom, OCSpacing.xs)
                     .textCase(nil)
             }
-            }
-
+            
             if store.sessions.isEmpty {
                 emptyState
-            } else if filteredSessions.isEmpty {
-                noResultsState
             }
         }
         .listStyle(.plain)
@@ -373,14 +367,12 @@ public struct SessionListView: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 17, weight: .semibold))
                 }
-                .accessibilityLabel("Proyectos")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showNewSessionSheet = true } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 17, weight: .semibold))
                 }
-                .accessibilityLabel("Nueva sesión")
             }
         }
         .toolbarBackground(.visible, for: .navigationBar)
@@ -396,7 +388,7 @@ public struct SessionListView: View {
                 Button { showNewSessionSheet = true } label: {
                     Label("Nueva sesión", systemImage: "plus")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(OCColor.bgDeep)
+                        .foregroundColor(OCColor.onAccent)
                         .frame(maxWidth: .infinity)
                         .frame(height: 48)
                         .background(IysThemePreferences.active.accent.gradient)
@@ -421,13 +413,13 @@ public struct SessionListView: View {
                 Task { await store.renameSession(session, title: newTitle) }
             }
         }
-        .alert("Eliminar sesión", isPresented: $showDeleteConfirm, presenting: sessionToDelete) { session in
-            Button("Eliminar", role: .destructive) {
+        .alert("Delete Session", isPresented: $showDeleteConfirm, presenting: sessionToDelete) { session in
+            Button("Delete", role: .destructive) {
                 Task { await store.deleteSession(session) }
             }
-            Button("Cancelar", role: .cancel) { sessionToDelete = nil }
+            Button("Cancel", role: .cancel) { sessionToDelete = nil }
         } message: { session in
-            Text("Se eliminará «\(session.title)». Esta acción no se puede deshacer.")
+            Text("Delete this conversation? This action cannot be undone.")
         }
     }
     
@@ -442,7 +434,7 @@ public struct SessionListView: View {
                     .font(OCTypography.bodyStrong)
                     .foregroundColor(OCColor.textPrimary)
                 
-                Text("Crea una sesión para empezar a trabajar en este proyecto.")
+                Text("Abre una conversación para empezar")
                     .font(OCTypography.meta)
                     .foregroundColor(OCColor.textFaint)
                     .multilineTextAlignment(.center)
@@ -450,7 +442,7 @@ public struct SessionListView: View {
             Button { showNewSessionSheet = true } label: {
                 Label("Iniciar conversación", systemImage: "bubble.left.and.bubble.right.fill")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(OCColor.bgDeep)
+                    .foregroundColor(OCColor.onAccent)
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
                     .background(IysThemePreferences.active.accent.gradient)
@@ -467,65 +459,34 @@ public struct SessionListView: View {
     }
 }
 
-extension SessionListView {
-    fileprivate var noResultsState: some View {
-        VStack(spacing: OCSpacing.xs) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 30, weight: .light))
-                .foregroundColor(OCColor.iconMuted)
-                .padding(.bottom, OCSpacing.xs)
-            Text("No encontramos sesiones")
-                .font(OCTypography.bodyStrong)
-                .foregroundColor(OCColor.textPrimary)
-            Text("Prueba con otro título.")
-                .font(OCTypography.meta)
-                .foregroundColor(OCColor.textFaint)
-        }
-        .padding(OCSpacing.huge)
-        .frame(maxWidth: .infinity)
-        .listRowInsets(EdgeInsets())
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-    }
-}
-
 private struct NewSessionSheet: View {
     @Environment(\.dismiss) private var dismiss
     let project: Project
     let onCreate: (String) -> Void
     @State private var title = ""
-    @FocusState private var titleFocused: Bool
     
     var body: some View {
         NavigationStack {
             Form {
-                Section {
+                Section("Conversación") {
                     TextField("Título (opcional)", text: $title)
-                        .focused($titleFocused)
-                        .submitLabel(.done)
-                        .onSubmit { create() }
-                } footer: {
-                    Text("Si lo dejas vacío, la sesión tomará un título automático.")
                 }
             }
-            .navigationTitle("Nueva sesión")
+            .navigationTitle("Nueva conversación")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancelar") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Crear") { create() }
+                    Button("Crear") {
+                        onCreate(title)
+                        dismiss()
+                    }
                 }
             }
         }
         .presentationDetents([.medium])
-        .onAppear { titleFocused = true }
-    }
-
-    private func create() {
-        onCreate(title.trimmingCharacters(in: .whitespacesAndNewlines))
-        dismiss()
     }
 }
 
@@ -539,11 +500,11 @@ private struct RenameSessionSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
+                Section("Nuevo nombre") {
                     TextField("Título", text: $title)
                 }
             }
-            .navigationTitle("Renombrar sesión")
+            .navigationTitle("Renombrar")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -604,17 +565,17 @@ struct SettingsSheet: View {
                     Text("El tema se aplica al volver a abrir iSyCode.")
                 }
 
-                Section("Mi equipo") {
+                Section("ISyCode Host API") {
                     MobileHostPairingSection()
                         .environmentObject(hostStore)
                         .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                         .listRowBackground(Color.clear)
                 }
 
-                Section("Conexión por Bridge") {
+                Section("Legacy Bridge") {
                     if store.backendMode == .remote || store.backendMode == .native {
                         HStack {
-                            Text("Estado")
+                            Text("Backend")
                             Spacer()
                             Text(store.connectionStatus)
                                 .font(OCTypography.metaMono)
@@ -623,14 +584,14 @@ struct SettingsSheet: View {
                                 .multilineTextAlignment(.trailing)
                         }
                         HStack {
-                            Text("Conexión")
+                            Text("Connection")
                             Spacer()
-                            Text(healthLabel(for: store.connectionHealth))
+                            Text(store.connectionHealth.rawValue.capitalized)
                                 .font(OCTypography.metaMono)
                                 .foregroundColor(healthColor(for: store.connectionHealth))
                         }
                         if store.backendMode == .remote {
-                            Button("Olvidar conexión", role: .destructive) {
+                            Button("Forget Connection", role: .destructive) {
                                 Task {
                                     await store.forgetPairing()
                                     await store.disconnect()
@@ -638,15 +599,15 @@ struct SettingsSheet: View {
                             }
                         }
                     } else {
-                        Text("Sin conexión")
+                        Text("Not connected")
                             .foregroundColor(OCColor.textFaint)
                     }
                 }
                 
-                Section("Modo de ejecución") {
-                    Picker("Modo", selection: modeBinding) {
-                        Text("Mi equipo (remoto)").tag(BackendMode.remote.rawValue)
-                        Text("Este iPhone (prueba)").tag(BackendMode.native.rawValue)
+                Section("Runtime") {
+                    Picker("Mode", selection: modeBinding) {
+                        Text("Remote (OpenCode Server)").tag(BackendMode.remote.rawValue)
+                        Text("Sandbox (this phone)").tag(BackendMode.native.rawValue)
                     }
                     
                     if store.backendMode == .native {
@@ -656,18 +617,13 @@ struct SettingsSheet: View {
                     }
                     
                     if showRemoteUnavailableNote {
-                        Text("No hay un equipo vinculado. Vincula uno primero.")
+                        Text("No stored pairing — link a desktop first.")
                             .font(OCTypography.meta)
                             .foregroundColor(OCColor.warning)
                     }
                 }
 
-                if store.backendMode == .native, store.sandboxLink == nil {
-                    PhoneProjectSection()
-                        .environmentObject(store)
-                }
-
-                Section("Entorno de este iPhone") {
+                Section("Sandbox del iPhone") {
                     NavigationLink {
                         NativeCapabilitySettingsView()
                     } label: {
@@ -714,28 +670,28 @@ struct SettingsSheet: View {
                         .foregroundColor(OCColor.textFaint)
                 }
                 
-                Section("Acerca de") {
+                Section("Attribution") {
                     HStack {
                         Text("ISyCode Móvil")
                         Spacer()
-                        Text("App independiente de código abierto")
+                        Text("Independent open-source app")
                             .foregroundColor(OCColor.textFaint)
                     }
                     HStack {
-                        Text("Licencia")
+                        Text("License")
                         Spacer()
                         Text("MIT")
                             .foregroundColor(OCColor.textFaint)
                     }
                 }
 
-                Section("Proveedores y proyectos externos") {
-                    LabeledContent("Proveedores de IA", value: "OpenAI · Anthropic · Google · xAI · NVIDIA · OpenRouter")
-                    LabeledContent("En tu equipo", value: "OpenCode · Codex")
-                    LabeledContent("Modelo local", value: "Qwen · Hugging Face")
-                    LabeledContent("Motor de inferencia", value: "llama.cpp")
+                Section("External providers & projects") {
+                    LabeledContent("AI providers", value: "OpenAI · Anthropic · Google · xAI · NVIDIA · OpenRouter")
+                    LabeledContent("Desktop runtime", value: "OpenCode · Codex")
+                    LabeledContent("Local model", value: "Qwen · Hugging Face")
+                    LabeledContent("Inference runtime", value: "llama.cpp")
 
-                    Text("Todos los nombres y marcas pertenecen a sus respectivos dueños. ISyCode Móvil es un cliente independiente: no está afiliado a estos proveedores o proyectos ni cuenta con su respaldo. El acceso, los términos, las licencias de los modelos y los cobros los define cada proveedor.")
+                    Text("All names and trademarks belong to their respective owners. ISyCode Móvil is an independent client and is not affiliated with or endorsed by these providers or projects. Provider access, terms, model licenses, and charges are set by their respective owners.")
                         .font(OCTypography.meta)
                         .foregroundColor(OCColor.textFaint)
                         .fixedSize(horizontal: false, vertical: true)
@@ -804,14 +760,6 @@ struct SettingsSheet: View {
         )
     }
     
-    private func healthLabel(for health: ConnectionHealth) -> String {
-        switch health {
-        case .connected: return "Conectado"
-        case .connecting: return "Conectando…"
-        case .disconnected: return "Desconectado"
-        }
-    }
-
     private func healthColor(for health: ConnectionHealth) -> Color {
         switch health {
         case .connected: return OCColor.success
@@ -851,7 +799,7 @@ private struct ThemeChoiceRow: View {
                     }
                     .padding(7)
                     .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
-                    .background(theme == .console ? Color(hex: "07100D") : Color(hex: "151C29"))
+                    .background(theme.background)
                     .clipShape(RoundedRectangle(cornerRadius: 9))
 
                     if isSelected {
@@ -867,7 +815,7 @@ private struct ThemeChoiceRow: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(OCColor.textPrimary)
                     .lineLimit(1)
-                Text(theme == .console ? "Enfoque total. Estilo terminal." : "Moderno. Elegante. Listo para todo.")
+                Text(theme.subtitle)
                     .font(.system(size: 9))
                     .foregroundColor(OCColor.textFaint)
                     .lineLimit(2)

@@ -384,7 +384,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
                 id: c.id,
                 projectId: projectID,
                 title: c.title,
-                lastEventSummary: c.lastMessagePreview ?? "No messages",
+                lastEventSummary: c.lastMessagePreview ?? "Sin mensajes",
                 timestamp: c.updatedAt,
                 agentMode: .build,
                 isRunning: false
@@ -394,11 +394,11 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     
     public func createSession(projectID: String, title: String) async throws -> Session {
         guard let ps = persistence else { throw WorkbenchError.notConnected }
-        let conv = Conversation(title: title.isEmpty ? "New Session" : title)
+        let conv = Conversation(title: title.isEmpty ? "Nueva conversación" : title)
         try await ps.saveConversation(conv)
         await installLoop(sessionID: conv.id)
         eventContinuation?.yield(.sessionsChanged)
-        return Session(id: conv.id, projectId: projectID, title: conv.title, lastEventSummary: "New session", timestamp: conv.updatedAt, agentMode: .build, isRunning: false)
+        return Session(id: conv.id, projectId: projectID, title: conv.title, lastEventSummary: "Conversación nueva", timestamp: conv.updatedAt, agentMode: .build, isRunning: false)
     }
     
     public func renameSession(sessionID: String, title: String) async throws {

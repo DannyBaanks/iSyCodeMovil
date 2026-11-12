@@ -37,7 +37,7 @@ public struct ComposerView: View {
                 // Input text
                 ZStack(alignment: .topLeading) {
                     if sessionState.composerText.isEmpty {
-                        Text(sessionState.isProcessing ? "Escribe tu siguiente mensaje…" : composerPlaceholder)
+                        Text(sessionState.isProcessing ? "" : composerPlaceholder)
                             .font(OCTypography.body)
                             .foregroundColor(OCColor.textFaint)
                             .padding(.horizontal, OCSpacing.base)
@@ -51,6 +51,7 @@ public struct ComposerView: View {
                         .lineLimit(1...8)
                         .submitLabel(.send)
                         .onSubmit { handleSend() }
+                        .disabled(sessionState.isProcessing)
                         .padding(.horizontal, OCSpacing.base)
                         .padding(.vertical, OCSpacing.sm)
                 }
@@ -153,7 +154,6 @@ public struct SendStopButton: View {
         }
         .disabled(isProcessing ? false : !canSend)
         .opacity(isProcessing || canSend ? 1 : 0.4)
-        .accessibilityLabel(isProcessing ? "Detener" : "Enviar")
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
         .animation(.easeInOut(duration: 0.15), value: isProcessing)
@@ -165,7 +165,7 @@ public struct SendStopButton: View {
     }
 
     private var iconColor: Color {
-        OCColor.bgDeep
+        OCColor.onAccent
     }
 
     private var iconName: String {
@@ -221,7 +221,6 @@ public struct ComposerControlRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Adjuntar archivos")
 
             if let limitedLabel {
                 Label(limitedLabel, systemImage: "terminal")
@@ -278,7 +277,7 @@ public struct AgentPill: View {
                     .fill(mode.color)
                     .frame(width: 6, height: 6)
 
-                Text(mode.title)
+                Text(mode.rawValue)
                     .font(OCTypography.pillLabel)
                     .foregroundColor(OCColor.textPrimary)
             }
@@ -301,8 +300,6 @@ public struct AgentPill: View {
         }, perform: {})
         .frame(height: 44) // hit target
         .contentShape(Rectangle())
-        .accessibilityLabel("Modo: \(mode.title)")
-        .accessibilityHint("Cambia el modo del agente")
     }
 }
 
@@ -388,7 +385,7 @@ public struct ModelPillPlaceholder: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(OCColor.iconMuted)
 
-                Text("Elegir modelo")
+                Text("Select model")
                     .font(OCTypography.modelPillLabel)
                     .foregroundColor(OCColor.textFaint)
             }
@@ -471,7 +468,7 @@ public struct AgentPickerSheet: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(OCColor.bgDeep)
-            .navigationTitle("Modo del agente")
+            .navigationTitle("Agente")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -503,7 +500,7 @@ public struct AgentPickerRow: View {
                     .frame(width: 8, height: 8)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(mode.title)
+                    Text(mode.rawValue)
                         .font(.system(size: 15, weight: .medium, design: .default))
                         .foregroundColor(OCColor.textPrimary)
 
@@ -707,7 +704,7 @@ public struct ModelPickerRow: View {
             items.append(("Local", "iphone", OCColor.agentExplore))
         }
         if model.supportsReasoning {
-            items.append(("Razona", "brain", OCColor.agentBuild))
+            items.append(("Reasoning", "brain", OCColor.agentBuild))
         }
         if items.count < 2, let ctx = model.contextWindow {
             items.append(("\(ctx / 1000)k ctx", "text.line", OCColor.textFaint))
@@ -736,9 +733,9 @@ public struct AttachmentsSheet: View {
     public var body: some View {
         NavigationStack {
             Form {
-                Section("Adjuntos de este mensaje") {
+                Section("Current") {
                     if sessionState.composerAttachments.isEmpty {
-                        Text("Sin adjuntos")
+                        Text("No attachments")
                             .font(OCTypography.meta)
                             .foregroundColor(OCColor.textFaint)
                     } else {
@@ -761,9 +758,9 @@ public struct AttachmentsSheet: View {
                     }
                 }
 
-                Section("Archivos del proyecto") {
+                Section("Workspace files") {
                     if store.fileTree.isEmpty {
-                        Text("Cargando archivos…")
+                        Text("Loading workspace…")
                             .font(OCTypography.meta)
                             .foregroundColor(OCColor.textFaint)
                     } else {
@@ -788,10 +785,10 @@ public struct AttachmentsSheet: View {
                     }
                 }
 
-                Section("Añadir por nombre") {
-                    TextField("Nombre de archivo o contexto", text: $manualName)
+                Section("Agregar por nombre") {
+                    TextField("Nombre del archivo", text: $manualName)
                         .autocorrectionDisabled()
-                    Button("Añadir") {
+                    Button("Agregar") {
                         addAttachment(name: manualName, path: nil)
                     }
                     .disabled(manualName.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -820,8 +817,6 @@ public struct AttachmentsSheet: View {
     private func addAttachment(name: String, path: String?) {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
-        guard !sessionState.composerAttachments.contains(where: { $0.name == trimmed && $0.path == path }) else { return }
-        UISelectionFeedbackGenerator().selectionChanged()
         let attachment = Attachment(
             type: path == nil ? .context : .file,
             name: trimmed,
