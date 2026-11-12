@@ -194,6 +194,16 @@ Copia el enlace que aparece, abre **Conectar con Bridge anterior** en la app y p
 
 Chat, streaming y aprobaciones por Tailscale. Ver la [guía remota](docs/REMOTE.md#experimental-codex-app-server).
 
+### Sandbox Docker (experimental)
+
+El agente piensa en el iPhone y trabaja en un contenedor de tu computadora: sin red, sin acceso a tu disco y sin credenciales. Cuando termina, tu computadora abre el pull request en una rama `movilclaw/…`. Necesita Docker y Tailscale:
+
+```bash
+npx --yes github:DannyBaanks/iSyCodeMovil#main link --runtime sandbox --host tailscale
+```
+
+Pega en la app la línea `isysandbox://pair?...`. Ver la [guía del sandbox](docs/SANDBOX.md).
+
 ### Host de iSyCode (en camino)
 
 El emparejamiento con PIN de 6 dígitos ya funciona. Las sesiones llegan con la versión de escritorio.
