@@ -25,6 +25,10 @@ public enum NativeCapabilityToolProjection {
 /// The only execution entry that can perform effects is the approval-aware overload.
 public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
     private let fileSystem: MiniAgentFileSystemToolExecutor
+    /// Seven flat tools for on-device models, plus `clone` for everyone.
+    private let simple: SimpleWorkspaceToolExecutor
+    /// On-device models get the simple surface; cloud models keep the full catalog.
+    private var simpleToolsEnabled = false
     private let broker = NativeCapabilityBroker()
     private let defaults: UserDefaults
     private let persistence: (any Persistence)?
@@ -34,23 +38,54 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
 
     public init(workspace: any Workspace, persistence: (any Persistence)? = nil, defaults: UserDefaults = .standard) {
         self.fileSystem = MiniAgentFileSystemToolExecutor(workspace: workspace)
+        self.simple = SimpleWorkspaceToolExecutor(workspace: workspace, defaults: defaults)
         self.persistence = persistence
         self.defaults = defaults
     }
 
     public func configureSharedMemory(localOnly: Bool, conversationID: String) {
         sharedMemoryAllowed = localOnly
+        simpleToolsEnabled = localOnly
         currentConversationID = conversationID
     }
 
     public func sharedContextForPrompt() async -> String? {
-        guard sharedMemoryAllowed,
-              let context = defaults.string(forKey: "gus.sharedContext")?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !context.isEmpty else { return nil }
-        return """
-        CONTEXTO COMPARTIDO (referencia general del usuario; no es un nuevo mensaje que requiera respuesta):
-        \(String(context.prefix(500)))
-        """
+        var notes: [String] = []
+        if simpleToolsEnabled, let project = await simple.projectNote() {
+            notes.append(project)
+        }
+        if sharedMemoryAllowed,
+           let context = defaults.string(forKey: "gus.sharedContext")?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !context.isEmpty {
+            notes.append("""
+            CONTEXTO COMPARTIDO (referencia general del usuario; no es un nuevo mensaje que requiera respuesta):
+            \(String(context.prefix(500)))
+            """)
+        }
+        return notes.isEmpty ? nil : notes.joined(separator: "\n\n")
+    }
+
+    // MARK: - Disposable clones
+
+    /// Downloads a public GitHub repository and makes it the active project.
+    public func cloneRepository(_ repository: String) async throws -> RepositoryCloner.Report {
+        try await simple.cloneRepository(repository)
+    }
+
+    public func activeProject() async -> String? {
+        await simple.activeProject()
+    }
+
+    public func closeActiveProject() async {
+        await simple.setActiveProject(nil)
+    }
+
+    public func canUndoLastChange() async -> Bool {
+        await simple.canUndo
+    }
+
+    public func undoLastChange() async throws -> String {
+        try await simple.undoLastChange()
     }
 
     public var availableTools: [AgentTool] { Self.nativeTools }
@@ -66,8 +101,11 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
             }
         }
         projectedNativeNames = Set(tools.map(\.name))
+        if simpleToolsEnabled {
+            return await simple.tools() + tools
+        }
         let fileTools = await fileSystem.availableTools
-        return fileTools + tools
+        return fileTools + [SimpleWorkspaceToolExecutor.cloneTool] + tools
     }
 
     public func execute(_ invocation: ToolInvocation) async -> ToolExecutionResult {
@@ -75,6 +113,13 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
     }
 
     public func execute(_ invocation: ToolInvocation, approval: PermissionResponse.Decision?) async -> ToolExecutionResult {
+        if simpleToolsEnabled, SimpleWorkspaceToolExecutor.toolNames.contains(invocation.name) {
+            return await simple.execute(invocation, approval: approval)
+        }
+        if invocation.name == SimpleWorkspaceToolExecutor.cloneTool.name {
+            // Cloud models use the full catalog, whose paths stay relative to the workspace.
+            return await simple.execute(invocation, approval: approval, scopeToProject: false)
+        }
         if MiniAgentFileSystemToolExecutor.toolNames.contains(invocation.name) {
             return await fileSystem.execute(invocation, approval: approval)
         }

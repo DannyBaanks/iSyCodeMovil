@@ -85,6 +85,16 @@ jobs:
           done
           exit $fail
 
+      - name: Tool-call grammar accepts valid calls and rejects invalid ones on every tokenizer
+        run: |
+          set -o pipefail
+          fail=0
+          for f in llama.cpp/models/ggml-vocab-*.gguf; do
+            dist/bridge_smoke grammar "$f" scripts/gus_catalog/tool_grammar.gbnf scripts/gus_catalog/tool_grammar_cases.txt \
+              | tee -a dist/grammar.jsonl || fail=1
+          done
+          exit $fail
+
       - uses: actions/upload-artifact@v4
         with:
           name: bridge-harness

@@ -62,6 +62,15 @@ char * gus_llama_generate_chat_sampled(GUSLlamaContext * context, const GUSChatM
                                        const GUSSamplingParams * sampling,
                                        GUSGenerationStats * stats, char * error, size_t error_capacity);
 
+/// Same as gus_llama_generate_chat_sampled, with the output constrained by a GBNF
+/// grammar whose start rule is `root` (NULL = unconstrained). A token the grammar
+/// rejects is never emitted, so the text is always a prefix of a valid sentence, and
+/// generation ends as soon as the grammar is complete. An unparsable grammar is an error.
+char * gus_llama_generate_chat_constrained(GUSLlamaContext * context, const GUSChatMessage * messages, size_t message_count,
+                                           const char * template_override, uint32_t max_tokens,
+                                           const GUSSamplingParams * sampling, const char * grammar,
+                                           GUSGenerationStats * stats, char * error, size_t error_capacity);
+
 /// Formats without generating; returns the prompt the model would see. Free with gus_llama_free_text.
 char * gus_llama_format_chat(GUSLlamaContext * context, const GUSChatMessage * messages, size_t message_count,
                              const char * template_override, int32_t * template_source,

@@ -122,6 +122,31 @@ public final class NativeSwiftBackend: WorkbenchBackend {
 
     public var isUsingSandbox: Bool { sandboxExecutor != nil }
 
+    // MARK: - Disposable clones on the iPhone
+
+    /// Downloads a public GitHub repository into the workspace and makes it the active project.
+    public func cloneRepository(_ repository: String) async throws -> RepositoryCloner.Report {
+        guard let exec = toolExecutor else { throw WorkbenchError.notConnected }
+        return try await exec.cloneRepository(repository)
+    }
+
+    public func activePhoneProject() async -> String? {
+        await toolExecutor?.activeProject()
+    }
+
+    public func canUndoPhoneProjectChange() async -> Bool {
+        await toolExecutor?.canUndoLastChange() ?? false
+    }
+
+    public func undoPhoneProjectChange() async throws -> String {
+        guard let exec = toolExecutor else { throw WorkbenchError.notConnected }
+        return try await exec.undoLastChange()
+    }
+
+    public func closeActivePhoneProject() async {
+        await toolExecutor?.closeActiveProject()
+    }
+
     /// Loads the selected provider when its key exists, then falls back to any
     /// configured supported provider. No key keeps the offline demo available.
     public func reloadSandboxModel() async throws {

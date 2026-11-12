@@ -1,6 +1,7 @@
 #include "GUSLlamaBridge.h"
 #include <llama/llama.h>
 #include <stdatomic.h>
+#include <math.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -217,8 +218,48 @@ static struct llama_sampler * make_sampler(const struct llama_vocab * vocab, con
     return chain;
 }
 
+/// Picks the next token under a grammar.
+///
+/// The chain samples first and the grammar only checks that one token: running the
+/// grammar over the whole vocabulary on every step is far slower, and most tokens a
+/// model proposes are already valid. Only when the proposal is rejected is the full
+/// candidate list filtered by the grammar and sampled again. Returns false when the
+/// grammar leaves nothing to emit.
+static bool sample_constrained(struct llama_sampler * chain, struct llama_sampler * grammar,
+                               struct llama_context * context, llama_token_data * candidates,
+                               int32_t vocab_size, llama_token * out) {
+    const float * logits = llama_get_logits_ith(context, -1);
+    if (logits == NULL) return false;
+    for (int32_t id = 0; id < vocab_size; id++) {
+        candidates[id] = (llama_token_data){ id, logits[id], 0.0f };
+    }
+    llama_token_data_array all = { candidates, (size_t)vocab_size, -1, false };
+    llama_sampler_apply(chain, &all);
+    if (all.selected < 0 || (size_t)all.selected >= all.size) return false;
+    llama_token token = all.data[all.selected].id;
+
+    llama_token_data proposal = { token, 1.0f, 0.0f };
+    llama_token_data_array single = { &proposal, 1, -1, false };
+    llama_sampler_apply(grammar, &single);
+    if (proposal.logit == -INFINITY) {
+        for (int32_t id = 0; id < vocab_size; id++) {
+            candidates[id] = (llama_token_data){ id, logits[id], 0.0f };
+        }
+        llama_token_data_array allowed = { candidates, (size_t)vocab_size, -1, false };
+        llama_sampler_apply(grammar, &allowed);
+        llama_sampler_apply(chain, &allowed);
+        if (allowed.selected < 0 || (size_t)allowed.selected >= allowed.size) return false;
+        if (allowed.data[allowed.selected].logit == -INFINITY) return false;
+        token = allowed.data[allowed.selected].id;
+    }
+    llama_sampler_accept(grammar, token);
+    llama_sampler_accept(chain, token);
+    *out = token;
+    return true;
+}
+
 static char * generate_from_prompt(GUSLlamaContext * state, const char * prompt, uint32_t max_tokens,
-                                   const GUSSamplingParams * sampling,
+                                   const GUSSamplingParams * sampling, const char * grammar_text,
                                    GUSGenerationStats * stats, char * error, size_t error_capacity) {
     atomic_store(&state->cancelled, false);
     llama_memory_clear(llama_get_memory(state->context), true);
@@ -287,9 +328,30 @@ static char * generate_from_prompt(GUSLlamaContext * state, const char * prompt,
     struct llama_sampler * sampler = make_sampler(vocab, sampling);
     if (sampler == NULL) { set_error(error, error_capacity, "Could not initialize local sampler."); return NULL; }
 
+    struct llama_sampler * grammar = NULL;
+    llama_token_data * candidates = NULL;
+    const int32_t vocab_size = llama_vocab_n_tokens(vocab);
+    if (grammar_text != NULL) {
+        grammar = llama_sampler_init_grammar(vocab, grammar_text, "root");
+        if (grammar == NULL) {
+            llama_sampler_free(sampler);
+            set_error(error, error_capacity, "The tool grammar could not be parsed.");
+            return NULL;
+        }
+        candidates = calloc((size_t)vocab_size, sizeof(llama_token_data));
+        if (candidates == NULL) {
+            llama_sampler_free(grammar);
+            llama_sampler_free(sampler);
+            set_error(error, error_capacity, "Not enough memory for constrained sampling.");
+            return NULL;
+        }
+    }
+
     size_t output_capacity = (size_t)max_tokens * 32 + 1;
     char * output = calloc(output_capacity, 1);
     if (output == NULL) {
+        free(candidates);
+        if (grammar != NULL) llama_sampler_free(grammar);
         llama_sampler_free(sampler);
         set_error(error, error_capacity, "Not enough memory for generated text.");
         return NULL;
@@ -301,11 +363,22 @@ static char * generate_from_prompt(GUSLlamaContext * state, const char * prompt,
     for (uint32_t index = 0; index < max_tokens; index++) {
         if (atomic_load(&state->cancelled)) {
             free(output);
+            free(candidates);
+            if (grammar != NULL) llama_sampler_free(grammar);
             llama_sampler_free(sampler);
             set_error(error, error_capacity, "Generation cancelled.");
             return NULL;
         }
-        llama_token token = llama_sampler_sample(sampler, state->context, -1);
+        llama_token token;
+        if (grammar != NULL) {
+            // Nothing left that the grammar accepts: the sentence is complete.
+            if (!sample_constrained(sampler, grammar, state->context, candidates, vocab_size, &token)) {
+                stopped_at_eog = 1;
+                break;
+            }
+        } else {
+            token = llama_sampler_sample(sampler, state->context, -1);
+        }
         if (llama_vocab_is_eog(vocab, token)) { stopped_at_eog = 1; break; }
         // llama_sampler_sample() already accepted the token; accepting it again
         // would count every token twice in the repetition penalty.
@@ -319,11 +392,15 @@ static char * generate_from_prompt(GUSLlamaContext * state, const char * prompt,
         struct llama_batch next = llama_batch_get_one(&token, 1);
         if (llama_decode(state->context, next) != 0) {
             free(output);
+            free(candidates);
+            if (grammar != NULL) llama_sampler_free(grammar);
             llama_sampler_free(sampler);
             set_error(error, error_capacity, "llama.cpp failed while generating a response.");
             return NULL;
         }
     }
+    free(candidates);
+    if (grammar != NULL) llama_sampler_free(grammar);
     llama_sampler_free(sampler);
     if (stats != NULL) {
         stats->generate_ms = now_ms() - generate_start;
@@ -338,7 +415,7 @@ char * gus_llama_generate(GUSLlamaContext * state, const char * prompt, uint32_t
         set_error(error, error_capacity, "Invalid inference request.");
         return NULL;
     }
-    return generate_from_prompt(state, prompt, max_tokens, NULL, NULL, error, error_capacity);
+    return generate_from_prompt(state, prompt, max_tokens, NULL, NULL, NULL, error, error_capacity);
 }
 
 static bool valid_role(const char * role) {
@@ -433,6 +510,14 @@ char * gus_llama_generate_chat_sampled(GUSLlamaContext * state, const GUSChatMes
                                        const char * template_override, uint32_t max_tokens,
                                        const GUSSamplingParams * sampling,
                                        GUSGenerationStats * stats, char * error, size_t error_capacity) {
+    return gus_llama_generate_chat_constrained(state, messages, message_count, template_override, max_tokens,
+                                               sampling, NULL, stats, error, error_capacity);
+}
+
+char * gus_llama_generate_chat_constrained(GUSLlamaContext * state, const GUSChatMessage * messages, size_t message_count,
+                                           const char * template_override, uint32_t max_tokens,
+                                           const GUSSamplingParams * sampling, const char * grammar,
+                                           GUSGenerationStats * stats, char * error, size_t error_capacity) {
     if (max_tokens == 0 || max_tokens > 512) {
         set_error(error, error_capacity, "Invalid inference request.");
         return NULL;
@@ -442,7 +527,7 @@ char * gus_llama_generate_chat_sampled(GUSLlamaContext * state, const GUSChatMes
     char * prompt = gus_llama_format_chat(state, messages, message_count, template_override, &source, error, error_capacity);
     if (prompt == NULL) return NULL;
     if (stats != NULL) stats->template_source = source;
-    char * output = generate_from_prompt(state, prompt, max_tokens, sampling, stats, error, error_capacity);
+    char * output = generate_from_prompt(state, prompt, max_tokens, sampling, grammar, stats, error, error_capacity);
     free(prompt);
     return output;
 }

@@ -1,0 +1,27 @@
+# One case per line. "+" must be accepted as a complete reply, "-" must be rejected.
+# "\n" in a case stands for a newline.
++Hola, ¿en qué te ayudo?
++El archivo usa <T> como genérico.
++ \n<GUS_TOOL_CALL>{"name":"undo","arguments":{}}</GUS_TOOL_CALL>
+- <GUS_TOOL_CALL>{"name":"shell","arguments":{}}</GUS_TOOL_CALL>
++<GUS_TOOL_CALL>{"name":"clone","arguments":{"repo":"octocat/Hello-World"}}</GUS_TOOL_CALL>
++<GUS_TOOL_CALL>{"name":"list","arguments":{}}</GUS_TOOL_CALL>
++<GUS_TOOL_CALL>{"name":"list","arguments":{"path":"src"}}</GUS_TOOL_CALL>
++<GUS_TOOL_CALL>{"name":"read","arguments":{"path":"README.md"}}</GUS_TOOL_CALL>
++<GUS_TOOL_CALL>{"name":"read","arguments":{"path":"README.md","from_line":61}}</GUS_TOOL_CALL>
++<GUS_TOOL_CALL>{"name":"find","arguments":{"text":"TODO"}}</GUS_TOOL_CALL>
++<GUS_TOOL_CALL>{"name":"edit","arguments":{"path":"a.py","old_text":"print(\"hola\")","new_text":"print(\"adiós\")"}}</GUS_TOOL_CALL>
++<GUS_TOOL_CALL>{"name":"write","arguments":{"path":"notas/x.txt","content":"línea 1\\nlínea 2"}}</GUS_TOOL_CALL>
++<GUS_TOOL_CALL>{"name":"undo","arguments":{}}</GUS_TOOL_CALL>
++<think>necesito ver el archivo</think>\n<GUS_TOOL_CALL>{"name":"read","arguments":{"path":"a.py"}}</GUS_TOOL_CALL>
++<think>nada que hacer</think>Listo.
+-<GUS_TOOL_CALL>{"name":"shell","arguments":{"command":"rm -rf /"}}</GUS_TOOL_CALL>
+-<GUS_TOOL_CALL>{"name":"read","arguments":{}}</GUS_TOOL_CALL>
+-<GUS_TOOL_CALL>{"name":"read","arguments":{"path":"a.py","extra":"x"}}</GUS_TOOL_CALL>
+-<GUS_TOOL_CALL>{"name":"read","arguments":{"path":"a.py","from_line":"61"}}</GUS_TOOL_CALL>
+-<GUS_TOOL_CALL>{"name":"read","arguments":{"path":7}}</GUS_TOOL_CALL>
+-<GUS_TOOL_CALL>{"name":"read","arguments":{"path":"a.py"}}
+-<GUS_TOOL_CALL>{"name":"read","arguments":{"path":"a.py"}}</GUS_TOOL_CALL> y luego te cuento
+-<GUS_TOOL_CALL>{"name":"edit","arguments":{"old_text":"a","path":"a.py","new_text":"b"}}</GUS_TOOL_CALL>
+-<GUS_TOOL_CALL> {"name":"undo","arguments":{}}</GUS_TOOL_CALL>
+-<tool_call>{"name":"read","arguments":{"path":"a.py"}}</tool_call>

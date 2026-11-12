@@ -4,11 +4,18 @@ protocol LocalInferenceEngine: Sendable {
     func load(modelURL: URL, contextTokens: Int) async throws
     func generate(messages: [ModelMessage], options: GenerationOptions) async throws -> String
     func generateMeasured(messages: [ModelMessage], options: GenerationOptions) async throws -> LocalGeneration
+    /// `grammar` is a GBNF grammar the output must follow; nil leaves it unconstrained.
+    func generateMeasured(messages: [ModelMessage], options: GenerationOptions, grammar: String?) async throws -> LocalGeneration
     func cancel() async
     func unload() async
 }
 
 extension LocalInferenceEngine {
+    /// Engines that cannot constrain their output simply ignore the grammar.
+    func generateMeasured(messages: [ModelMessage], options: GenerationOptions, grammar: String?) async throws -> LocalGeneration {
+        try await generateMeasured(messages: messages, options: options)
+    }
+
     func generateMeasured(messages: [ModelMessage], options: GenerationOptions) async throws -> LocalGeneration {
         let text = try await generate(messages: messages, options: options)
         return LocalGeneration(text: text, stats: LocalGenerationStats(
@@ -88,6 +95,10 @@ final class LlamaCppInferenceEngine: LocalInferenceEngine, @unchecked Sendable {
     /// Generates with the model's own chat template and reports timing, used by
     /// the on-device benchmark. Message contents are never logged.
     func generateMeasured(messages: [ModelMessage], options: GenerationOptions) async throws -> LocalGeneration {
+        try await generateMeasured(messages: messages, options: options, grammar: nil)
+    }
+
+    func generateMeasured(messages: [ModelMessage], options: GenerationOptions, grammar: String?) async throws -> LocalGeneration {
         let chat = Self.chatMessages(messages)
         let maxTokens = min(max(options.maxTokens ?? 512, 1), 512)
         let templateOverride = chatTemplateOverride
@@ -108,8 +119,15 @@ final class LlamaCppInferenceEngine: LocalInferenceEngine, @unchecked Sendable {
             GUSFlightRecorder.shared.beginPhase("generate", modelID: modelID, fields: [
                 "messages": String(chat.count),
                 "chars": String(chat.reduce(0) { $0 + $1.content.utf8.count }),
-                "max_tokens": String(maxTokens)
+                "max_tokens": String(maxTokens),
+                "grammar": grammar == nil ? "false" : "true"
             ])
+            let cGrammar = grammar.flatMap { strdup($0) }
+            defer { free(cGrammar) }
+            guard grammar == nil || cGrammar != nil else {
+                GUSFlightRecorder.shared.endPhase("generate", fields: ["ok": "false"])
+                return .failure(LocalGenerationFailure(message: "Not enough memory to prepare the tool grammar."))
+            }
             // C strings must outlive the call; strdup keeps each one stable.
             let cStrings = chat.flatMap { [strdup($0.role), strdup($0.content)] }
             defer { cStrings.forEach { free($0) } }
@@ -130,14 +148,14 @@ final class LlamaCppInferenceEngine: LocalInferenceEngine, @unchecked Sendable {
                         let samplingArg: UnsafePointer<GUSSamplingParams>? = useSampling ? samplingPointer : nil
                         if let templateOverride {
                             return templateOverride.withCString { cTemplate in
-                                gus_llama_generate_chat_sampled(current, messagesBuffer.baseAddress, messagesBuffer.count, cTemplate,
-                                                                UInt32(maxTokens), samplingArg, &stats,
-                                                                errorBuffer.baseAddress, errorBuffer.count)
+                                gus_llama_generate_chat_constrained(current, messagesBuffer.baseAddress, messagesBuffer.count, cTemplate,
+                                                                    UInt32(maxTokens), samplingArg, cGrammar, &stats,
+                                                                    errorBuffer.baseAddress, errorBuffer.count)
                             }
                         }
-                        return gus_llama_generate_chat_sampled(current, messagesBuffer.baseAddress, messagesBuffer.count, nil,
-                                                               UInt32(maxTokens), samplingArg, &stats,
-                                                               errorBuffer.baseAddress, errorBuffer.count)
+                        return gus_llama_generate_chat_constrained(current, messagesBuffer.baseAddress, messagesBuffer.count, nil,
+                                                                   UInt32(maxTokens), samplingArg, cGrammar, &stats,
+                                                                   errorBuffer.baseAddress, errorBuffer.count)
                     }
                 }
             }

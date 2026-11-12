@@ -27,6 +27,11 @@ public final class WorkbenchStore: ObservableObject {
     @Published public private(set) var sandboxLink: SandboxLinkState?
     @Published public private(set) var sandboxLinkBusy = false
     @Published public var sandboxLinkError: String?
+    /// Repository cloned on this iPhone that the on-device tools are scoped to, if any.
+    @Published public private(set) var phoneProject: String?
+    @Published public private(set) var phoneProjectCanUndo = false
+    @Published public private(set) var phoneProjectBusy = false
+    @Published public var phoneProjectMessage: String?
     @Published public var availableModels: [ModelInfo] = []
     @Published public var availableAgents: [String] = []
     @Published public var availableCommands: [CommandInfo] = []
@@ -1339,5 +1344,59 @@ extension WorkbenchStore {
             project: sessionState.currentProject?.name,
             events: sessionState.timelineEvents
         )
+    }
+}
+
+// MARK: - Disposable clones on the iPhone
+
+extension WorkbenchStore {
+    public func refreshPhoneProject() async {
+        guard let backend = currentBackend as? NativeSwiftBackend else {
+            phoneProject = nil
+            phoneProjectCanUndo = false
+            return
+        }
+        phoneProject = await backend.activePhoneProject()
+        phoneProjectCanUndo = await backend.canUndoPhoneProjectChange()
+    }
+
+    /// Clones a public GitHub repository into the iPhone workspace without git.
+    @discardableResult
+    public func clonePhoneRepository(_ repository: String) async -> Bool {
+        guard let backend = currentBackend as? NativeSwiftBackend, !phoneProjectBusy else { return false }
+        phoneProjectBusy = true
+        phoneProjectMessage = nil
+        defer { phoneProjectBusy = false }
+        do {
+            let report = try await backend.cloneRepository(repository)
+            phoneProjectMessage = "Clonado \(report.repository): \(report.files) archivos en \(report.directory)."
+            addSystemEvent("Repositorio \(report.repository) clonado en este iPhone (\(report.files) archivos). Es una copia desechable.")
+            fileTree = []
+            await refreshPhoneProject()
+            return true
+        } catch {
+            phoneProjectMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    public func undoPhoneProjectChange() async {
+        guard let backend = currentBackend as? NativeSwiftBackend, !phoneProjectBusy else { return }
+        phoneProjectBusy = true
+        defer { phoneProjectBusy = false }
+        do {
+            phoneProjectMessage = try await backend.undoPhoneProjectChange()
+        } catch {
+            phoneProjectMessage = error.localizedDescription
+        }
+        await refreshPhoneProject()
+    }
+
+    /// Stops scoping the tools to the clone. Its files stay in the workspace.
+    public func closePhoneProject() async {
+        guard let backend = currentBackend as? NativeSwiftBackend else { return }
+        await backend.closeActivePhoneProject()
+        phoneProjectMessage = nil
+        await refreshPhoneProject()
     }
 }
