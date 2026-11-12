@@ -7,6 +7,7 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { assertGrokTransport, startGrokLink } from "./grok_bridge.mjs";
+import { assertSandboxTransport, startSandboxLink } from "./sandbox_bridge.mjs";
 
 const RUNTIMES = {
     opencode: {
@@ -44,6 +45,15 @@ const RUNTIMES = {
         check: () => true,
         args: () => [],
         executable: "grok",
+        shell: false,
+        cwd: (dir) => dir,
+        env: (env) => env,
+    },
+    sandbox: {
+        label: "Sandbox",
+        check: () => true,
+        args: () => [],
+        executable: "docker",
         shell: false,
         cwd: (dir) => dir,
         env: (env) => env,
@@ -143,7 +153,7 @@ export function resolvePairingHost(explicitHost, exec = execSync) {
 export function parseLinkOptions(args, env = process.env) {
     const command = args[0] ?? "link";
     if (command !== "link") {
-        throw new Error("usage: iyscodemovil link [--runtime opencode|openisy|crush|codex|claude-code|gemini|grok] [--port 4096] [--directory PATH] [--host LAN|tailscale|IP] [--openisy-root PATH]");
+        throw new Error("usage: iyscodemovil link [--runtime opencode|openisy|crush|codex|claude-code|gemini|grok|sandbox] [--port 4096] [--directory PATH] [--host LAN|tailscale|IP] [--openisy-root PATH]");
     }
 
     const values = new Map();
@@ -170,7 +180,7 @@ export function parseLinkOptions(args, env = process.env) {
         throw new Error(`${rt.label} not available. Make sure it's installed and in PATH.`);
     }
 
-    const port = Number(values.get("--port") ?? "4096");
+    const port = Number(values.get("--port") ?? (runtime === "sandbox" ? "8788" : "4096"));
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`invalid port: ${port}`);
     return {
         runtime,
@@ -190,6 +200,9 @@ export function runtimeCommand(options, platform = process.platform, env = proce
     }
     if (options.runtime === "grok") {
         throw new Error("Grok is started by the Tailscale proxy, not as a direct serve command.");
+    }
+    if (options.runtime === "sandbox") {
+        throw new Error("The sandbox orchestrator runs inside the bridge, not as a direct serve command.");
     }
     if (options.runtime === "codex" && (!host || !codexInfo?.tokenSHA256)) {
         throw new Error("Codex runtime requires a resolved Tailscale host and discovered protocol/auth settings.");
@@ -225,6 +238,15 @@ export async function main(args = process.argv.slice(2), env = process.env) {
                 host: resolvedHost.host,
                 port: options.port,
                 directory: options.directory,
+            });
+        }
+        if (options.runtime === "sandbox") {
+            assertSandboxTransport(resolvedHost);
+            return await startSandboxLink({
+                host: resolvedHost.host,
+                port: options.port,
+                directory: options.directory,
+                env,
             });
         }
         runtime = runtimeCommand(options, process.platform, env, resolvedHost.host, codexInfo);
