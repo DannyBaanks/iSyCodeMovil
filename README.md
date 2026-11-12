@@ -264,6 +264,10 @@ Un agente Swift que trabaja dentro del espacio privado de la app:
 - Prueba el **demo sin internet** o conecta un proveedor en la nube: NVIDIA NIM, xAI, OpenAI API, Gemini u OpenRouter.
 - **Dale una carpeta** desde Archivos si quieres; puedes quitarle el permiso cuando sea.
 - **Aprueba cada cambio** de archivos antes de que ocurra.
+- **Clona un repositorio público de GitHub** sin git: en **Ajustes → Repositorios en este iPhone**, o pidiéndoselo al agente. Es una copia desechable en `repos/`.
+- **Dentro de un clon, GUS trabaja sin interrumpirte**: los cambios se aplican sin pedir aprobación y cada uno se puede **deshacer**.
+
+Para que un modelo pequeño pueda usarlo de verdad, GUS local recibe solo siete herramientas sencillas (`clone`, `list`, `read`, `find`, `edit`, `write`, `undo`) y una **gramática** que le impide escribir una llamada a herramienta mal formada. Detalle en la [guía del sandbox del iPhone](docs/PHONE_SANDBOX.md).
 
 Tus claves se guardan en el **Keychain** del iPhone. Si eliges un modelo en la nube, lo que le mandes sale hacia ese proveedor. Si eliges **GUS**, no sale nada.
 
@@ -328,6 +332,7 @@ Más documentación:
 - [Uso detallado](docs/USAGE.md)
 - [Conexión y transporte](docs/REMOTE.md)
 - [Sandbox Docker en la computadora](docs/SANDBOX.md)
+- [Sandbox del iPhone: clonar, herramientas simples y gramática](docs/PHONE_SANDBOX.md)
 - [Compatibilidad con OpenCode](docs/OPENCODE_COMPAT.md)
 - [Roadmap de runtimes](docs/ROADMAP_CLIS.md)
 - [Propuesta MCP](docs/CHATGPT_MCP.md)

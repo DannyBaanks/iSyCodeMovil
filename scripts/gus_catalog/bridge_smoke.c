@@ -185,10 +185,128 @@ static void quiet_log(enum ggml_log_level level, const char * text, void * user)
     if (level >= GGML_LOG_LEVEL_ERROR) fputs(text, stderr);
 }
 
+static char * read_file(const char * path) {
+    FILE * f = fopen(path, "rb");
+    if (f == NULL) return NULL;
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char * text = calloc((size_t)size + 1, 1);
+    if (text != NULL && fread(text, 1, (size_t)size, f) != (size_t)size) { free(text); text = NULL; }
+    fclose(f);
+    return text;
+}
+
+// Whether `text`, tokenized by this vocab, is a complete sentence of the grammar:
+// every token must be accepted and the grammar must then allow the turn to end.
+static bool grammar_accepts(const struct llama_vocab * vocab, const char * grammar_text, const char * text) {
+    struct llama_sampler * grammar = llama_sampler_init_grammar(vocab, grammar_text, "root");
+    if (grammar == NULL) return false;
+    int32_t cap = (int32_t)strlen(text) + 16;
+    llama_token * toks = calloc((size_t)cap, sizeof(llama_token));
+    int32_t n = llama_tokenize(vocab, text, (int32_t)strlen(text), toks, cap, false, false);
+    bool ok = n > 0;
+    for (int32_t i = 0; ok && i < n; i++) {
+        llama_token_data one = { toks[i], 1.0f, 0.0f };
+        llama_token_data_array arr = { &one, 1, -1, false };
+        llama_sampler_apply(grammar, &arr);
+        if (one.logit == -INFINITY) ok = false;
+        else llama_sampler_accept(grammar, toks[i]);
+    }
+    if (ok) {
+        llama_token_data end = { llama_vocab_eos(vocab), 1.0f, 0.0f };
+        llama_token_data_array arr = { &end, 1, -1, false };
+        llama_sampler_apply(grammar, &arr);
+        ok = end.logit != -INFINITY;
+    }
+    free(toks);
+    llama_sampler_free(grammar);
+    return ok;
+}
+
+// Vocab-only check of the tool grammar the app generates: each "+" case must be a
+// complete reply and each "-" case must be impossible to emit, with this tokenizer.
+static int run_grammar(const char * path, const char * grammar_path, const char * cases_path) {
+    llama_backend_init();
+    struct llama_model_params mp = llama_model_default_params();
+    mp.vocab_only = true;
+    struct llama_model * model = llama_model_load_from_file(path, mp);
+    char * grammar = read_file(grammar_path);
+    char * cases = read_file(cases_path);
+    if (model == NULL || grammar == NULL || cases == NULL) { fprintf(stderr, "load failed\n"); return 2; }
+    const struct llama_vocab * vocab = llama_model_get_vocab(model);
+    if (llama_vocab_eos(vocab) == LLAMA_TOKEN_NULL) {
+        printf("{\"file\":"); json_string(stdout, path); printf(",\"status\":\"SKIPPED\",\"reason\":\"vocab has no end-of-sequence token\"}\n");
+        return 0;
+    }
+    int checked = 0, wrong = 0;
+    for (char * line = strtok(cases, "\n"); line != NULL; line = strtok(NULL, "\n")) {
+        if (line[0] != '+' && line[0] != '-') continue;
+        // "\n" in the case file is a real newline in the model's output.
+        char * text = calloc(strlen(line) + 1, 1);
+        size_t length = 0;
+        for (const char * p = line + 1; *p; p++) {
+            if (p[0] == '\\' && p[1] == 'n' && (p == line + 1 || p[-1] != '\\')) { text[length++] = '\n'; p++; }
+            else text[length++] = *p;
+        }
+        const bool expected = line[0] == '+';
+        const bool actual = grammar_accepts(vocab, grammar, text);
+        checked++;
+        if (actual != expected) {
+            wrong++;
+            fprintf(stderr, "%s: expected %s: %s\n", path, expected ? "accept" : "reject", line + 1);
+        }
+        free(text);
+    }
+    printf("{\"file\":"); json_string(stdout, path);
+    printf(",\"status\":\"%s\",\"cases\":%d,\"wrong\":%d}\n", wrong == 0 && checked > 0 ? "OK" : "FAILED", checked, wrong);
+    free(grammar); free(cases);
+    llama_model_free(model);
+    return wrong == 0 && checked > 0 ? 0 : 1;
+}
+
+// Full generation under a grammar. Whatever the model wants to say, the output must
+// be a sentence of the grammar (or a prefix of one if max_tokens cut it short).
+static int run_constrained(const char * path, const char * grammar_path, const char * prompt, int sampled) {
+    char err[512] = {0};
+    char * grammar = read_file(grammar_path);
+    GUSLlamaContext * ctx = gus_llama_create(path, 2048, err, sizeof(err));
+    if (ctx == NULL || grammar == NULL) { fprintf(stderr, "load failed: %s\n", err); return 2; }
+    GUSChatMessage msgs[] = {{"system", "Eres GUS."}, {"user", prompt}};
+    GUSSamplingParams sampling = gus_llama_default_chat_sampling();
+    sampling.seed = 7;
+    GUSGenerationStats st;
+    char * out = gus_llama_generate_chat_constrained(ctx, msgs, 2, NULL, 128, sampled ? &sampling : NULL, grammar,
+                                                     &st, err, sizeof(err));
+    printf("{\"file\":"); json_string(stdout, path);
+    printf(",\"status\":\"%s\",\"sampling\":\"%s\"", out ? "OK" : "GENERATE_FAILED", sampled ? "chat" : "greedy");
+    if (out != NULL) {
+        printf(",\"generated_tokens\":%d,\"stopped_at_eog\":%s", st.generated_tokens, st.stopped_at_eog ? "true" : "false");
+        printf(",\"complete\":%s", grammar_accepts(llama_model_get_vocab(ctx->model), grammar, out) ? "true" : "false");
+        printf(",\"output\":"); json_string(stdout, out);
+    } else {
+        printf(",\"error\":"); json_string(stdout, err);
+    }
+    printf("}\n");
+    gus_llama_free_text(out);
+    free(grammar);
+    gus_llama_destroy(ctx);
+    return out ? 0 : 1;
+}
+
 int main(int argc, char ** argv) {
-    if (argc < 3) { fprintf(stderr, "usage: %s format|smoke <model.gguf> [template]\n", argv[0]); return 2; }
+    if (argc < 3) {
+        fprintf(stderr, "usage: %s format|smoke <model.gguf> [template]\n"
+                        "       %s grammar <vocab.gguf> <grammar.gbnf> <cases.txt>\n"
+                        "       %s constrained <model.gguf> <grammar.gbnf> <prompt> [greedy|chat]\n", argv[0], argv[0], argv[0]);
+        return 2;
+    }
     llama_log_set(quiet_log, NULL);
     if (strcmp(argv[1], "format") == 0) return run_format(argv[2]);
     if (strcmp(argv[1], "smoke") == 0) return run_smoke(argv[2], argc > 3 ? argv[3] : NULL);
+    if (strcmp(argv[1], "grammar") == 0 && argc > 4) return run_grammar(argv[2], argv[3], argv[4]);
+    if (strcmp(argv[1], "constrained") == 0 && argc > 4) {
+        return run_constrained(argv[2], argv[3], argv[4], argc > 5 && strcmp(argv[5], "chat") == 0);
+    }
     return 2;
 }
