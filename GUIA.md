@@ -11,7 +11,7 @@
 En la carpeta del proyecto que quieres que OpenCode controle:
 
 ```bash
-npx --yes github:DannyBaanks/iSyCodeMovil#main link
+npx --yes github:DannyBaanks/IysCodeMovil#main link
 ```
 
 Eso es todo en el escritorio. El resto es pegar el link en el iPhone.
@@ -141,14 +141,15 @@ El runner de acciones imprime "Node.js 20 is deprecated..." — es ruido de
 
 ## Grok en tu computadora (experimental)
 
-El IPA de la 0.5.2 ya incluye este adaptador. En un iPhone real el enlace de
-Tailscale todavía no se dejó abierto desde aquí. Desde la carpeta del proyecto,
-o con el comando publicado:
+NO PROBADO de punta a punta en el iPhone: esta máquina no tiene Xcode, y el
+enlace de Tailscale no se dejó abierto. El IPA que ya está en Descargas se
+compiló antes de este adaptador, así que ese build no sabe abrir `grok://`.
+
+El comando de GitHub (`npx ... #main`) todavía no trae este adaptador. En este
+checkout, desde la carpeta del proyecto:
 
 ```bash
 node Bridge/bin/iyscodemovil.mjs link --runtime grok --host tailscale --directory "$PWD"
-# o, desde cualquier carpeta, con el main publicado:
-npx --yes github:DannyBaanks/iSyCodeMovil#main link --runtime grok --host tailscale
 ```
 
 Pega en el iPhone la línea `grok://pair?...`. El iPhone no habla con el

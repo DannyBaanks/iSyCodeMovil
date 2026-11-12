@@ -4,7 +4,6 @@ public struct ActiveSessionView: View {
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var store: WorkbenchStore
     @State private var showDisconnectConfirm = false
-    @State private var showSandboxPanel = false
     
     public init() {}
 
@@ -14,6 +13,18 @@ public struct ActiveSessionView: View {
 
     private var isGrokRemote: Bool {
         store.backendMode == .remote && sessionState.selectedModel?.route == "grok"
+    }
+
+    private var sessionStatusLabel: String {
+        if sessionState.pendingPermission != nil { return "Esperando tu permiso" }
+        if sessionState.pendingQuestion != nil { return "Esperando tu respuesta" }
+        if store.isConnecting || store.connectionHealth == .connecting { return "Conectando" }
+        if store.backendMode == .remote && store.connectionHealth == .disconnected { return "Sin conexión" }
+        if sessionState.isProcessing { return "Trabajando" }
+        if store.backendMode == .native {
+            return store.sandboxUsesLiveModel ? "En este iPhone" : "Guion de demo"
+        }
+        return "En pausa"
     }
 
     private var availableSurfaces: [WorkSurface] {
@@ -51,9 +62,6 @@ public struct ActiveSessionView: View {
                     isReconnecting: store.isConnecting,
                     onReconnect: { Task { await store.reconnect() } }
                 )
-            }
-            if let link = store.sandboxLink {
-                SandboxStatusBar(link: link) { showSandboxPanel = true }
             }
             if store.backendMode == .native && !store.sandboxUsesLiveModel {
                 Text("Esto es el guion de demo, no un modelo remoto. Puedes elegir NVIDIA, xAI, OpenAI, Gemini u OpenRouter desde Proveedores.")
@@ -98,7 +106,7 @@ public struct ActiveSessionView: View {
                         Spacer()
                         Label("Revisar cambios", systemImage: "arrow.right")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(OCColor.bgDeep)
+                            .foregroundColor(OCColor.onAccent)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
                             .background(IysThemePreferences.active.accent.gradient)
@@ -134,7 +142,7 @@ public struct ActiveSessionView: View {
                         .frame(width: 44, height: 44, alignment: .leading)
                         .contentShape(Rectangle())
                 }
-                .accessibilityLabel("Sesiones")
+                .accessibilityLabel("Volver")
             }
 
             // El titulo va al centro: en el lado izquierdo se aplastaba contra
@@ -142,34 +150,34 @@ public struct ActiveSessionView: View {
             ToolbarItem(placement: .principal) {
                 SessionNavTitle(
                     title: sessionState.currentSession?.title ?? "Sesión",
-                    subtitle: sessionState.currentProject?.name ?? "Proyecto"
+                    subtitle: sessionState.currentProject?.name ?? "Proyecto",
+                    status: sessionStatusLabel
                 )
                 .frame(maxWidth: 220)
             }
             
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: OCSpacing.xs) {
-                    Menu {
-                        ForEach(availableSurfaces) { surface in
-                            Button {
-                                sessionState.activeSurface = surface
-                            } label: {
-                                // La vista activa lleva la marca; el resto, su icono.
-                                Label(surface.title, systemImage: sessionState.activeSurface == surface ? "checkmark" : surface.icon)
+                    if availableSurfaces.count > 1 {
+                        Menu {
+                            ForEach(availableSurfaces) { surface in
+                                Button {
+                                    sessionState.activeSurface = surface
+                                } label: {
+                                    Label(surface.title, systemImage: surface.icon)
+                                }
                             }
+                        } label: {
+                            Image(systemName: "square.grid.2x2")
+                                .font(.system(size: 16, weight: .medium))
                         }
-                    } label: {
-                        Image(systemName: "square.grid.2x2")
-                            .font(.system(size: 16, weight: .medium))
                     }
-                    .accessibilityLabel("Cambiar de vista")
 
                     if sessionState.activeSurface == .files && !isCodexRemote && !isGrokRemote {
                         Button { Task { await store.loadFiles(path: store.filesPath) } } label: {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 17))
                         }
-                        .accessibilityLabel("Actualizar archivos")
                     }
                     
                     if sessionState.activeSurface == .review {
@@ -177,14 +185,12 @@ public struct ActiveSessionView: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 17))
                         }
-                        .accessibilityLabel("Actualizar cambios")
                     }
                     
                     Button { showDisconnectConfirm = true } label: {
                         Image(systemName: "rectangle.portrait.and.arrow.right")
                             .font(.system(size: 17))
                     }
-                    .accessibilityLabel("Desconectar")
                 }
             }
         }
@@ -196,10 +202,6 @@ public struct ActiveSessionView: View {
         }
         .sheet(isPresented: $sessionState.showModelPicker) {
             ModelPickerSheet(selectedModel: $sessionState.selectedModel, models: store.availableModels)
-        }
-        .sheet(isPresented: $showSandboxPanel) {
-            SandboxPanelView()
-                .environmentObject(store)
         }
         .sheet(isPresented: $sessionState.showAttachments) {
             AttachmentsSheet()
@@ -250,16 +252,16 @@ public struct ActiveSessionView: View {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
         }
         .confirmationDialog(
-            "¿Desconectar?",
+            "Disconnect?",
             isPresented: $showDisconnectConfirm,
             titleVisibility: .visible
         ) {
-            Button("Desconectar", role: .destructive) {
+            Button("Disconnect", role: .destructive) {
                 Task { await store.disconnect() }
             }
-            Button("Cancelar", role: .cancel) {}
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Saldrás de la sesión y volverás a la pantalla de conexión.")
+            Text("End the session and return to the connection screen.")
         }
         .animation(.easeInOut(duration: 0.2), value: store.connectionHealth)
     }
@@ -357,7 +359,6 @@ struct ChatSurfaceView: View {
                     .padding(.bottom, OCSpacing.lg)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .scrollDismissesKeyboard(.interactively)
                 .onAppear { scrollProxy = proxy }
                 .onChange(of: sessionState.timelineEvents.count) { _ in
                     scrollToBottom()
@@ -478,7 +479,7 @@ struct ConnectionLostBanner: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(OCColor.warning)
             
-            Text(isReconnecting ? "Reconectando…" : "Se perdió la conexión")
+            Text(isReconnecting ? "Reconnecting…" : "Connection lost")
                 .font(OCTypography.control)
                 .foregroundColor(OCColor.textPrimary)
             
@@ -488,7 +489,7 @@ struct ConnectionLostBanner: View {
                 ProgressView()
                     .scaleEffect(0.7)
             } else {
-                Button("Reconectar", action: onReconnect)
+                Button("Reconnect", action: onReconnect)
                     .font(OCTypography.controlMono)
                     .foregroundColor(OCColor.warning)
             }
@@ -507,63 +508,26 @@ struct ConnectionLostBanner: View {
 }
 
 struct EmptyChatView: View {
-    @EnvironmentObject private var sessionState: ActiveSessionState
     let sessionTitle: String?
-
-    // Ideas para arrancar: tocar una la deja en el compositor, sin enviarla,
-    // para que se pueda ajustar antes de mandarla.
-    private let suggestions = [
-        "Explícame cómo está organizado este proyecto",
-        "Busca los TODO pendientes y resúmelos",
-        "Propón tres mejoras para el README"
-    ]
-
+    
     var body: some View {
-        VStack(spacing: OCSpacing.base) {
-            Image(systemName: "bubble.left")
-                .font(.system(size: 40, weight: .light))
-                .foregroundColor(OCColor.iconMuted)
-            
-            Text(sessionTitle ?? "Sesión")
+        VStack(spacing: OCSpacing.lg) {
+            Text("ISYCODE")
+                .font(.system(size: 28, weight: .heavy, design: .rounded))
+                .tracking(2.4)
+                .foregroundColor(IysThemePreferences.active.accent)
+            Text(sessionTitle ?? "Nueva conversación")
                 .font(OCTypography.bodyStrong)
                 .foregroundColor(OCColor.textPrimary)
                 .multilineTextAlignment(.center)
-            
-            Text("Escribe abajo para empezar, o parte de una idea:")
+            Text("Escribe abajo. Nada sale hasta que pulses enviar.")
                 .font(OCTypography.meta)
-                .foregroundColor(OCColor.textFaint)
+                .foregroundColor(OCColor.textSecondary)
                 .multilineTextAlignment(.center)
-
-            VStack(spacing: OCSpacing.sm) {
-                ForEach(suggestions, id: \.self) { suggestion in
-                    Button {
-                        UISelectionFeedbackGenerator().selectionChanged()
-                        sessionState.composerText = suggestion
-                    } label: {
-                        HStack(spacing: OCSpacing.base) {
-                            Text(suggestion)
-                                .font(.system(size: 13))
-                                .foregroundColor(OCColor.textSecondary)
-                                .multilineTextAlignment(.leading)
-                            Spacer(minLength: 0)
-                            Image(systemName: "arrow.up.left")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(OCColor.iconMuted)
-                        }
-                        .padding(.horizontal, OCSpacing.lg)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .background(OCColor.bgBase)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                        .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.top, OCSpacing.lg)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 64)
+        .padding(.top, 88)
+        .padding(.horizontal, OCSpacing.xxl)
     }
 }
 
@@ -598,7 +562,7 @@ struct FilesBreadcrumbView: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: OCSpacing.xs) {
-                Button("‹ raíz") { onSelect("") }
+                Button("‹ root") { onSelect("") }
                     .font(OCTypography.controlMono)
                     .foregroundColor(OCColor.agentBuild)
                 
@@ -651,9 +615,6 @@ struct FilesSurfaceView: View {
                             selectedFile: $selectedFile,
                             onTap: { file in
                                 if !file.isDirectory {
-                                    // Sin esto el visor mostraba el archivo anterior
-                                    // mientras cargaba el nuevo.
-                                    fileContent = nil
                                     selectedFile = file
                                     Task {
                                         if let content = await store.loadFileContent(path: file.path) {
@@ -669,7 +630,7 @@ struct FilesSurfaceView: View {
                 .scrollContentBackground(.hidden)
                 .background(OCColor.bgDeep)
                 .sheet(item: $selectedFile) { file in
-                    FileViewerView(file: file, content: fileContent?.content)
+                    FileViewerView(file: file, content: fileContent?.content ?? "")
                 }
                 .onAppear {
                     if !filesLoaded {
@@ -693,11 +654,11 @@ struct EmptyFilesView: View {
                 .font(.system(size: 40, weight: .light))
                 .foregroundColor(OCColor.iconMuted)
             
-            Text("Sin archivos")
+            Text("No files")
                 .font(OCTypography.bodyStrong)
                 .foregroundColor(OCColor.textPrimary)
             
-            Text("Esta carpeta no tiene archivos visibles")
+            Text("This workspace has no visible files")
                 .font(OCTypography.meta)
                 .foregroundColor(OCColor.textFaint)
         }
@@ -776,32 +737,17 @@ struct FileTreeRowView: View {
 struct FileViewerView: View {
     @Environment(\.dismiss) private var dismiss
     let file: WorkbenchFileNode
-    /// `nil` mientras carga; cadena vacía cuando el archivo no tiene contenido.
-    let content: String?
-    @State private var copied = false
+    let content: String
     
     var body: some View {
         NavigationStack {
             ScrollView {
-                if let content, !content.isEmpty {
-                    Text(content)
-                        .font(OCTypography.code)
-                        .foregroundColor(OCColor.textPrimary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(OCSpacing.lg)
-                } else {
-                    VStack(spacing: OCSpacing.base) {
-                        if content == nil {
-                            ProgressView()
-                        }
-                        Text(content == nil ? "Cargando…" : "Archivo vacío")
-                            .font(OCTypography.meta)
-                            .foregroundColor(OCColor.textFaint)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 96)
-                }
+                Text(content.isEmpty ? "Loading…" : content)
+                    .font(OCTypography.code)
+                    .foregroundColor(OCColor.textPrimary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(OCSpacing.lg)
             }
             .background(OCColor.bgDeep)
             .navigationTitle(file.name)
@@ -817,16 +763,12 @@ struct FileViewerView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: OCSpacing.base) {
                         Button {
-                            UIPasteboard.general.string = content ?? ""
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            copied = true
+                            UIPasteboard.general.string = content
                         } label: {
-                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                            Image(systemName: "doc.on.doc")
                                 .font(.system(size: 17))
                         }
-                        .disabled((content ?? "").isEmpty)
-                        .accessibilityLabel(copied ? "Contenido copiado" : "Copiar contenido")
-                        Button("Listo") { dismiss() }
+                        Button("Done") { dismiss() }
                     }
                 }
             }
@@ -876,19 +818,19 @@ struct EmptyReviewView: View {
                 .foregroundColor(OCColor.iconMuted)
             
             VStack(spacing: OCSpacing.xs) {
-                Text("Sin cambios")
+                Text("No Changes")
                     .font(OCTypography.bodyStrong)
                     .foregroundColor(OCColor.textPrimary)
                 
                 Text(store.backendMode == .native
-                     ? "Los cambios se revisan en un equipo vinculado, no en el entorno de prueba."
-                     : "Esta sesión todavía no tiene cambios para revisar.")
+                     ? "Diff runs on the linked desktop, not in the sandbox"
+                     : "No diff available for this session")
                     .font(OCTypography.meta)
                     .foregroundColor(OCColor.textFaint)
                     .multilineTextAlignment(.center)
             }
             
-            Button("Actualizar") {
+            Button("Refresh") {
                 if let sessionID = sessionState.currentSession?.id {
                     Task { await store.loadDiff(sessionID: sessionID) }
                 }
@@ -897,7 +839,7 @@ struct EmptyReviewView: View {
             .padding(.horizontal, OCSpacing.xl)
             .padding(.vertical, OCSpacing.base)
             .background(OCColor.agentBuild)
-            .foregroundColor(OCColor.bgDeep)
+            .foregroundColor(OCColor.onAccent)
             .clipShape(RoundedRectangle(cornerRadius: OCRadius.r24))
         }
         .padding(OCSpacing.huge)
@@ -988,7 +930,7 @@ struct DiffViewerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Listo") { dismiss() }
+                    Button("Done") { dismiss() }
                 }
             }
             .toolbarBackground(.visible, for: .navigationBar)
@@ -1109,12 +1051,10 @@ struct TerminalSurfaceView: View {
                         .font(.system(size: 14, weight: .bold, design: .monospaced))
                         .foregroundColor(OCColor.agentBuild)
                     
-                    TextField("comando", text: $command)
+                    TextField("command", text: $command)
                         .font(OCTypography.code)
                         .foregroundColor(OCColor.textPrimary)
                         .textFieldStyle(.plain)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
                         .focused($isFocused)
                         .submitLabel(.send)
                         .onSubmit { executeCommand() }
@@ -1141,7 +1081,6 @@ struct TerminalSurfaceView: View {
                         .font(.system(size: 15))
                         .foregroundColor(OCColor.iconMuted)
                 }
-                .accessibilityLabel("Ajustes")
                 Button {
                     output.removeAll()
                 } label: {
@@ -1149,16 +1088,15 @@ struct TerminalSurfaceView: View {
                         .font(.system(size: 15))
                         .foregroundColor(OCColor.iconMuted)
                 }
-                .accessibilityLabel("Limpiar terminal")
             }
         }
         .onAppear {
             if output.isEmpty {
                 let banner = store.backendMode == .native
-                    ? "La terminal corre en un equipo vinculado. El entorno de prueba no tiene shell."
-                    : "Terminal de iSyCode: los comandos se ejecutan en tu equipo"
+                    ? "Shell runs on the linked OpenCode server. The sandbox has no shell."
+                    : "OpenCodeNative Terminal — commands run via OpenCode server"
                 output.append(TerminalOutput(text: banner, color: OCColor.textFaint))
-                output.append(TerminalOutput(text: "Escribe un comando y pulsa Intro", color: OCColor.textFaint))
+                output.append(TerminalOutput(text: "Type a command and press Enter", color: OCColor.textFaint))
                 output.append(TerminalOutput(text: "", color: OCColor.textPrimary))
             }
         }
@@ -1202,6 +1140,7 @@ struct TerminalOutput: Identifiable {
 struct SessionNavTitle: View {
     let title: String
     let subtitle: String
+    var status: String = ""
 
     var body: some View {
         VStack(alignment: .center, spacing: 1) {
@@ -1213,7 +1152,14 @@ struct SessionNavTitle: View {
                 .font(OCTypography.navSubtitle)
                 .foregroundColor(OCColor.textFaint)
                 .lineLimit(1)
+            if !status.isEmpty {
+                Text(status)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(IysThemePreferences.active.accent)
+                    .lineLimit(1)
+            }
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -1307,7 +1253,7 @@ private struct CodexCapabilityNotice: View {
             Text("·")
                 .foregroundColor(OCColor.textFaint)
 
-            Text("Solo chat y aprobaciones")
+            Text("Chat + approvals only")
                 .font(OCTypography.metaMono)
                 .foregroundColor(OCColor.textSecondary)
                 .lineLimit(1)
@@ -1324,6 +1270,6 @@ private struct CodexCapabilityNotice: View {
                 .overlay(Capsule().stroke(OCColor.warning.opacity(0.18), lineWidth: 1))
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Conexión experimental de Codex. Solo chat y aprobaciones.")
+        .accessibilityLabel("Experimental Codex connection. Chat and approvals only.")
     }
 }

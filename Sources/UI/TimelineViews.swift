@@ -73,7 +73,7 @@ public struct UserPromptView: View {
         HStack(alignment: .top, spacing: 10) {
             Text("T")
                 .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundColor(OCColor.bgDeep)
+                .foregroundColor(OCColor.onAccent)
                 .frame(width: 27, height: 27)
                 .background(agentColor.gradient)
                 .clipShape(Circle())
@@ -884,6 +884,9 @@ public struct PermissionView: View {
     let onDeny: () -> Void
     let onPersistent: () -> Void
     let onCodexCancel: (() -> Void)?
+    @EnvironmentObject private var store: WorkbenchStore
+
+    private var storeUsesFreshApproval: Bool { store.backendMode == .native }
 
     public init(event: TimelineEvent, onAllow: @escaping () -> Void, onDeny: @escaping () -> Void, onPersistent: @escaping () -> Void, onCodexCancel: (() -> Void)? = nil) {
         self.event = event
@@ -947,7 +950,7 @@ public struct PermissionView: View {
                     Button(action: onAllow) {
                         Text("Permitir una vez")
                             .font(OCTypography.control)
-                            .foregroundColor(OCColor.bgDeep)
+                            .foregroundColor(OCColor.onAccent)
                             .frame(maxWidth: .infinity)
                             .frame(height: 44)
                             .background(OCColor.agentBuild)
@@ -982,6 +985,13 @@ public struct PermissionView: View {
                             .frame(height: 40)
                     }
                     .buttonStyle(.plain)
+                }
+
+                if !isLimitedRemote && storeUsesFreshApproval {
+                    Text("En este iPhone, el siguiente cambio vuelve a pedir permiso.")
+                        .font(OCTypography.meta)
+                        .foregroundColor(OCColor.textFaint)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Menu {
@@ -1091,7 +1101,7 @@ public struct QuestionView: View {
                         freeformText = ""
                     }
                     .font(OCTypography.control)
-                    .foregroundColor(OCColor.bgDeep)
+                    .foregroundColor(freeformText.isEmpty ? OCColor.textFaint : OCColor.onAccent)
                     .frame(maxWidth: .infinity)
                     .frame(height: 40)
                     .background(freeformText.isEmpty ? OCColor.bgLayer2 : OCColor.agentBuild)

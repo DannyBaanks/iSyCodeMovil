@@ -5,7 +5,7 @@ public struct ConnectionView: View {
     @State private var pairingLink = ""
     @State private var showReconnectSheet = false
     @State private var showSandboxSheet = false
-    @State private var showLegacyBridge = false
+    @State private var showDesktopLink = false
     @FocusState private var fieldFocused: Bool
     
     public init() {}
@@ -17,49 +17,38 @@ public struct ConnectionView: View {
                 VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 36)
                 
-                HStack(spacing: 12) {
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(IysThemePreferences.active.accent.opacity(0.14))
+                HStack(spacing: 14) {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(IysThemePreferences.active.accent)
                         .overlay {
-                            Image(systemName: "terminal.fill")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(IysThemePreferences.active.accent)
+                            Text("IS")
+                                .font(.system(size: 16, weight: .heavy, design: .rounded))
+                                .foregroundColor(OCColor.onAccent)
                         }
-                        .frame(width: 44, height: 44)
+                        .frame(width: 48, height: 48)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("iSyCode Móvil")
-                            .font(.system(size: 21, weight: .semibold))
+                        Text("ISYCODE")
+                            .font(.system(size: 22, weight: .heavy, design: .rounded))
+                            .tracking(1.6)
                             .foregroundColor(OCColor.textPrimary)
-                        Text("Tu miniagente de desarrollo")
-                            .font(.system(size: 11))
-                            .foregroundColor(OCColor.textFaint)
+                        Text("Móvil · el escritorio en el bolsillo")
+                            .font(.system(size: 12))
+                            .foregroundColor(OCColor.textSecondary)
                     }
                 }
                 
-                Spacer().frame(height: 24)
+                Spacer().frame(height: 22)
 
-                MobileHostPairingSection()
-                    .padding(.bottom, 24)
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { showLegacyBridge.toggle() }
-                } label: {
-                    HStack {
-                        Image(systemName: "point.3.connected.trianglepath.dotted")
-                        Text("Más opciones de conexión")
-                        Spacer()
-                        Image(systemName: "chevron.down")
-                            .rotationEffect(.degrees(showLegacyBridge ? 180 : 0))
-                    }
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(OCColor.textSecondary)
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())
+                door(
+                    icon: "desktopcomputer",
+                    title: "Ver el agente de mi computadora",
+                    subtitle: "Pega el enlace de OpenCode. La terminal de la computadora se queda abierta."
+                ) {
+                    withAnimation(.easeInOut(duration: 0.2)) { showDesktopLink.toggle() }
                 }
-                .buttonStyle(.plain)
 
-                if showLegacyBridge {
+                if showDesktopLink {
                     VStack(alignment: .leading, spacing: 0) {
                 
                 // Stored pairing section
@@ -68,36 +57,53 @@ public struct ConnectionView: View {
                         .padding(.bottom, 24)
                 }
                 
+                VStack(alignment: .leading, spacing: 10) {
+                    step(1, "Abre la terminal en la carpeta del proyecto.")
+                    step(2, "Hace falta Node.js y OpenCode. Deja esa ventana abierta.")
+                    step(3, "Pega este comando.")
+                    step(4, "Copia el enlace que imprima y pégalo aquí. No lo reenvíes: lleva la contraseña.")
+                }
+                .padding(.bottom, 14)
+
                 HStack {
-                    label("CONECTAR CON BRIDGE ANTERIOR")
+                    label("COMANDO")
                     Spacer()
-                    ClipboardChipButton(title: "Copiar", confirmation: "Copiado") {
-                        UIPasteboard.general.string = "npx --yes github:DannyBaanks/iSyCodeMovil#main link"
-                        return true
+                    Button {
+                        UIPasteboard.general.string = "npx --yes github:DannyBaanks/IysCodeMovil link"
+                    } label: {
+                        Text("Copiar")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(OCColor.textPrimary)
+                            .padding(.horizontal, 10)
+                            .frame(height: 32)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(OCColor.borderBase, lineWidth: 1))
                     }
+                    .buttonStyle(.plain)
                     .padding(.bottom, 8)
                 }
-                commandBox("npx --yes github:DannyBaanks/iSyCodeMovil#main link")
-                
-                Text("Ejecuta este comando en la carpeta del proyecto, en el equipo donde ya tienes ISyCode. Después pega aquí el enlace que aparezca.")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(Color.white.opacity(0.42))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 12)
+                commandBox("npx --yes github:DannyBaanks/IysCodeMovil link")
                 
                 Spacer().frame(height: 24)
                 
                 HStack {
                     label("ENLACE DE CONEXIÓN")
                     Spacer()
-                    ClipboardChipButton(title: "Pegar", confirmation: "Pegado") {
-                        guard let pasted = UIPasteboard.general.string, !pasted.isEmpty else { return false }
-                        pairingLink = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
-                        return true
+                    Button {
+                        if let pasted = UIPasteboard.general.string, !pasted.isEmpty {
+                            pairingLink = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                    } label: {
+                        Text("Pegar")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(Color.white.opacity(0.55))
+                            .padding(.horizontal, 10)
+                            .frame(height: 28)
+                            .overlay(Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1))
                     }
+                    .buttonStyle(.plain)
                     .padding(.bottom, 8)
                 }
-                TextField("iyscodemovil://, codex://, grok:// o isysandbox://", text: $pairingLink, axis: .vertical)
+                TextField("iyscodemovil://pair?...", text: $pairingLink, axis: .vertical)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(size: 13, design: .monospaced))
@@ -112,13 +118,13 @@ public struct ConnectionView: View {
                 
                 Button { connect() } label: {
                     HStack {
-                        Text(store.isConnecting ? "Conectando…" : "Conectar")
+                        Text(store.isConnecting ? "Conectando…" : "Revisar enlace")
                             .font(.system(size: 14, weight: .semibold))
                         Spacer()
                         Text("↵")
                             .font(.system(size: 14, design: .monospaced))
                     }
-                    .foregroundColor(OCColor.bgDeep)
+                    .foregroundColor(OCColor.onAccent)
                     .padding(.horizontal, 12)
                     .frame(height: 44)
                     .background(IysThemePreferences.active.accent)
@@ -129,62 +135,35 @@ public struct ConnectionView: View {
                 .opacity(store.isConnecting || pairingLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
                 .padding(.top, 10)
                 
-                if !store.connectionStatus.isEmpty {
-                    Text(store.connectionStatus)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(store.connectionStatus.lowercased().hasPrefix("error") ? .red : Color.white.opacity(0.5))
-                        .padding(.top, 10)
-                }
+                ConnectionStatusLine(status: store.connectionStatus)
                     }
                     .padding(14)
                     .background(OCColor.bgBase.opacity(0.62))
                     .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
                     .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
+                    .padding(.top, 10)
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                
-                HStack(spacing: 12) {
-                    Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
-                    Text("O")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundColor(Color.white.opacity(0.35))
-                    Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
-                }
-                .padding(.vertical, 26)
-                
-                Button {
+
+                door(
+                    icon: "iphone",
+                    title: "Hablar con GUS aquí",
+                    subtitle: "Sin internet. El modelo vive en este iPhone."
+                ) {
                     showSandboxSheet = true
-                } label: {
-                    HStack {
-                        RoundedRectangle(cornerRadius: 11)
-                            .fill(IysThemePreferences.active.accent.opacity(0.12))
-                            .overlay(Image(systemName: "cube.transparent").foregroundColor(IysThemePreferences.active.accent))
-                            .frame(width: 38, height: 38)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Probar en este iPhone")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(OCColor.textPrimary)
-                            Text("Configura un modelo de prueba sin conectar tu equipo")
-                                .font(.system(size: 10))
-                                .foregroundColor(OCColor.textFaint)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(OCColor.textFaint)
-                    }
-                    .padding(12)
-                    .background(OCColor.bgBase)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
                 }
-                .buttonStyle(.plain)
+                .padding(.top, 12)
+
+                Text("El PIN del host de iSyCode ya funciona. Las conversaciones llegan con el escritorio.")
+                    .font(.system(size: 13))
+                    .foregroundColor(OCColor.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 22)
+                    .padding(.bottom, 10)
+
+                MobileHostPairingSection()
                 
                 Spacer()
-                
-                    Text("La conexión usa tu equipo. El entorno de prueba usa un modelo y archivos de este iPhone.")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color.white.opacity(0.28))
-                    .padding(.bottom, 8)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 18)
@@ -195,6 +174,11 @@ public struct ConnectionView: View {
         .background(OCColor.bgDeep.ignoresSafeArea())
         .contentShape(Rectangle())
         .onTapGesture { fieldFocused = false }
+        .task {
+            if await store.hasStoredPairing() {
+                showDesktopLink = true
+            }
+        }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -206,7 +190,7 @@ public struct ConnectionView: View {
             ReconnectSheet(isPresented: $showReconnectSheet)
         }
         .sheet(isPresented: $showSandboxSheet) {
-            SandboxKeySheet()
+            SandboxKeySheet(initialProviderID: "gus-local")
         }
     }
     
@@ -214,7 +198,56 @@ public struct ConnectionView: View {
         let link = pairingLink.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !link.isEmpty, !store.isConnecting else { return }
         fieldFocused = false
-        Task { await store.connectRemote(link) }
+        store.offeredPairingLink = link
+    }
+
+    private func door(icon: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(IysThemePreferences.active.accent.opacity(0.14))
+                    .overlay(
+                        Image(systemName: icon)
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(IysThemePreferences.active.accent)
+                    )
+                    .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(OCColor.textPrimary)
+                        .multilineTextAlignment(.leading)
+                    Text(subtitle)
+                        .font(.system(size: 13))
+                        .foregroundColor(OCColor.textSecondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .foregroundColor(OCColor.textFaint)
+            }
+            .padding(14)
+            .background(OCColor.bgBase)
+            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+            .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderBase, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func step(_ number: Int, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("\(number)")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundColor(OCColor.onAccent)
+                .frame(width: 22, height: 22)
+                .background(IysThemePreferences.active.accent)
+                .clipShape(Circle())
+            Text(text)
+                .font(.system(size: 14))
+                .foregroundColor(OCColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
     
     private func label(_ text: String) -> some View {
@@ -237,38 +270,8 @@ public struct ConnectionView: View {
         .font(.system(size: 12.5, design: .monospaced))
         .padding(12)
         .background(OCColor.bgBase)
-        .overlay(Rectangle().stroke(Color.white.opacity(0.14), lineWidth: 1))
-    }
-}
-
-/// Botón pequeño de portapapeles que confirma la acción en el propio texto:
-/// copiar o pegar sin ninguna señal dejaba la duda de si había funcionado.
-private struct ClipboardChipButton: View {
-    let title: String
-    let confirmation: String
-    /// Devuelve `false` cuando no había nada que copiar o pegar.
-    let action: () -> Bool
-    @State private var confirmed = false
-
-    var body: some View {
-        Button {
-            guard action() else { return }
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            confirmed = true
-            Task {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                confirmed = false
-            }
-        } label: {
-            Text(confirmed ? confirmation : title)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundColor(confirmed ? IysThemePreferences.active.accent : Color.white.opacity(0.55))
-                .padding(.horizontal, 10)
-                .frame(height: 28)
-                .overlay(Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
     }
 }
 
@@ -282,19 +285,19 @@ struct StoredPairingSection: View {
             if hasStored {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("EQUIPO VINCULADO")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundColor(Color.white.opacity(0.5))
-                        Text("Conexión guardada en este iPhone")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(Color.white.opacity(0.7))
+                        Text("Volver a conectar")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(OCColor.textPrimary)
+                        Text("Hay un equipo guardado en este iPhone")
+                            .font(.system(size: 13))
+                            .foregroundColor(OCColor.textSecondary)
                     }
                     Spacer()
-                    Button("Reconectar") {
+                    Button("Conectar") {
                         Task { await store.reconnectStoredPairing() }
                     }
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundColor(OCColor.bgDeep)
+                    .foregroundColor(OCColor.onAccent)
                     .padding(.horizontal, 12)
                     .frame(height: 36)
                     .background(IysThemePreferences.active.accent)
@@ -303,11 +306,11 @@ struct StoredPairingSection: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(OCColor.bgBase)
-                .overlay(Rectangle().stroke(Color.white.opacity(0.14), lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
                 
                 HStack {
-                    Button("Olvidar conexión") {
+                    Button("Olvidar") {
                         Task {
                             await store.forgetPairing()
                             hasStored = false
@@ -316,7 +319,7 @@ struct StoredPairingSection: View {
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(Color.white.opacity(0.4))
                     Spacer()
-                    Button("Vincular otro equipo") {
+                    Button("Usar otro enlace") {
                         showReconnectSheet = true
                     }
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -343,42 +346,57 @@ struct ReconnectSheet: View {
             VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 36)
                 
-                Text("Vincular otro equipo")
-                    .font(.system(size: 24, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white)
+                Text("Otro equipo")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundColor(OCColor.textPrimary)
                 
                 Spacer().frame(height: 24)
                 
                 HStack {
-                    label("COMANDO EN TU EQUIPO")
+                    label("COMANDO")
                     Spacer()
-                    ClipboardChipButton(title: "Copiar", confirmation: "Copiado") {
-                        UIPasteboard.general.string = "npx --yes github:DannyBaanks/iSyCodeMovil#main link"
-                        return true
+                    Button {
+                        UIPasteboard.general.string = "npx --yes github:DannyBaanks/IysCodeMovil link"
+                    } label: {
+                        Text("Copiar")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(Color.white.opacity(0.55))
+                            .padding(.horizontal, 10)
+                            .frame(height: 28)
+                            .overlay(Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1))
                     }
+                    .buttonStyle(.plain)
                     .padding(.bottom, 8)
                 }
-                commandBox("npx --yes github:DannyBaanks/iSyCodeMovil#main link")
+                commandBox("npx --yes github:DannyBaanks/IysCodeMovil link")
                 
-                Text("Ejecútalo en la carpeta del proyecto, en el equipo donde ya tienes ISyCode. Después pega aquí el enlace que aparezca.")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(Color.white.opacity(0.42))
+                Text("Corre el comando en la carpeta del proyecto. Hace falta Node.js y OpenCode, y la terminal tiene que quedarse abierta. Pega aquí el enlace completo. No lo reenvíes: lleva la contraseña.")
+                    .font(.system(size: 14))
+                    .foregroundColor(OCColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
                 
                 Spacer().frame(height: 24)
                 
                 HStack {
-                    label("ENLACE DE CONEXIÓN")
+                    label("ENLACE")
                     Spacer()
-                    ClipboardChipButton(title: "Pegar", confirmation: "Pegado") {
-                        guard let pasted = UIPasteboard.general.string, !pasted.isEmpty else { return false }
-                        pairingLink = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
-                        return true
+                    Button {
+                        if let pasted = UIPasteboard.general.string, !pasted.isEmpty {
+                            pairingLink = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                    } label: {
+                        Text("Pegar")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(Color.white.opacity(0.55))
+                            .padding(.horizontal, 10)
+                            .frame(height: 28)
+                            .overlay(Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1))
                     }
+                    .buttonStyle(.plain)
                     .padding(.bottom, 8)
                 }
-                TextField("iyscodemovil://, codex://, grok:// o isysandbox://", text: $pairingLink, axis: .vertical)
+                TextField("iyscodemovil://pair?...", text: $pairingLink, axis: .vertical)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(size: 13, design: .monospaced))
@@ -393,33 +411,28 @@ struct ReconnectSheet: View {
                 
                 Button { connect() } label: {
                     HStack {
-                        Text(store.isConnecting ? "Conectando…" : "Conectar")
+                        Text(store.isConnecting ? "Conectando…" : "Revisar enlace")
                             .font(.system(size: 14, weight: .medium, design: .monospaced))
                         Spacer()
                         Text("↵")
                             .font(.system(size: 14, design: .monospaced))
                     }
-                    .foregroundColor(OCColor.bgDeep)
+                    .foregroundColor(OCColor.onAccent)
                     .padding(.horizontal, 12)
                     .frame(height: 44)
                     .background(IysThemePreferences.active.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
                 }
                 .buttonStyle(.plain)
                 .disabled(store.isConnecting || pairingLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .opacity(store.isConnecting || pairingLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
                 .padding(.top, 10)
                 
-                if !store.connectionStatus.isEmpty {
-                    Text(store.connectionStatus)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(store.connectionStatus.lowercased().hasPrefix("error") ? .red : Color.white.opacity(0.5))
-                        .padding(.top, 10)
-                }
+                ConnectionStatusLine(status: store.connectionStatus)
                 
                 Spacer()
             }
             .padding(.horizontal, 18)
-            .background(OCColor.bgDeep.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -434,7 +447,8 @@ struct ReconnectSheet: View {
         let link = pairingLink.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !link.isEmpty, !store.isConnecting else { return }
         fieldFocused = false
-        Task { await store.connectRemote(link) }
+        store.offeredPairingLink = link
+        dismiss()
     }
     
     private func label(_ text: String) -> some View {
@@ -457,17 +471,19 @@ struct ReconnectSheet: View {
         .font(.system(size: 12.5, design: .monospaced))
         .padding(12)
         .background(OCColor.bgBase)
-        .overlay(Rectangle().stroke(Color.white.opacity(0.14), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
     }
 }
 
 struct SandboxKeySheet: View {
+    var initialProviderID: String = "gus-local"
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: WorkbenchStore
     @State private var key = ""
     @State private var hasKey = false
     @State private var isStarting = false
-    @State private var selectedProviderID = "nvidia"
+    @State private var selectedProviderID = "gus-local"
     @State private var showProviderDirectory = false
     @StateObject private var gusModelManager = GUSModelDownloadManager.shared
     @FocusState private var fieldFocused: Bool
@@ -477,12 +493,12 @@ struct SandboxKeySheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 28)
-                Text("Probar en este iPhone")
-                    .font(.system(size: 24, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white)
-                Text("Elige el proveedor del modelo para el entorno de prueba. Las claves se guardan en el llavero de iOS.")
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(Color.white.opacity(0.55))
+                Text("GUS en este iPhone")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundColor(OCColor.textPrimary)
+                Text("GUS trabaja sin internet. Si eliges un proveedor en la nube, la clave se guarda en el llavero y lo que escribas sale hacia ese proveedor.")
+                    .font(.system(size: 15))
+                    .foregroundColor(OCColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
 
@@ -518,7 +534,7 @@ struct SandboxKeySheet: View {
                         .foregroundColor(Color.white.opacity(0.55))
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.bottom, 10)
-                    SecureField(hasKey ? "Clave guardada; pega otra para reemplazarla" : provider.keyPlaceholder, text: $key)
+                    SecureField(hasKey ? "clave guardada; pega otra para reemplazarla" : provider.keyPlaceholder, text: $key)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(size: 13, design: .monospaced))
@@ -552,17 +568,18 @@ struct SandboxKeySheet: View {
                 } label: {
                     HStack {
                         Text(isStarting ? "Abriendo…" : (selectedProviderID == "gus-local"
-                            ? "Usar GUS local"
+                            ? "Usar GUS"
                             : (hasKey && key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Entrar con la clave guardada" : "Guardar y entrar")))
                             .font(.system(size: 14, weight: .medium, design: .monospaced))
                         Spacer()
                         Text("↵")
                             .font(.system(size: 14, design: .monospaced))
                     }
-                    .foregroundColor(OCColor.bgDeep)
+                    .foregroundColor(OCColor.onAccent)
                     .padding(.horizontal, 12)
                     .frame(height: 44)
                     .background(IysThemePreferences.active.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
                 }
                 .buttonStyle(.plain)
                 .disabled(!canStartSandbox)
@@ -587,12 +604,12 @@ struct SandboxKeySheet: View {
                             dismiss()
                         } else {
                             store.sandboxSetupError = store.connectionStatus.isEmpty
-                                ? "No pude iniciar el entorno de prueba. Inténtalo de nuevo."
+                                ? "No pude iniciar el sandbox. Inténtalo de nuevo."
                                 : store.connectionStatus
                         }
                     }
                 } label: {
-                    Text("Ver el guion de demo, sin modelo")
+                    Text("Ver el guion de demo")
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(Color.white.opacity(0.45))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -610,13 +627,14 @@ struct SandboxKeySheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancelar") { dismiss() }
-                        .font(.system(size: 14, design: .monospaced))
+                        .font(.system(size: 14))
                 }
             }
         }
         .presentationDetents([.large])
         .sheet(isPresented: $showProviderDirectory) { ProviderDirectoryView() }
         .onAppear {
+            selectedProviderID = initialProviderID
             store.sandboxSetupError = nil
             refreshProviderKeyState()
         }
@@ -637,5 +655,182 @@ struct SandboxKeySheet: View {
         guard !isStarting else { return false }
         if selectedProviderID == "gus-local" { return gusModelManager.installedModelURL != nil }
         return hasKey || !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+enum ConnectionStatusHint {
+    static func nextStep(for status: String) -> String? {
+        let text = status.lowercased()
+        if text.contains("127.0.0.1") || text.contains("localhost") {
+            return "Esa dirección es la computadora misma. En el iPhone usa la IP de tu Wi-Fi o la de Tailscale."
+        }
+        if text.contains("401") || text.contains("unauthorized") {
+            return "Ese enlace ya no sirve. Vuelve a correr el comando en la computadora y pega el nuevo."
+        }
+        if text.contains("timed out") || text.contains("timeout") || text.contains("could not connect")
+            || text.contains("connection refused") || text.contains("network connection") {
+            return "Deja abierta la terminal del comando, y pon el iPhone en la misma red o en Tailscale."
+        }
+        if text.contains("invalid") || text.contains("missing required") || text.contains("pairing") {
+            return "Copia la línea completa que empieza por iyscodemovil://, codex:// o grok://."
+        }
+        return nil
+    }
+}
+
+struct ConnectionStatusLine: View {
+    let status: String
+
+    var body: some View {
+        if !status.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(status)
+                    .font(.system(size: 14))
+                    .foregroundColor(looksLikeError ? OCColor.danger : OCColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let hint = ConnectionStatusHint.nextStep(for: status) {
+                    Text(hint)
+                        .font(.system(size: 14))
+                        .foregroundColor(OCColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.top, 10)
+        }
+    }
+
+    private var looksLikeError: Bool {
+        let text = status.lowercased()
+        return text.hasPrefix("error") || text.contains("failed") || text.contains("invalid")
+    }
+}
+
+struct PairingOfferSummary {
+    let kind: String
+    let hostLine: String
+    let directory: String
+    let notice: String
+
+    init(link: String) throws {
+        let (type, pairing) = try WorkbenchBackendFactory.parsePairingURL(link)
+        switch pairing {
+        case .openCode(let value):
+            kind = type.displayName
+            hostLine = "\(value.scheme)://\(value.host):\(value.port)"
+            directory = value.directory
+            notice = value.scheme == "http"
+                ? "Este enlace va por HTTP. Úsalo solo en tu Wi-Fi o en una VPN. No lo reenvíes: incluye la contraseña."
+                : "La conexión va cifrada. No reenvíes el enlace: incluye la contraseña."
+        case .codex(let value):
+            kind = "Codex"
+            hostLine = "\(value.host):\(value.port)"
+            directory = value.directory
+            notice = "Codex usa la dirección de Tailscale. No reenvíes el enlace: incluye un token."
+        case .grok(let value):
+            kind = "Grok"
+            hostLine = "\(value.host):\(value.port)"
+            directory = value.directory
+            notice = "Grok se queda en la computadora. El iPhone entra por Tailscale. No reenvíes el enlace: incluye un token."
+        case .remote(let value):
+            kind = value.type.displayName
+            hostLine = "\(value.scheme)://\(value.host):\(value.port)"
+            directory = value.directory
+            notice = value.scheme == "http"
+                ? "Este enlace va por HTTP. Úsalo solo en tu Wi-Fi o en una VPN. No lo reenvíes."
+                : "Revisa el equipo antes de continuar. No reenvíes el enlace."
+        }
+    }
+}
+
+public struct PairingConfirmSheet: View {
+    public let link: String
+    @EnvironmentObject private var store: WorkbenchStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var summary: PairingOfferSummary?
+    @State private var parseError: String?
+
+    public init(link: String) {
+        self.link = link
+    }
+
+    public var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("¿Conectar este equipo?")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundColor(OCColor.textPrimary)
+                if let parseError {
+                    Text(parseError)
+                        .font(.system(size: 15))
+                        .foregroundColor(OCColor.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let hint = ConnectionStatusHint.nextStep(for: parseError) {
+                        Text(hint)
+                            .font(.system(size: 15))
+                            .foregroundColor(OCColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else if let summary {
+                    offerRow("Tipo", summary.kind)
+                    offerRow("Equipo", summary.hostLine)
+                    offerRow("Carpeta", summary.directory.isEmpty ? "La carpeta donde corriste el comando" : summary.directory)
+                    Text(summary.notice)
+                        .font(.system(size: 15))
+                        .foregroundColor(OCColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button {
+                        let pending = link
+                        store.offeredPairingLink = nil
+                        Task { await store.connectRemote(pending) }
+                    } label: {
+                        Text("Conectar")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(OCColor.onAccent)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
+                            .background(IysThemePreferences.active.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(store.isConnecting)
+                }
+                Spacer()
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(OCColor.bgDeep.ignoresSafeArea())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancelar") {
+                        store.offeredPairingLink = nil
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .onAppear(perform: parse)
+    }
+
+    private func offerRow(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(OCColor.textFaint)
+            Text(value)
+                .font(.system(size: 15))
+                .foregroundColor(OCColor.textPrimary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func parse() {
+        do {
+            summary = try PairingOfferSummary(link: link)
+        } catch {
+            parseError = error.localizedDescription
+        }
     }
 }

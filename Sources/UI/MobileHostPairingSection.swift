@@ -26,7 +26,7 @@ public struct MobileHostPairingSection: View {
                     Text(hostStore.credential == nil ? "Conectar mi equipo" : "Equipo conectado")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(OCColor.textPrimary)
-                    Text(hostStore.credential == nil ? "Usa la dirección del host y el PIN" : "ISYCODE HOST")
+                    Text(hostStore.credential == nil ? "PIN del escritorio, todavía sin sesiones" : "ISYCODE HOST")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .tracking(0.8)
                         .foregroundColor(OCColor.textFaint)
@@ -64,7 +64,7 @@ public struct MobileHostPairingSection: View {
 
     private var pairingForm: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Pega la dirección del host y el PIN de seis dígitos para comenzar.")
+            Text("Pega la dirección y el PIN de seis dígitos. El teléfono queda emparejado; las conversaciones llegan con el escritorio.")
                 .font(.system(size: 12))
                 .foregroundColor(OCColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -95,14 +95,14 @@ public struct MobileHostPairingSection: View {
             } label: {
                 HStack(spacing: 8) {
                     if hostStore.isPairing {
-                        ProgressView().tint(OCColor.bgDeep)
+                        ProgressView().tint(OCColor.onAccent)
                     } else {
                         Text("Conectar")
                         Image(systemName: "arrow.right")
                     }
                 }
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(OCColor.bgDeep)
+                .foregroundColor(OCColor.onAccent)
                 .frame(maxWidth: .infinity)
                 .frame(height: 46)
                 .background(accent.gradient)

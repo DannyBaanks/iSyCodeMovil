@@ -15,6 +15,8 @@ public final class WorkbenchStore: ObservableObject {
     @Published public private(set) var sessions: [Session] = []
     @Published public private(set) var backendMode: BackendMode = .unconfigured
     @Published public private(set) var connectionStatus: String = ""
+    /// Enlace recibido o pegado, a la espera de que la persona confirme el equipo.
+    @Published public var offeredPairingLink: String?
     @Published public private(set) var isConnecting: Bool = false
     @Published public private(set) var connectionHealth: ConnectionHealth = .disconnected
     /// False when the on-phone sandbox is the canned notes.txt script.
@@ -23,15 +25,6 @@ public final class WorkbenchStore: ObservableObject {
     @Published public private(set) var sandboxFolderName: String? = UserDefaults.standard.string(forKey: "sandbox.authorizedFolderName")
     @Published public var sandboxFolderError: String?
     @Published public var sandboxSetupError: String?
-    /// The Docker sandbox on the user's computer that the agent's tools run in, if linked.
-    @Published public private(set) var sandboxLink: SandboxLinkState?
-    @Published public private(set) var sandboxLinkBusy = false
-    @Published public var sandboxLinkError: String?
-    /// Repository cloned on this iPhone that the on-device tools are scoped to, if any.
-    @Published public private(set) var phoneProject: String?
-    @Published public private(set) var phoneProjectCanUndo = false
-    @Published public private(set) var phoneProjectBusy = false
-    @Published public var phoneProjectMessage: String?
     @Published public var availableModels: [ModelInfo] = []
     @Published public var availableAgents: [String] = []
     @Published public var availableCommands: [CommandInfo] = []
@@ -51,8 +44,6 @@ public final class WorkbenchStore: ObservableObject {
     private var pairingStore = PairingStore()
     private var codexPairingStore = CodexPairingStore()
     private var grokPairingStore = GrokPairingStore()
-    private var sandboxPairingStore = SandboxPairingStore()
-    private var sandboxClient: SandboxHostClient?
     private var activeRemotePairing: BackendPairing?
     private var activeRemoteBackendType: RemoteBackendType?
     private var backendEventTask: Task<Void, Never>?
@@ -107,12 +98,6 @@ public final class WorkbenchStore: ObservableObject {
     #endif
     
     public func connectRemote(_ rawPairingLink: String) async {
-        // A sandbox link is not a remote agent: the agent stays on this iPhone and only
-        // its tools move to the computer.
-        if SandboxPairing.isPairingLink(rawPairingLink) {
-            await connectSandboxHost(rawPairingLink)
-            return
-        }
         do {
             let (backendType, pairing) = try WorkbenchBackendFactory.parsePairingURL(rawPairingLink)
             await connectRemote(pairing: pairing, backendType: backendType)
@@ -136,7 +121,7 @@ public final class WorkbenchStore: ObservableObject {
         await currentBackend?.disconnect()
         isConnecting = true
         connectionHealth = .connecting
-        connectionStatus = "Conectando…"
+        connectionStatus = "connecting..."
         activeRemotePairing = pairing
         activeRemoteBackendType = backendType
 
@@ -258,11 +243,6 @@ public final class WorkbenchStore: ObservableObject {
         currentProjectID = nil
         currentSessionID = nil
         sandboxUsesLiveModel = false
-        // The sandbox itself is left on the computer: it expires on its own clock, and
-        // destroying work nobody collected is never done implicitly.
-        sandboxClient = nil
-        sandboxLink = nil
-        sandboxLinkError = nil
     }
 
     @discardableResult
@@ -479,12 +459,12 @@ public final class WorkbenchStore: ObservableObject {
         do {
             try await codexPairingStore.clear()
         } catch {
-            addErrorEvent("Could not remove Codex pairing secret: \(error.localizedDescription)")
+            addErrorEvent("No pude borrar el token de Codex: \(error.localizedDescription)")
         }
         do {
             try await grokPairingStore.clear()
         } catch {
-            addErrorEvent("Could not remove Grok pairing secret: \(error.localizedDescription)")
+            addErrorEvent("No pude borrar el token de Grok: \(error.localizedDescription)")
         }
     }
     
@@ -511,7 +491,7 @@ public final class WorkbenchStore: ObservableObject {
                     sessionState.clearTimeline()
                 }
             } catch {
-                addErrorEvent("Failed to load sessions: \(error.localizedDescription)")
+                addErrorEvent("No pude cargar las conversaciones: \(error.localizedDescription)")
             }
         }
     }
@@ -541,7 +521,7 @@ public final class WorkbenchStore: ObservableObject {
                 }
                 sessionState.timelineEvents = mergedEvents
             } catch {
-                addErrorEvent("Failed to load session: \(error.localizedDescription)")
+                addErrorEvent("No pude abrir la conversación: \(error.localizedDescription)")
             }
         }
     }
@@ -549,7 +529,7 @@ public final class WorkbenchStore: ObservableObject {
     public func createNewSession(in project: Project, title: String) async -> Session? {
         guard let backend = currentBackend else { return nil }
         do {
-            let session = try await backend.createSession(projectID: project.id, title: title.isEmpty ? "Nueva sesión" : title)
+            let session = try await backend.createSession(projectID: project.id, title: title.isEmpty ? "Nueva conversación" : title)
             sessions.append(session)
             sessionState.currentSession = session
             currentSessionID = session.id
@@ -557,7 +537,7 @@ public final class WorkbenchStore: ObservableObject {
             try? await backend.selectSession(session.id)
             return session
         } catch {
-            addErrorEvent("Failed to create session: \(error.localizedDescription)")
+            addErrorEvent("No pude crear la conversación: \(error.localizedDescription)")
             return nil
         }
     }
@@ -573,7 +553,7 @@ public final class WorkbenchStore: ObservableObject {
                 sessionState.currentSession = sessions.first { $0.id == session.id }
             }
         } catch {
-            addErrorEvent("Failed to rename session: \(error.localizedDescription)")
+            addErrorEvent("No pude renombrar la conversación: \(error.localizedDescription)")
         }
     }
     
@@ -712,7 +692,7 @@ public final class WorkbenchStore: ObservableObject {
             fileTree = try await backend.listFiles(path: path)
             filesPath = path
         } catch {
-            addErrorEvent("Failed to load files: \(error.localizedDescription)")
+            addErrorEvent("No pude cargar los archivos: \(error.localizedDescription)")
         }
     }
     
@@ -721,7 +701,7 @@ public final class WorkbenchStore: ObservableObject {
         do {
             return try await backend.fileContent(path: path)
         } catch {
-            addErrorEvent("Failed to load file: \(error.localizedDescription)")
+            addErrorEvent("No pude abrir el archivo: \(error.localizedDescription)")
             return nil
         }
     }
@@ -732,7 +712,7 @@ public final class WorkbenchStore: ObservableObject {
             diffFiles = try await backend.sessionDiff(sessionID: sessionID)
         } catch {
             if backendMode != .native {
-                addErrorEvent("Failed to load diff: \(error.localizedDescription)")
+                addErrorEvent("No pude cargar los cambios: \(error.localizedDescription)")
             }
         }
     }
@@ -840,7 +820,7 @@ public final class WorkbenchStore: ObservableObject {
                     sessionState.selectedModel = defaultModel
                 }
             }
-            addErrorEvent("Failed to load models/agents: \(error.localizedDescription)")
+            addErrorEvent("No pude cargar modelos y agentes: \(error.localizedDescription)")
         }
     }
     
@@ -1132,271 +1112,5 @@ public final class WorkbenchStore: ObservableObject {
             addErrorEvent("No pude aplicar Dual-Smol: \(error.localizedDescription)")
             return false
         }
-    }
-}
-
-// MARK: - Docker sandbox on the user's computer
-
-extension WorkbenchStore {
-    /// Links the on-phone agent to a sandbox on the computer.
-    ///
-    /// The sandbox is prepared first, so a bad link or a stopped Docker leaves the app on
-    /// the connection screen with the reason instead of inside a half-working session.
-    public func connectSandboxHost(_ rawPairingLink: String) async {
-        guard !isConnecting else { return }
-        isConnecting = true
-        connectionHealth = .connecting
-        connectionStatus = "Preparando el sandbox en tu computadora…"
-        sandboxLinkError = nil
-        do {
-            let pairing = try SandboxPairing.parse(rawPairingLink)
-            let client = SandboxHostClient(pairing: pairing)
-            let info = try await client.bridgeInfo()
-            let prepared = try await prepareSandbox(client: client, info: info)
-            try await sandboxPairingStore.save(pairing)
-
-            isConnecting = false
-            await startNativeRuntime(forceOfflineDemo: false)
-            guard backendMode == .native, connectionHealth == .connected,
-                  let backend = currentBackend as? NativeSwiftBackend else { return }
-
-            backend.attachSandbox(
-                SandboxToolExecutor(client: client, sandboxID: prepared.status.id, info: info),
-                projectName: info.projectName,
-                projectPath: pairing.directory
-            )
-            sandboxClient = client
-            sandboxLink = SandboxLinkState(
-                projectName: info.projectName,
-                directory: pairing.directory,
-                repo: info.repo,
-                defaultBranch: info.defaultBranch,
-                hasGitHubAccount: info.hasGitHubAccount,
-                sandboxID: prepared.status.id,
-                phase: prepared.status.phase,
-                remainingMs: prepared.status.remainingMs,
-                explanation: prepared.status.explanation,
-                excludedFiles: prepared.excluded,
-                lastPullRequest: nil
-            )
-            await refreshProjectsAfterSandboxChange(backend)
-            fileTree = []
-            connectionStatus = "Sandbox en tu computadora · \(info.projectName)"
-            addSystemEvent(prepared.reused
-                ? "Sandbox retomado en tu computadora: \(info.projectName). Las herramientas del agente se ejecutan allí."
-                : "Sandbox nuevo en tu computadora con una copia de \(info.projectName). Sin red, sin acceso a tu disco y sin credenciales.")
-            if !prepared.excluded.isEmpty {
-                addSystemEvent("Se quedaron en tu computadora \(prepared.excluded.count) archivos que parecen secretos.")
-            }
-            if !sandboxUsesLiveModel {
-                addSystemEvent("Falta un modelo: elige un proveedor en Ajustes para que el agente pueda trabajar en el sandbox.")
-            }
-        } catch {
-            isConnecting = false
-            sandboxClient = nil
-            sandboxLink = nil
-            if backendMode != .native {
-                connectionHealth = .disconnected
-                backendMode = .unconfigured
-            }
-            connectionStatus = "error: \(error.localizedDescription)"
-        }
-    }
-
-    private func prepareSandbox(client: SandboxHostClient, info: SandboxBridgeInfo) async throws -> (status: SandboxStatus, reused: Bool, excluded: [String]) {
-        // A sandbox that is still alive holds work in progress: pick it up instead of
-        // starting over with a fresh copy of the folder.
-        if let existing = try await client.listSandboxes().first(where: { $0.isUsable }) {
-            try await client.touch(id: existing.id)
-            let status = try await client.status(id: existing.id)
-            return (status: status, reused: true, excluded: [])
-        }
-        let id = try await client.createSandbox(ttlMinutes: 120, repo: info.repo)
-        let report = try await client.sendProjectFolder(id: id)
-        let status = try await client.status(id: id)
-        return (status: status, reused: false, excluded: report.excluded)
-    }
-
-    private func refreshProjectsAfterSandboxChange(_ backend: NativeSwiftBackend) async {
-        guard let refreshed = try? await backend.listProjects() else { return }
-        projects = refreshed
-        if let project = refreshed.first {
-            sessionState.currentProject = project
-        }
-    }
-
-    public func refreshSandboxStatus() async {
-        guard let client = sandboxClient, var link = sandboxLink else { return }
-        do {
-            let status = try await client.status(id: link.sandboxID)
-            link.phase = status.phase
-            link.remainingMs = status.remainingMs
-            link.explanation = status.explanation
-            sandboxLink = link
-        } catch {
-            sandboxLinkError = error.localizedDescription
-        }
-    }
-
-    /// Asks the computer to push the sandbox's work to a `movilclaw/<task>` branch and
-    /// open a pull request. Called from an explicit button, so the tap is the approval.
-    @discardableResult
-    public func openSandboxPullRequest(title: String, body: String) async -> SandboxPullRequest? {
-        guard let client = sandboxClient, var link = sandboxLink, !sandboxLinkBusy else { return nil }
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedTitle.isEmpty else { return nil }
-        sandboxLinkBusy = true
-        sandboxLinkError = nil
-        defer { sandboxLinkBusy = false }
-        do {
-            let pullRequest = try await client.openPullRequest(
-                id: link.sandboxID,
-                task: trimmedTitle,
-                title: trimmedTitle,
-                body: body,
-                baseBranch: link.defaultBranch
-            )
-            link.lastPullRequest = pullRequest
-            sandboxLink = link
-            addSystemEvent("Pull request abierto: \(pullRequest.url)")
-            return pullRequest
-        } catch {
-            sandboxLinkError = error.localizedDescription
-            return nil
-        }
-    }
-
-    /// Downloads the sandbox's working tree to a temporary `.tar.gz` for the share sheet.
-    public func exportSandboxWork() async -> URL? {
-        guard let client = sandboxClient, let link = sandboxLink, !sandboxLinkBusy else { return nil }
-        sandboxLinkBusy = true
-        sandboxLinkError = nil
-        defer { sandboxLinkBusy = false }
-        do {
-            let archive = try await client.downloadWork(id: link.sandboxID)
-            let safeName = link.projectName.replacingOccurrences(of: "/", with: "-")
-            let target = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName)-sandbox.tar.gz")
-            try archive.write(to: target, options: .atomic)
-            return target
-        } catch {
-            sandboxLinkError = error.localizedDescription
-            return nil
-        }
-    }
-
-    /// Destroys the current sandbox and starts a new one from the folder as it is now.
-    public func restartSandbox() async {
-        guard let client = sandboxClient, let link = sandboxLink, !sandboxLinkBusy,
-              let backend = currentBackend as? NativeSwiftBackend else { return }
-        sandboxLinkBusy = true
-        sandboxLinkError = nil
-        defer { sandboxLinkBusy = false }
-        do {
-            try await client.destroy(id: link.sandboxID)
-            let info = try await client.bridgeInfo()
-            let prepared = try await prepareSandbox(client: client, info: info)
-            backend.attachSandbox(
-                SandboxToolExecutor(client: client, sandboxID: prepared.status.id, info: info),
-                projectName: info.projectName,
-                projectPath: link.directory
-            )
-            sandboxLink = SandboxLinkState(
-                projectName: info.projectName,
-                directory: link.directory,
-                repo: info.repo,
-                defaultBranch: info.defaultBranch,
-                hasGitHubAccount: info.hasGitHubAccount,
-                sandboxID: prepared.status.id,
-                phase: prepared.status.phase,
-                remainingMs: prepared.status.remainingMs,
-                explanation: prepared.status.explanation,
-                excludedFiles: prepared.excluded,
-                lastPullRequest: nil
-            )
-            fileTree = []
-            addSystemEvent("Sandbox reiniciado con una copia nueva de \(info.projectName).")
-        } catch {
-            sandboxLinkError = error.localizedDescription
-        }
-    }
-
-    /// Stops using the sandbox and goes back to the iPhone workspace tools. The sandbox
-    /// stays on the computer until it expires or the link is stopped there.
-    public func unlinkSandbox() async {
-        guard sandboxLink != nil else { return }
-        if let backend = currentBackend as? NativeSwiftBackend {
-            backend.detachSandbox()
-            await refreshProjectsAfterSandboxChange(backend)
-        }
-        try? await sandboxPairingStore.clear()
-        sandboxClient = nil
-        sandboxLink = nil
-        sandboxLinkError = nil
-        fileTree = []
-        connectionStatus = await currentBackend?.connectionStatus ?? ""
-        addSystemEvent("Sandbox desvinculado. El agente vuelve a trabajar con los archivos de este iPhone.")
-    }
-
-    /// The open conversation as Markdown, for the share sheet.
-    public func conversationMarkdown() -> String {
-        ConversationExport.markdown(
-            title: sessionState.currentSession?.title ?? "Conversación",
-            project: sessionState.currentProject?.name,
-            events: sessionState.timelineEvents
-        )
-    }
-}
-
-// MARK: - Disposable clones on the iPhone
-
-extension WorkbenchStore {
-    public func refreshPhoneProject() async {
-        guard let backend = currentBackend as? NativeSwiftBackend else {
-            phoneProject = nil
-            phoneProjectCanUndo = false
-            return
-        }
-        phoneProject = await backend.activePhoneProject()
-        phoneProjectCanUndo = await backend.canUndoPhoneProjectChange()
-    }
-
-    /// Clones a public GitHub repository into the iPhone workspace without git.
-    @discardableResult
-    public func clonePhoneRepository(_ repository: String) async -> Bool {
-        guard let backend = currentBackend as? NativeSwiftBackend, !phoneProjectBusy else { return false }
-        phoneProjectBusy = true
-        phoneProjectMessage = nil
-        defer { phoneProjectBusy = false }
-        do {
-            let report = try await backend.cloneRepository(repository)
-            phoneProjectMessage = "Clonado \(report.repository): \(report.files) archivos en \(report.directory)."
-            addSystemEvent("Repositorio \(report.repository) clonado en este iPhone (\(report.files) archivos). Es una copia desechable.")
-            fileTree = []
-            await refreshPhoneProject()
-            return true
-        } catch {
-            phoneProjectMessage = error.localizedDescription
-            return false
-        }
-    }
-
-    public func undoPhoneProjectChange() async {
-        guard let backend = currentBackend as? NativeSwiftBackend, !phoneProjectBusy else { return }
-        phoneProjectBusy = true
-        defer { phoneProjectBusy = false }
-        do {
-            phoneProjectMessage = try await backend.undoPhoneProjectChange()
-        } catch {
-            phoneProjectMessage = error.localizedDescription
-        }
-        await refreshPhoneProject()
-    }
-
-    /// Stops scoping the tools to the clone. Its files stay in the workspace.
-    public func closePhoneProject() async {
-        guard let backend = currentBackend as? NativeSwiftBackend else { return }
-        await backend.closeActivePhoneProject()
-        phoneProjectMessage = nil
-        await refreshPhoneProject()
     }
 }
