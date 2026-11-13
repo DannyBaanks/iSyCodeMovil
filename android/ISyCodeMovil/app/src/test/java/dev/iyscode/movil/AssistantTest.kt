@@ -15,6 +15,7 @@ import dev.iyscode.movil.assistant.GoogleService
 import dev.iyscode.movil.assistant.GoogleToken
 import dev.iyscode.movil.assistant.GraphLinkKind
 import dev.iyscode.movil.assistant.GraphNodeKind
+import dev.iyscode.movil.assistant.GusGrounding
 import dev.iyscode.movil.assistant.ManifestPoll
 import dev.iyscode.movil.assistant.MemoryStore
 import dev.iyscode.movil.assistant.SemanticContext
@@ -334,5 +335,48 @@ class GoogleTokenTest {
         assertTrue(token.isFresh(39_000))
         assertFalse(token.isFresh(41_000))
         assertFalse(GoogleToken("", expiresAt = 100_000).isFresh(0))
+    }
+}
+
+class GusGroundingTest {
+    private val tasksScope = GoogleService.TASKS.scopes.toSet()
+
+    @Test fun onlyGrantedReadToolsAreUsed() {
+        val client = GoogleClient(tokenProvider = { "T" })
+        val none = GusGrounding(client, grantedScopes = { emptySet() })
+        assertTrue(none.plannedReads("¿Qué pendientes tengo?").isEmpty())
+        val tasks = GusGrounding(client, grantedScopes = { tasksScope })
+        assertEquals(listOf("googletasks.read.list"), tasks.plannedReads("¿Qué pendientes tengo?").map { it.id })
+        assertTrue(tasks.plannedReads("hola").isEmpty())
+    }
+
+    @Test fun groundingFetchesDataAndFlagsWrites() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody("""{"items":[{"id":"t1","title":"Revisar PR"}]}"""))
+        server.start()
+        try {
+            val client = GoogleClient(tokenProvider = { "T" }, baseOverride = server.url("/").toString())
+            val result = GusGrounding(client, grantedScopes = { tasksScope }).ground("Agrega un pendiente nuevo: comprar café")
+            assertEquals(listOf("googletasks.read.list"), result.toolsUsed)
+            assertTrue(result.context!!.contains("Revisar PR"))
+            assertEquals("googletasks.write.create", result.writeTool?.id)
+            assertTrue(result.errors.isEmpty())
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test fun failuresAreReportedNotThrown() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":{"message":"API disabled"}}"""))
+        server.start()
+        try {
+            val client = GoogleClient(tokenProvider = { "T" }, baseOverride = server.url("/").toString())
+            val result = GusGrounding(client, grantedScopes = { tasksScope }).ground("mis pendientes")
+            assertNull(result.context)
+            assertEquals(1, result.errors.size)
+        } finally {
+            server.shutdown()
+        }
     }
 }

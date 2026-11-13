@@ -95,7 +95,12 @@ struct RootView: View {
             #if targetEnvironment(simulator)
             if let screenshotArgument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--readme-screenshot=") }) {
                 let scene = String(screenshotArgument.dropFirst("--readme-screenshot=".count))
-                store.prepareReadmeScreenshot(scene)
+                if scene.hasPrefix("assistant") {
+                    assistant.prepareReadmeScreenshot(scene)
+                    showAssistant = true
+                } else {
+                    store.prepareReadmeScreenshot(scene)
+                }
                 return
             }
             #endif
