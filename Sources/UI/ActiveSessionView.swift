@@ -4,6 +4,7 @@ public struct ActiveSessionView: View {
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var store: WorkbenchStore
     @State private var showDisconnectConfirm = false
+    @State private var showSandboxPanel = false
     
     public init() {}
 
@@ -62,6 +63,9 @@ public struct ActiveSessionView: View {
                     isReconnecting: store.isConnecting,
                     onReconnect: { Task { await store.reconnect() } }
                 )
+            }
+            if let link = store.sandboxLink {
+                SandboxStatusBar(link: link) { showSandboxPanel = true }
             }
             if store.backendMode == .native && !store.sandboxUsesLiveModel {
                 Text("Esto es el guion de demo, no un modelo remoto. Puedes elegir NVIDIA, xAI, OpenAI, Gemini u OpenRouter desde Proveedores.")
@@ -202,6 +206,10 @@ public struct ActiveSessionView: View {
         }
         .sheet(isPresented: $sessionState.showModelPicker) {
             ModelPickerSheet(selectedModel: $sessionState.selectedModel, models: store.availableModels)
+        }
+        .sheet(isPresented: $showSandboxPanel) {
+            SandboxPanelView()
+                .environmentObject(store)
         }
         .sheet(isPresented: $sessionState.showAttachments) {
             AttachmentsSheet()
