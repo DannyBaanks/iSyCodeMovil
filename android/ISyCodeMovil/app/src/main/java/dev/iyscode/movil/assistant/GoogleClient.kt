@@ -161,6 +161,7 @@ class GoogleClient(
         return SheetData(tab, rows)
     }
 
+    /** RAW, no USER_ENTERED: un valor que empiece con "=" no debe convertirse en fórmula (p. ej. =IMPORTDATA). */
     suspend fun appendRow(spreadsheet: String, values: List<String>) {
         val id = GoogleParsers.spreadsheetId(spreadsheet)
         val tab = GoogleParsers.firstSheetTitle(call(url("sheets.googleapis.com", "/v4/spreadsheets/$id",
@@ -170,7 +171,7 @@ class GoogleClient(
         }
         val range = URLEncoder.encode(a1(tab, "A1"), "UTF-8").replace("+", "%20")
         call(url("sheets.googleapis.com", "/v4/spreadsheets/$id/values/$range:append",
-            mapOf("valueInputOption" to "USER_ENTERED")), "POST", payload.toString())
+            mapOf("valueInputOption" to "RAW")), "POST", payload.toString())
     }
 
     companion object {

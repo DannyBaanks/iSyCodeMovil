@@ -55,3 +55,7 @@ El motor de memoria y las herramientas de Google se prueban en la raíz con `npm
 - **Ejecutar comandos en la compu desde el modelo (`tui_exec_daemon_task`)**: no se expone; para eso está el sandbox Docker del Bridge, con sus propias aprobaciones.
 - **Firebase/Firestore**: el prototipo usaba un proyecto de AI Studio ajeno a este repo. Aquí los datos viven en tu compu.
 - **Simulador de iPhone/Android y visor de código nativo**: ya existen las apps reales (`Sources/`, `android/`).
+
+## Cómo se relaciona con el Asistente de las apps
+
+Las apps de iPhone y Android tienen su propio Asistente (ver `docs/GOOGLE_ASSISTANT.md`): conectan Google **desde el teléfono** y guardan su memoria en el teléfono. Este panel es la contraparte de **escritorio**: Google se conecta **en la compu** (el token no sale de ella) y la memoria vive en la compu. Son independientes; todavía no se sincronizan entre sí.

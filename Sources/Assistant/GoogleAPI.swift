@@ -472,10 +472,12 @@ public struct GoogleClient: Sendable {
         return SheetData(tab: tab, rows: rows)
     }
 
+    /// RAW, no USER_ENTERED: un valor que empiece con "=" (por ejemplo del contenido de un correo) no debe
+    /// convertirse en fórmula; `=IMPORTDATA(...)` podría sacar datos de la hoja hacia un servidor ajeno.
     public func appendRow(_ spreadsheet: String, values: [String]) async throws {
         let id = GoogleParsers.spreadsheetId(spreadsheet)
         let tab = try await firstTab(id)
         try await call(url("sheets.googleapis.com", "/v4/spreadsheets/\(id)/values/\(Self.a1(tab, "A1")):append",
-                           [("valueInputOption", "USER_ENTERED")]), method: "POST", json: ["values": [values]])
+                           [("valueInputOption", "RAW")]), method: "POST", json: ["values": [values]])
     }
 }

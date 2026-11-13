@@ -75,3 +75,7 @@ En iPhone, el agente de GUS (con cualquier modelo, local o en la nube) recibe so
 - **Google Maps SDK / Places:** necesitan una clave de API y dependencias que no se pueden verificar en CI sin esa clave. "Buscar un lugar" abre tu app de mapas con la búsqueda.
 - **Google Keep:** su API solo está disponible para cuentas de Google Workspace administradas, no para cuentas personales. Para notas rápidas, usa la Memoria o Tasks.
 - **Grounding con Google Search:** es una función de la API de Gemini y requiere su propia clave. Los modelos que ya conectas a GUS pueden usar las herramientas de arriba.
+
+## 5. Panel de escritorio (opcional)
+
+Si prefieres tener Google y la memoria **en la computadora** en vez de en el teléfono, existe un panel web local en `web/` (ver `web/README.md`) y los comandos `iyscodemovil context ...` del Bridge. Usa su propia sesión de Google (el token vive solo en memoria de la compu) y su propia memoria; **no se sincroniza con la del teléfono**. Las escrituras de Google se piden con permisos aparte y siempre con confirmación.

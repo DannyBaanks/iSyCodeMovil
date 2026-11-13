@@ -7,9 +7,10 @@
  * mensaje. Así un modelo pequeño (GUS en el iPhone, Ollama en la compu) recibe pocas
  * líneas y relevantes, no todo lo que el usuario ha guardado alguna vez.
  *
- * Este archivo es el "contrato" que Swift (Sources/Context/SemanticContext.swift) y Kotlin
- * (android/.../context/SemanticContext.kt) repiten. Si cambias un número aquí, cámbialo allá:
- * los tres tienen pruebas con los mismos casos.
+ * Es el motor de la compu (Bridge y panel web). Las apps tienen el suyo, con la misma idea pero otra
+ * forma de datos: Sources/Assistant/SemanticContext.swift y android/.../assistant/SemanticContext.kt.
+ * Todavía no hay sincronización entre ambos; si algún día la hay, el formato de intercambio es el de
+ * `exportDocument` / `parseDocument` de este archivo (schema isycode.semantic-context.v1).
  *
  * Sin dependencias y sin I/O: es lógica pura para poder probarla en cualquier parte.
  */
@@ -493,7 +494,7 @@ export function buildGraph(nodes) {
 }
 
 // ---------------------------------------------------------------------------
-// Intercambio (el mismo JSON lo leen la app de iPhone y la de Android)
+// Intercambio (export/import JSON del panel y de la CLI)
 // ---------------------------------------------------------------------------
 
 export function exportDocument(nodes, now = new Date()) {

@@ -83,7 +83,7 @@ export function createContextStore({ file = defaultContextFile(), now = () => ne
         return { nodes: next, value: next.length !== nodes.length };
       }),
 
-    /** Mezcla un documento exportado (de la app móvil, por ejemplo) sin duplicar lo que ya hay. */
+    /** Mezcla un documento exportado (de otro equipo o del panel) sin duplicar lo que ya hay. */
     importDocument: (value) =>
       mutate((nodes) => {
         const incoming = parseDocument(value);

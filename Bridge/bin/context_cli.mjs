@@ -6,7 +6,7 @@
  *   context show <texto del mensaje>   qué se inyectaría al modelo para ese mensaje
  *   context add <dominio> <categoría> <tema> <título> <resumen> [--priority critical]
  *   context export [archivo]           JSON isycode.semantic-context.v1 (sale por stdout si no hay archivo)
- *   context import <archivo>           mezcla un export (el de la app del teléfono, por ejemplo)
+ *   context import <archivo>           mezcla un export (de otra compu o del panel)
  *   context remove <id>
  */
 import { readFile, writeFile } from "node:fs/promises";
