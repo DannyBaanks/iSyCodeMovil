@@ -419,7 +419,9 @@ private struct MemorySection: View {
             }
             .padding(OCSpacing.contentMargin)
         }
-        .onAppear { store.reloadMemory() }
+        .onAppear {
+            if store.preferGraph { graphView = true } else { store.reloadMemory() }
+        }
     }
 
     private func remember(_ term: String) {

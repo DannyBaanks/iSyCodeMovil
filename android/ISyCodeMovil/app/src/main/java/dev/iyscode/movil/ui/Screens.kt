@@ -277,7 +277,7 @@ private fun ChatScreen(vm: GusViewModel, ui: UiState, states: Map<String, ModelS
                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Iys.accent)
                         Spacer(Modifier.width(8.dp))
                         Column {
-                            Muted(if (ui.loadingModel) "Cargando el modelo en memoria…" else "GUS está pensando…")
+                            Muted(when { ui.loadingModel -> "Cargando el modelo en memoria…"; ui.consultingGoogle -> "Consultando tu Google…"; else -> "GUS está pensando…" })
                             if (!ui.loadingModel) Muted("Si el modelo es grande, puede tardar un minuto. Puedes detenerlo.")
                         }
                     }

@@ -112,7 +112,7 @@ public final class AssistantStore: ObservableObject {
     public init() {
         log(.info, "isycode.start", "Asistente listo. \(memory.count) notas en memoria.")
         Task {
-            if let token = await GoogleSession.shared.token() {
+            if !showingSample, let token = await GoogleSession.shared.token() {
                 email = token.email
                 grantedScopes = token.scopes
             }
@@ -471,6 +471,7 @@ public final class AssistantStore: ObservableObject {
     /// Polls while the app is open. In the background iOS decides when apps run,
     /// so your PC's daemon should also send its own push for urgent tasks.
     public func restartMonitor() {
+        guard !showingSample else { return }
         monitorTask?.cancel()
         let manifestOn = monitorEnabled && !monitorURL.isEmpty
         guard manifestOn || watchGmail else { monitorStatus = "Apagado"; return }
@@ -529,6 +530,41 @@ public final class AssistantStore: ObservableObject {
             log(.error, "gmail.read.inbox", "Vigilancia de Gmail: \(error.localizedDescription)")
         }
     }
+
+    // MARK: README screenshots (simulator only)
+
+    /// Asks the memory screen to open on the graph (used by the README screenshots).
+    @Published public var preferGraph = false
+    /// Set while showing sample data, so startup work does not overwrite it.
+    private var showingSample = false
+
+    #if targetEnvironment(simulator)
+    /// Sample data for the CI screenshots. Nothing is saved to disk or sent anywhere.
+    public func prepareReadmeScreenshot(_ scene: String) {
+        let now = Date()
+        memory = [
+            ContextNode(id: "s1", title: "Paridad Swift y Kotlin", summary: "El modo oscuro automático debe funcionar igual en iPhone y Android.",
+                        path: ["Ingeniería", "Apps móviles", "Swift y Kotlin"], priority: .critical, createdAt: now),
+            ContextNode(id: "s2", title: "Juntas de equipo", summary: "Las reuniones de equipo van en bloques de 45 minutos en el calendario.",
+                        path: ["Google y vida diaria", "Comunicación y agenda", "Correo y calendario"], priority: .high, createdAt: now),
+            ContextNode(id: "s3", title: "Correos del equipo", summary: "Los correos al equipo llevan resumen de reuniones y calendario semanal.",
+                        path: ["Google y vida diaria", "Documentos y pendientes", "Drive, Docs y Tasks"], createdAt: now),
+            ContextNode(id: "s4", title: "Builds del daemon", summary: "El daemon de la PC avisa cuando termina un build de iOS o Android.",
+                        path: ["Ingeniería", "Modelos y agentes", "Contexto y herramientas"], priority: .high, createdAt: now),
+            ContextNode(id: "s5", title: "Café para trabajar", summary: "Prefiero cafeterías con buen wifi cerca de Reforma.",
+                        path: ["Lugares", "Ubicaciones y rutas", "Sitios guardados"], createdAt: now),
+        ]
+        grantedScopes = Set(GoogleService.gmail.scopes + GoogleService.calendar.scopes + GoogleService.tasks.scopes)
+        monitorStatus = "Conectado · 2 nuevas"
+        feed = [
+            FeedItem(id: "f1", title: "Build de iOS terminado", body: "xcodebuild OK en 4 min 12 s", source: "pc.tui", time: now),
+            FeedItem(id: "f2", title: "Revisión del lunes", body: "De Ana: ¿movemos la junta a las 10?", source: "gmail", time: now.addingTimeInterval(-600)),
+        ]
+        showingSample = true
+        section = scene == "assistant-memory" ? .memory : .home
+        preferGraph = scene == "assistant-memory"
+    }
+    #endif
 
     // MARK: Quick actions and the "¿Qué necesitas?" field
 

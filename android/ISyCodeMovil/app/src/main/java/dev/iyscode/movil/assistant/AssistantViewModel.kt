@@ -100,7 +100,6 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     private val secrets = application.getSharedPreferences("assistant_google", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
     private val http = OkHttpClient()
-    private val tokenLock = Mutex()
     private val retries = mutableMapOf<String, suspend () -> Unit>()
     private var monitorJob: Job? = null
 
@@ -255,19 +254,11 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         if (token != null) viewModelScope.launch { GoogleClient.revoke(http, token) }
     }
 
-    private fun loadToken(): GoogleToken? = secrets.getString("token", null)
-        ?.let { runCatching { json.decodeFromString(GoogleToken.serializer(), it) }.getOrNull() }
+    private fun loadToken(): GoogleToken? = app.google.token()
 
-    private fun saveToken(token: GoogleToken) =
-        secrets.edit().putString("token", json.encodeToString(GoogleToken.serializer(), token)).apply()
+    private fun saveToken(token: GoogleToken) = app.google.save(token)
 
-    private suspend fun validAccessToken(): String = tokenLock.withLock {
-        val token = loadToken() ?: throw GoogleApiException(401, "Conecta tu cuenta de Google primero.")
-        if (token.isFresh(System.currentTimeMillis())) return token.accessToken
-        val refreshed = GoogleClient.refresh(http, _ui.value.clientId, token, System.currentTimeMillis())
-        saveToken(refreshed)
-        refreshed.accessToken
-    }
+    private suspend fun validAccessToken(): String = app.google.accessToken()
 
     // ── Reading Google ──────────────────────────────────────────────────────
 

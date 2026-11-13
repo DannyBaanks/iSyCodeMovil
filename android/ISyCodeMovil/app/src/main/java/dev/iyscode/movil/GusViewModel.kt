@@ -8,6 +8,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.iyscode.movil.assistant.AssistantViewModel
 import dev.iyscode.movil.assistant.ContextPriority
+import dev.iyscode.movil.assistant.GoogleClient
+import dev.iyscode.movil.assistant.GusGrounding
 import dev.iyscode.movil.assistant.SemanticContext
 import dev.iyscode.movil.bench.Benchmark
 import dev.iyscode.movil.bench.BenchmarkReport
@@ -36,6 +38,7 @@ data class UiState(
     val messages: List<ChatUiMessage> = emptyList(),
     val generating: Boolean = false,
     val loadingModel: Boolean = false,
+    val consultingGoogle: Boolean = false,
     val budget: DeviceBudget? = null,
     val showExperimental: Boolean = false,
     val benchmarkRunning: Boolean = false,
@@ -61,6 +64,8 @@ class GusViewModel(application: Application) : AndroidViewModel(application) {
     private val pendingBenchmark = File(application.filesDir, "benchmarks/pending.json")
     private val assistantPrefs = application.getSharedPreferences("assistant", Context.MODE_PRIVATE)
     val memory = app.memory
+    /** Google read tools for GUS: run before the model, so small models answer with real data. */
+    private val grounding = GusGrounding(GoogleClient(tokenProvider = { app.google.accessToken() }), grantedScopes = { app.google.grantedScopes() })
 
     private val _ui = MutableStateFlow(UiState(
         selectedModelId = prefs.getString("selected", null),
@@ -136,9 +141,21 @@ class GusViewModel(application: Application) : AndroidViewModel(application) {
                     engine.load(model, file)
                     _ui.update { it.copy(loadingModel = false) }
                 }
-                val generation = engine.generate(promptFor(model, history, priority), maxTokens = 256, temperature = 0.6f)
-                val meta = "%.1f tok/s · %d tokens".format(generation.stats.generationTokensPerSecond, generation.stats.generatedTokens)
-                _ui.update { it.copy(messages = it.messages + ChatUiMessage(ChatMessage.Role.ASSISTANT, generation.text.ifBlank { "…" }, meta)) }
+                val google = if (grounding.plannedReads(text).isEmpty()) null else {
+                    _ui.update { it.copy(consultingGoogle = true) }
+                    try { grounding.ground(text) } finally { _ui.update { it.copy(consultingGoogle = false) } }
+                }
+                val generation = engine.generate(promptFor(model, history, priority, google?.context), maxTokens = 256, temperature = 0.6f)
+                val meta = buildList {
+                    add("%.1f tok/s · %d tokens".format(generation.stats.generationTokensPerSecond, generation.stats.generatedTokens))
+                    google?.toolsUsed?.takeIf { it.isNotEmpty() }?.let { add("usó " + it.joinToString()) }
+                    google?.errors?.takeIf { it.isNotEmpty() }?.let { add("sin datos de " + it.joinToString()) }
+                }.joinToString(" · ")
+                var reply = generation.text.ifBlank { "…" }
+                google?.writeTool?.let { tool ->
+                    reply += "\n\nYo no envío ni creo nada en ${tool.serviceTitle}. Para hacerlo, abre Asistente › Google: ahí lo revisas y lo confirmas."
+                }
+                _ui.update { it.copy(messages = it.messages + ChatUiMessage(ChatMessage.Role.ASSISTANT, reply, meta)) }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -173,9 +190,12 @@ class GusViewModel(application: Application) : AndroidViewModel(application) {
      * Keeps the conversation within the 2K context: a system message (with the
      * few memory notes that apply, walked branch by branch) plus the most recent turns.
      */
-    private fun promptFor(model: GusModel, history: List<ChatUiMessage>, priority: Boolean = false): List<ChatMessage> {
+    private fun promptFor(model: GusModel, history: List<ChatUiMessage>, priority: Boolean = false, googleData: String? = null): List<ChatMessage> {
         val lastUser = history.lastOrNull { it.role == ChatMessage.Role.USER }?.text.orEmpty()
-        val memoryNote = SemanticContext.promptContext(memory.nodes.value, lastUser, priority, maxChars = if (priority) 700 else 450)
+        val memoryNote = listOfNotNull(
+            SemanticContext.promptContext(memory.nodes.value, lastUser, priority, maxChars = if (priority) 700 else 450),
+            googleData,
+        ).joinToString("\n\n").ifEmpty { null }
         val systemText = if (memoryNote == null) SYSTEM_PROMPT else SYSTEM_PROMPT + "\n\n" + memoryNote
         val system = ChatMessage(ChatMessage.Role.SYSTEM, model.chatSystemPrompt(systemText))
         val kept = ArrayDeque<ChatMessage>()
@@ -280,7 +300,7 @@ class GusViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         const val SYSTEM_PROMPT =
             "Eres GUS, el asistente local de iSyCode Móvil. Respondes en el idioma del usuario, de forma breve y clara. " +
-                "Funcionas sin internet y no puedes ejecutar herramientas ni cambiar archivos; si te lo piden, explica el límite y sugiere pasos. " +
+                "Funcionas en el teléfono. No puedes cambiar archivos ni enviar nada; si el mensaje trae DATOS DE GOOGLE, úsalos tal cual. " +
                 "Si no estás seguro de un dato (fechas, nombres, cifras), dilo en lugar de inventarlo."
     }
 }

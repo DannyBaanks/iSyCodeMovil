@@ -1,0 +1,54 @@
+name: Prueba en dispositivo
+description: Resultado de probar el Asistente, GUS o los avisos de la PC en un teléfono real (checklist en docs/DEVICE_TEST_PLAN.md).
+title: "[prueba] "
+labels: [device-test]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por probar. Marca lo que funcionó y describe lo que no. No pegues tokens, correos ni datos personales.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Plataforma
+      options: [iPhone, Android]
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Teléfono y versión del sistema
+      placeholder: iPhone 13 · iOS 18.1  /  Pixel 7 · Android 15
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Build de la app
+      placeholder: Release v0.5.3 o el SHA del commit
+  - type: checkboxes
+    id: passed
+    attributes:
+      label: Qué funcionó
+      options:
+        - label: Modo automático, claro y oscuro
+        - label: Iniciar sesión con Google
+        - label: Leer Gmail, Calendar, Tasks o Drive
+        - label: Una escritura confirmada (correo, evento o pendiente)
+        - label: Guardar en memoria y verla en carpetas y en el grafo
+        - label: GUS usó una nota de memoria o datos de Google en su respuesta
+        - label: Aviso de la PC con la app abierta (tasks serve)
+        - label: Aviso con el teléfono bloqueado (ntfy)
+  - type: textarea
+    id: failures
+    attributes:
+      label: Qué falló o se vio mal
+      description: Pasos, lo que esperabas y lo que pasó. Las capturas ayudan.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Registro (opcional)
+      description: En el Asistente activa el modo desarrollador, abre Registro y usa Copiar en la entrada que falló.
+      render: json

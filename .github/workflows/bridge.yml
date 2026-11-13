@@ -1,0 +1,38 @@
+name: Bridge (Node)
+
+# The desktop CLI: link, notify/tasks, context, and the Docker sandbox gateway.
+# The tests need no Docker and no network.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Bridge/**'
+      - 'package.json'
+      - '.github/workflows/bridge.yml'
+  pull_request:
+    paths:
+      - 'Bridge/**'
+      - 'package.json'
+      - '.github/workflows/bridge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bridge-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Bridge tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tests
+        run: npm run test:bridge

@@ -49,7 +49,29 @@ El daemon de iSyCode TUI / IsyMCP en tu PC publica un JSON con sus tareas. Puede
 - La primera lectura solo aprende lo que ya existe, para no llenarte de avisos viejos.
 - **Avisarme de correos nuevos** revisa Gmail (no leídos de la bandeja) cada minuto.
 
-**Límite real:** iOS y Android detienen las apps que no están en pantalla, así que el monitor y la vigilancia de Gmail funcionan **mientras la app está abierta**. Para que los avisos lleguen con el teléfono bloqueado, el daemon de tu PC tiene que enviar su propio push (APNs/FCM o un servicio como ntfy). El formato del manifiesto no cambia.
+### Publicarlo desde tu PC con el Bridge
+
+```bash
+# agrega una tarea (tu TUI, IsyMCP o cualquier script)
+npx --yes github:DannyBaanks/iSyCodeMovil#main notify "Build de iOS terminado" --body "xcodebuild OK en 4m12s" --source pc.tui
+
+# sirve el manifiesto en tu red local con ETag (GET /tasks.json, solo lectura)
+npx --yes github:DannyBaanks/iSyCodeMovil#main tasks serve --port 8787
+
+# revisa lo que hay
+npx --yes github:DannyBaanks/iSyCodeMovil#main tasks list
+```
+
+- **Dónde se guarda:** el manifiesto vive en `~/.iyscodemovil/tasks.json`. Puedes cambiarlo con `--file` o `IYSCODEMOVIL_TASKS_FILE`.
+- **Fallos:** usa `--status failed` para marcar una tarea que salió mal.
+- **Por GitHub:** si prefieres que el teléfono lo lea de GitHub, haz commit de ese archivo en un repo y usa su dirección `raw.githubusercontent.com`.
+
+**Avisos con el teléfono bloqueado.** iOS y Android detienen las apps que no están en pantalla, así que el monitor y la vigilancia de Gmail solo funcionan **mientras la app está abierta**. Para recibir avisos con el teléfono bloqueado:
+
+1. Agrega `--ntfy <tema>` a `notify`, o exporta `IYSCODEMOVIL_NTFY_TOPIC`.
+2. Instala la app de [ntfy](https://ntfy.sh) y suscríbete a ese tema.
+
+Usa un tema largo y difícil de adivinar: en ntfy.sh cualquiera que conozca el tema puede leerlo. Con un servidor propio, pon su dirección en `--ntfy-server` (o `IYSCODEMOVIL_NTFY_SERVER`) y el token en `IYSCODEMOVIL_NTFY_TOKEN`.
 
 ## 3. Herramientas para cualquier modelo
 

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
@@ -353,3 +356,13 @@ function takeFrame(buffer) {
   }
   return { opcode, data, consumed: offset + maskLength + length };
 }
+
+test("a symlink like npx .bin still runs the CLI", () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "iyscodemovil-bin-"));
+  const link = path.join(dir, "iyscodemovil");
+  symlinkSync(fileURLToPath(new URL("../bin/iyscodemovil.mjs", import.meta.url)), link);
+  const result = spawnSync(process.execPath, [link, "link", "--runtime", "nope"], { encoding: "utf8" });
+  rmSync(dir, { recursive: true, force: true });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /unsupported runtime/);
+});

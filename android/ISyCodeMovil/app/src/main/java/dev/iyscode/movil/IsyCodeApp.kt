@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import dev.iyscode.movil.assistant.GoogleAccount
 import dev.iyscode.movil.assistant.MemoryStore
 import dev.iyscode.movil.assistant.Notifier
 import dev.iyscode.movil.diagnostics.FlightRecorder
@@ -27,6 +28,9 @@ class IsyCodeApp : Application() {
         private set
     lateinit var notifier: Notifier
         private set
+    /** Google account shared by the Asistente and GUS. */
+    lateinit var google: GoogleAccount
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -47,6 +51,7 @@ class IsyCodeApp : Application() {
         engine = LlamaEngine(recorder)
         memory = MemoryStore(File(filesDir, "assistant/memory.json"))
         notifier = Notifier(this)
+        google = GoogleAccount(this)
     }
 
     private fun installUncaughtHandler() {
