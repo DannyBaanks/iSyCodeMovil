@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import dev.iyscode.movil.assistant.MemoryStore
+import dev.iyscode.movil.assistant.Notifier
 import dev.iyscode.movil.diagnostics.FlightRecorder
 import dev.iyscode.movil.gus.LlamaEngine
 import dev.iyscode.movil.gus.ModelStore
@@ -19,6 +21,11 @@ class IsyCodeApp : Application() {
     lateinit var store: ModelStore
         private set
     lateinit var engine: LlamaEngine
+        private set
+    /** Semantic memory shared by GUS and the assistant screens. */
+    lateinit var memory: MemoryStore
+        private set
+    lateinit var notifier: Notifier
         private set
 
     override fun onCreate() {
@@ -38,6 +45,8 @@ class IsyCodeApp : Application() {
         })
         store = ModelStore(File(filesDir, "gus/models"))
         engine = LlamaEngine(recorder)
+        memory = MemoryStore(File(filesDir, "assistant/memory.json"))
+        notifier = Notifier(this)
     }
 
     private fun installUncaughtHandler() {

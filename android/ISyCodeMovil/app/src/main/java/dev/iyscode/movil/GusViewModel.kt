@@ -6,6 +6,9 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.iyscode.movil.assistant.AssistantViewModel
+import dev.iyscode.movil.assistant.ContextPriority
+import dev.iyscode.movil.assistant.SemanticContext
 import dev.iyscode.movil.bench.Benchmark
 import dev.iyscode.movil.bench.BenchmarkReport
 import dev.iyscode.movil.diagnostics.FlightRecorder
@@ -56,6 +59,8 @@ class GusViewModel(application: Application) : AndroidViewModel(application) {
     private val downloads = mutableMapOf<String, Job>()
     private var generationJob: Job? = null
     private val pendingBenchmark = File(application.filesDir, "benchmarks/pending.json")
+    private val assistantPrefs = application.getSharedPreferences("assistant", Context.MODE_PRIVATE)
+    val memory = app.memory
 
     private val _ui = MutableStateFlow(UiState(
         selectedModelId = prefs.getString("selected", null),
@@ -118,6 +123,11 @@ class GusViewModel(application: Application) : AndroidViewModel(application) {
         val file = store.installedFile(model.id) ?: return
         if (text.isBlank() || ui.value.generating) return
         val history = ui.value.messages + ChatUiMessage(ChatMessage.Role.USER, text.trim())
+        val priority = priorityContext
+        if (priority) {
+            // "Contexto prioritario": the user marked this message as important, so it joins the memory.
+            memory.save(text.trim().take(80), text.trim(), SemanticContext.inferPath(text), ContextPriority.CRITICAL, "gus.prioritario")
+        }
         _ui.update { it.copy(messages = history, generating = true, error = null) }
         generationJob = viewModelScope.launch {
             try {
@@ -126,7 +136,7 @@ class GusViewModel(application: Application) : AndroidViewModel(application) {
                     engine.load(model, file)
                     _ui.update { it.copy(loadingModel = false) }
                 }
-                val generation = engine.generate(promptFor(model, history), maxTokens = 256, temperature = 0.6f)
+                val generation = engine.generate(promptFor(model, history, priority), maxTokens = 256, temperature = 0.6f)
                 val meta = "%.1f tok/s · %d tokens".format(generation.stats.generationTokensPerSecond, generation.stats.generatedTokens)
                 _ui.update { it.copy(messages = it.messages + ChatUiMessage(ChatMessage.Role.ASSISTANT, generation.text.ifBlank { "…" }, meta)) }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -147,11 +157,29 @@ class GusViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearChat() = _ui.update { it.copy(messages = emptyList(), error = null) }
 
-    /** Keeps the conversation within the 2K context: a system message plus the most recent turns. */
-    private fun promptFor(model: GusModel, history: List<ChatUiMessage>): List<ChatMessage> {
-        val system = ChatMessage(ChatMessage.Role.SYSTEM, model.chatSystemPrompt(SYSTEM_PROMPT))
+    var priorityContext: Boolean
+        get() = assistantPrefs.getBoolean(AssistantViewModel.PRIORITY_KEY, false)
+        set(value) { assistantPrefs.edit().putBoolean(AssistantViewModel.PRIORITY_KEY, value).apply() }
+
+    /** Saves an exchange the user chose to keep (as.save.context from the chat). */
+    fun saveToMemory(message: ChatUiMessage) {
+        val index = ui.value.messages.indexOf(message)
+        val question = ui.value.messages.take(maxOf(index, 0)).lastOrNull { it.role == ChatMessage.Role.USER }?.text
+        val summary = if (question != null && message.role == ChatMessage.Role.ASSISTANT) "Pregunta: $question\nRespuesta: ${message.text}" else message.text
+        memory.save((question ?: message.text).take(80), summary, SemanticContext.inferPath(summary), ContextPriority.HIGH, "gus.chat")
+    }
+
+    /**
+     * Keeps the conversation within the 2K context: a system message (with the
+     * few memory notes that apply, walked branch by branch) plus the most recent turns.
+     */
+    private fun promptFor(model: GusModel, history: List<ChatUiMessage>, priority: Boolean = false): List<ChatMessage> {
+        val lastUser = history.lastOrNull { it.role == ChatMessage.Role.USER }?.text.orEmpty()
+        val memoryNote = SemanticContext.promptContext(memory.nodes.value, lastUser, priority, maxChars = if (priority) 700 else 450)
+        val systemText = if (memoryNote == null) SYSTEM_PROMPT else SYSTEM_PROMPT + "\n\n" + memoryNote
+        val system = ChatMessage(ChatMessage.Role.SYSTEM, model.chatSystemPrompt(systemText))
         val kept = ArrayDeque<ChatMessage>()
-        var budget = 3500
+        var budget = 3500 - (memoryNote?.length ?: 0)
         for (m in history.asReversed()) {
             budget -= m.text.length
             if (budget < 0 && kept.isNotEmpty()) break

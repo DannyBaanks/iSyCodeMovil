@@ -30,6 +30,8 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
     /// On-device models get the simple surface; cloud models keep the full catalog.
     private var simpleToolsEnabled = false
     private let broker = NativeCapabilityBroker()
+    /// Google and memory tools from the Asistente (Sources/Assistant).
+    private let assistant: AssistantToolExecutor
     private let defaults: UserDefaults
     private let persistence: (any Persistence)?
     private var projectedNativeNames = Set<String>()
@@ -41,6 +43,13 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
         self.simple = SimpleWorkspaceToolExecutor(workspace: workspace, defaults: defaults)
         self.persistence = persistence
         self.defaults = defaults
+        self.assistant = AssistantToolExecutor()
+    }
+
+    /// Shared context plus the memory notes that fit the latest user message.
+    public func promptContext(for messages: [ModelMessage]) async -> String? {
+        let parts = [await sharedContextForPrompt(), await assistant.memoryContext(for: messages)].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
     }
 
     public func configureSharedMemory(localOnly: Bool, conversationID: String) {
@@ -94,6 +103,7 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
         let projectedIDs = NativeCapabilityToolProjection.relevantCapabilityIDs(for: messages)
         let projectedNative = Self.nativeTools.filter { projectedIDs.contains($0.name) }
         var tools = projectedNative
+        tools.append(contentsOf: await assistant.tools(relevantTo: messages))
         if sharedMemoryAllowed {
             tools.append(Self.updateSharedContextTool)
             if defaults.bool(forKey: "gus.searchConversationsEnabled"), persistence != nil {
@@ -149,6 +159,9 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
         }
         guard projectedNativeNames.contains(invocation.name) else {
             return failure(invocation, "This native tool was not projected for the current user request.", started: started)
+        }
+        if AssistantToolExecutor.handles(invocation.name) {
+            return await assistant.execute(invocation, approval: approval)
         }
         guard approval == .allowOnce || approval == .allowAlways else {
             return failure(invocation, "This native capability requires a fresh user approval.", started: started)

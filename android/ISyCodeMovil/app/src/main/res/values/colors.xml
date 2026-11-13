@@ -1,3 +1,4 @@
 <resources>
-    <color name="bg_deep">#FF12121C</color>
+    <!-- Window color before Compose draws: matches the light palette in ui/Theme.kt. -->
+    <color name="bg_deep">#FFF6F5FA</color>
 </resources>

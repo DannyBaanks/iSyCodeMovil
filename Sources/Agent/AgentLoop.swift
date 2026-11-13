@@ -117,11 +117,14 @@ public protocol ToolExecutor: Sendable {
     func execute(_ invocation: ToolInvocation) async -> ToolExecutionResult
     func execute(_ invocation: ToolInvocation, approval: PermissionResponse.Decision?) async -> ToolExecutionResult
     func sharedContextForPrompt() async -> String?
+    /// Context for this turn, given the messages about to be sent (memory notes, shared context).
+    func promptContext(for messages: [ModelMessage]) async -> String?
 }
 
 public extension ToolExecutor {
     func tools(relevantTo messages: [ModelMessage]) async -> [AgentTool] { availableTools }
     func sharedContextForPrompt() async -> String? { nil }
+    func promptContext(for messages: [ModelMessage]) async -> String? { await sharedContextForPrompt() }
     func execute(_ invocation: ToolInvocation, approval: PermissionResponse.Decision?) async -> ToolExecutionResult {
         await execute(invocation)
     }
@@ -284,7 +287,7 @@ public actor AgentLoop {
             
             // Construir mensajes para el modelo
             var messagesForModel = buildModelMessages(from: conversation)
-            if let sharedContext = await context.toolExecutor.sharedContextForPrompt(), !sharedContext.isEmpty {
+            if let sharedContext = await context.toolExecutor.promptContext(for: messagesForModel), !sharedContext.isEmpty {
                 let systemCount = messagesForModel.prefix { $0.role == .system }.count
                 messagesForModel.insert(ModelMessage(role: .user, content: sharedContext), at: systemCount)
             }

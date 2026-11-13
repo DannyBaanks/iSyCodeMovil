@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Only to download approved GGUF models from Hugging Face; chats never leave the phone. -->
+    <!-- Downloads approved GGUF models and, only when you connect it, talks to Google and to your PC's daemon manifest. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Notifications for daemon tasks, new mail and confirmed actions (Android 13+ asks first). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".IsyCodeApp"
@@ -15,11 +17,19 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.IsyCode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Google sign-in returns here (OAuth redirect for an Android client). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dev.iyscode.movil" android:path="/oauth2redirect" />
             </intent-filter>
         </activity>
     </application>

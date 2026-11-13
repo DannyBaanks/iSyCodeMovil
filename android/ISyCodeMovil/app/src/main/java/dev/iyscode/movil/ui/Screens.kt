@@ -34,6 +34,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -51,6 +53,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -86,6 +90,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.iyscode.movil.GusViewModel
 import dev.iyscode.movil.UiState
+import dev.iyscode.movil.assistant.AssistantViewModel
 import dev.iyscode.movil.bench.BenchmarkReport
 import dev.iyscode.movil.diagnostics.FlightRecorder
 import dev.iyscode.movil.gus.ChatMessage
@@ -97,14 +102,15 @@ import dev.iyscode.movil.gus.ModelState
 private const val BENCHMARK_ISSUE = "https://github.com/DannyBaanks/iSyCodeMovil/issues/new?template=benchmark.yml"
 private const val CRASH_ISSUE = "https://github.com/DannyBaanks/iSyCodeMovil/issues/new?template=crash-report.yml"
 
-private enum class Tab(val label: String) { CHAT("GUS"), MODELS("Modelos"), DIAGNOSTICS("Diagnóstico") }
+enum class Tab(val label: String) { CHAT("GUS"), ASSISTANT("Asistente"), MODELS("Modelos"), DIAGNOSTICS("Diagnóstico") }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun IsyCodeRoot(vm: GusViewModel) {
+fun IsyCodeRoot(vm: GusViewModel, assistant: AssistantViewModel, requestedTab: Tab?, onTabConsumed: () -> Unit, onSignIn: (String) -> Unit, onAppearanceChanged: () -> Unit) {
     val ui by vm.ui.collectAsState()
     val states by vm.store.states.collectAsState()
-    var tab by rememberSaveable { mutableStateOf(if (vm.store.installedModels().isEmpty()) Tab.MODELS else Tab.CHAT) }
+    var tab by rememberSaveable { mutableStateOf(if (vm.store.installedModels().isEmpty()) Tab.ASSISTANT else Tab.CHAT) }
+    LaunchedEffect(requestedTab) { requestedTab?.let { tab = it; onTabConsumed() } }
     var benchmarkFor by remember { mutableStateOf<GusModel?>(null) }
     var openReport by remember { mutableStateOf<FlightRecorder.CrashReport?>(null) }
 
@@ -118,6 +124,7 @@ fun IsyCodeRoot(vm: GusViewModel) {
                         Text(
                             when (tab) {
                                 Tab.CHAT -> "GUS · en este teléfono"
+                                Tab.ASSISTANT -> "Google · memoria · tu PC"
                                 Tab.MODELS -> "Modelos locales"
                                 Tab.DIAGNOSTICS -> "Informes de fallos"
                             },
@@ -138,6 +145,7 @@ fun IsyCodeRoot(vm: GusViewModel) {
                             Icon(
                                 when (t) {
                                     Tab.CHAT -> Icons.Filled.Chat
+                                    Tab.ASSISTANT -> Icons.Filled.AutoAwesome
                                     Tab.MODELS -> Icons.Filled.Memory
                                     Tab.DIAGNOSTICS -> Icons.Filled.MonitorHeart
                                 }, contentDescription = null,
@@ -157,6 +165,7 @@ fun IsyCodeRoot(vm: GusViewModel) {
         Box(Modifier.padding(padding).fillMaxSize()) {
             when (tab) {
                 Tab.CHAT -> ChatScreen(vm, ui, states, onOpenModels = { tab = Tab.MODELS }, onOpenReports = { tab = Tab.DIAGNOSTICS })
+                Tab.ASSISTANT -> AssistantRoot(assistant, onSignIn = onSignIn, onAppearanceChanged = onAppearanceChanged)
                 Tab.MODELS -> ModelsScreen(vm, ui, states, onBenchmark = { benchmarkFor = it }, onOpenReports = { tab = Tab.DIAGNOSTICS })
                 Tab.DIAGNOSTICS -> DiagnosticsScreen(vm, ui, onOpen = { openReport = it })
             }
@@ -170,7 +179,7 @@ fun IsyCodeRoot(vm: GusViewModel) {
 // ── Shared pieces ───────────────────────────────────────────────────────────
 
 @Composable
-private fun Card(modifier: Modifier = Modifier, borderColor: Color = Iys.border, content: @Composable () -> Unit) {
+internal fun Card(modifier: Modifier = Modifier, borderColor: Color = Iys.border, content: @Composable () -> Unit) {
     Column(
         modifier
             .fillMaxWidth()
@@ -182,7 +191,7 @@ private fun Card(modifier: Modifier = Modifier, borderColor: Color = Iys.border,
 }
 
 @Composable
-private fun Badge(text: String, color: Color) {
+internal fun Badge(text: String, color: Color) {
     Text(
         text,
         style = MaterialTheme.typography.labelSmall,
@@ -192,7 +201,7 @@ private fun Badge(text: String, color: Color) {
 }
 
 @Composable
-private fun Muted(text: String, color: Color = Iys.textSecondary) {
+internal fun Muted(text: String, color: Color = Iys.textSecondary) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = color)
 }
 
@@ -220,6 +229,9 @@ private fun ChatScreen(vm: GusViewModel, ui: UiState, states: Map<String, ModelS
     val installed = GusCatalog.all.filter { states[it.id] is ModelState.Ready }
     val selected = ui.selectedModelId?.let { id -> installed.firstOrNull { it.id == id } }
     LaunchedEffect(installed.size) { if (selected == null && installed.isNotEmpty()) vm.select(installed.first()) }
+    var priority by remember { mutableStateOf(vm.priorityContext) }
+    var savedNotice by remember { mutableStateOf(false) }
+    LaunchedEffect(ui.messages.size) { savedNotice = false }
 
     Column(Modifier.fillMaxSize().imePadding().padding(horizontal = 12.dp)) {
         ui.previousRunReport?.let { PreviousRunBanner(it, onOpenReports, vm::dismissPreviousRun); Spacer(Modifier.height(8.dp)) }
@@ -256,7 +268,9 @@ private fun ChatScreen(vm: GusViewModel, ui: UiState, states: Map<String, ModelS
                     }
                 }
             }
-            items(ui.messages) { MessageBubble(it) }
+            items(ui.messages) { message ->
+                MessageBubble(message, onSave = { vm.saveToMemory(message); savedNotice = true })
+            }
             item {
                 if (ui.generating) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -269,8 +283,17 @@ private fun ChatScreen(vm: GusViewModel, ui: UiState, states: Map<String, ModelS
                     }
                 }
                 ui.error?.let { Muted(it, Iys.red) }
+                if (savedNotice) Muted("Guardado en tu memoria. GUS lo usará cuando venga al caso.", Iys.green)
             }
         }
+        FilterChip(
+            selected = priority,
+            onClick = { priority = !priority; vm.priorityContext = priority },
+            label = { Text(if (priority) "Contexto prioritario: sí" else "Contexto prioritario", style = MaterialTheme.typography.labelMedium) },
+            leadingIcon = { Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(14.dp)) },
+            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Iys.accentSoft, selectedLabelColor = Iys.accent,
+                selectedLeadingIconColor = Iys.accent, labelColor = Iys.textSecondary, iconColor = Iys.textSecondary),
+        )
         Composer(ui.generating, onSend = vm::send, onStop = vm::stop)
     }
 }
@@ -296,7 +319,7 @@ private fun ModelPicker(installed: List<GusModel>, selected: GusModel?, ui: UiSt
 }
 
 @Composable
-private fun MessageBubble(m: dev.iyscode.movil.ChatUiMessage) {
+private fun MessageBubble(m: dev.iyscode.movil.ChatUiMessage, onSave: () -> Unit) {
     val mine = m.role == ChatMessage.Role.USER
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
         Column(
@@ -309,6 +332,16 @@ private fun MessageBubble(m: dev.iyscode.movil.ChatUiMessage) {
             Text(if (mine) "Tú" else "GUS", style = MaterialTheme.typography.labelSmall, color = if (mine) Iys.accent else Iys.violet)
             SelectionContainer { Text(m.text, style = MaterialTheme.typography.bodyLarge) }
             m.meta?.let { Muted(it, Iys.textFaint) }
+            if (!mine) {
+                Row(
+                    Modifier.clickable(onClick = onSave).padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.BookmarkAdd, null, tint = Iys.textFaint, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Muted("Guardar en memoria", Iys.textFaint)
+                }
+            }
         }
     }
 }
@@ -594,7 +627,7 @@ private fun share(context: Context, text: String) {
     context.startActivity(Intent.createChooser(intent, "Compartir informe"))
 }
 
-private fun copy(context: Context, text: String) {
+internal fun copy(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("iSyCode", text))
 }

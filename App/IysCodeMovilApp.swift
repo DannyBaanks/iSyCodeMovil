@@ -1,9 +1,32 @@
 import SwiftUI
 import UIKit
+import UserNotifications
 import IysCodeMovilCore
 
 @MainActor
-final class GUSBackgroundDownloadAppDelegate: NSObject, UIApplicationDelegate {
+final class GUSBackgroundDownloadAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
+    /// Show assistant and daemon alerts even while the app is open.
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound])
+    }
+
+    /// Tapping an assistant alert opens the Asistente.
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping () -> Void) {
+        if response.notification.request.content.userInfo["open"] as? String == "assistant" {
+            UserDefaults.standard.set(true, forKey: AssistantLaunch.openKey)
+            DispatchQueue.main.async { AssistantLaunch.open() }
+        }
+        completionHandler()
+    }
+
     func application(_ application: UIApplication,
                  handleEventsForBackgroundURLSession identifier: String,
        completionHandler: @escaping () -> Void) {
@@ -16,6 +39,8 @@ public struct IysCodeMovilApp: App {
     @UIApplicationDelegateAdaptor(GUSBackgroundDownloadAppDelegate.self) private var appDelegate
     @StateObject private var store = WorkbenchStore()
     @StateObject private var hostStore = MobileHostStore()
+    @StateObject private var assistant = AssistantStore()
+    @AppStorage(IysAppearance.storageKey) private var appearance = IysAppearance.automatic.rawValue
 
     public init() {
         // First: diagnose how the previous run ended, before any model work.
@@ -30,7 +55,8 @@ public struct IysCodeMovilApp: App {
                 .environmentObject(store)
                 .environmentObject(hostStore)
                 .environmentObject(store.sessionState)
-                .preferredColorScheme(.dark)
+                .environmentObject(assistant)
+                .preferredColorScheme(IysAppearance(rawValue: appearance)?.colorScheme)
                 .tint(IysThemePreferences.active.accent)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(OCColor.bgDeep.ignoresSafeArea())
@@ -44,14 +70,18 @@ struct RootView: View {
     @EnvironmentObject private var store: WorkbenchStore
     @EnvironmentObject private var hostStore: MobileHostStore
     @EnvironmentObject private var sessionState: ActiveSessionState
+    @EnvironmentObject private var assistant: AssistantStore
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
     @State private var enteredBackground = false
+    @State private var showAssistant = false
 
     var body: some View {
         Group {
             if store.backendMode == .unconfigured {
+                // The onboarding art is drawn for a dark background.
                 ConnectionView()
+                    .environment(\.colorScheme, .dark)
             } else if sizeClass == .regular {
                 // iPad / ancho regular: sidebar de proyectos + detalle.
                 splitLayout
@@ -81,6 +111,14 @@ struct RootView: View {
                 store.offeredPairingLink = url.absoluteString
             }
         }
+        .fullScreenCover(isPresented: $showAssistant) {
+            AssistantRootView()
+                .environmentObject(assistant)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AssistantLaunch.openNotification)) { _ in
+            UserDefaults.standard.removeObject(forKey: AssistantLaunch.openKey)
+            showAssistant = true
+        }
         .sheet(isPresented: Binding(
             get: { store.offeredPairingLink != nil },
             set: { if !$0 { store.offeredPairingLink = nil } }
@@ -93,6 +131,10 @@ struct RootView: View {
             if phase == .active {
                 GUSFlightRecorder.shared.markForeground()
                 consumePendingAppIntent()
+                if UserDefaults.standard.bool(forKey: AssistantLaunch.openKey) {
+                    UserDefaults.standard.removeObject(forKey: AssistantLaunch.openKey)
+                    showAssistant = true
+                }
             }
             if phase == .background {
                 GUSFlightRecorder.shared.markBackground()

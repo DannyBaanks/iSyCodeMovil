@@ -196,7 +196,7 @@ public struct ActiveSessionView: View {
         }
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(nil, for: .navigationBar)
         .sheet(isPresented: $sessionState.showAgentPicker) {
             AgentPickerSheet(selectedMode: $sessionState.agentMode, availableModes: availableModesForPicker)
         }
@@ -774,7 +774,7 @@ struct FileViewerView: View {
             }
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(OCColor.bgDeep, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(nil, for: .navigationBar)
         }
     }
 }
@@ -935,7 +935,7 @@ struct DiffViewerView: View {
             }
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(OCColor.bgDeep, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(nil, for: .navigationBar)
         }
     }
 }
@@ -1071,7 +1071,7 @@ struct TerminalSurfaceView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarBackground(OCColor.bgDeep, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(nil, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Button {
