@@ -630,6 +630,11 @@ struct SettingsSheet: View {
                     }
                 }
 
+                if store.backendMode == .native, store.sandboxLink == nil {
+                    PhoneProjectSection()
+                        .environmentObject(store)
+                }
+
                 Section("Sandbox del iPhone") {
                     NavigationLink {
                         NativeCapabilitySettingsView()

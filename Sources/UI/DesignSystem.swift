@@ -428,6 +428,15 @@ public enum ToolCallState: String, Sendable {
         }
     }
 
+    public var title: String {
+        switch self {
+        case .running:    return "En curso"
+        case .success:    return "Listo"
+        case .failed:     return "Falló"
+        case .permission: return "Permiso"
+        }
+    }
+
     public var icon: String {
         switch self {
         case .running:    return "circle.dotted"
