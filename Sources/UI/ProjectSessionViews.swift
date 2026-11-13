@@ -120,6 +120,13 @@ public struct ProjectListContent: View {
         .navigationTitle("ISYCODE")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button { AssistantLaunch.open() } label: {
+                    Label("Asistente", systemImage: "sparkles")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .accessibilityHint("Google, memoria y avisos de tu PC")
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showSettings = true } label: {
                     Image(systemName: "gearshape")
@@ -129,7 +136,7 @@ public struct ProjectListContent: View {
         }
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarBackground(OCColor.bgDeep, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(nil, for: .navigationBar)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Buscar proyectos")
         .sheet(isPresented: $showSettings) {
             SettingsSheet()
@@ -377,7 +384,7 @@ public struct SessionListView: View {
         }
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarBackground(OCColor.bgDeep, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(nil, for: .navigationBar)
         .searchable(
             text: $searchText,
             placement: .navigationBarDrawer(displayMode: .automatic),

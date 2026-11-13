@@ -1,4 +1,49 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+
+// MARK: - Appearance (automatic dark mode)
+
+/// Light, dark or follow the system. Colors below are dynamic, so switching
+/// is instant and needs no relaunch.
+public enum IysAppearance: String, CaseIterable, Identifiable {
+    case automatic, dark, light
+
+    public static let storageKey = "iyscode.appearance"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .automatic: return "Automático"
+        case .dark: return "Oscuro"
+        case .light: return "Claro"
+        }
+    }
+
+    /// nil lets iOS decide (the user's system setting).
+    public var colorScheme: ColorScheme? {
+        switch self {
+        case .automatic: return nil
+        case .dark: return .dark
+        case .light: return .light
+        }
+    }
+}
+
+extension Color {
+    /// A color that resolves per trait collection: one value for dark, one for light.
+    public static func iys(dark: String, light: String, darkOpacity: Double = 1, lightOpacity: Double? = nil) -> Color {
+        #if canImport(UIKit)
+        let darkColor = UIColor(Color(hex: dark, opacity: darkOpacity))
+        let lightColor = UIColor(Color(hex: light, opacity: lightOpacity ?? darkOpacity))
+        return Color(UIColor { $0.userInterfaceStyle == .light ? lightColor : darkColor })
+        #else
+        return Color(hex: dark, opacity: darkOpacity)
+        #endif
+    }
+}
 
 // MARK: - App Themes
 
@@ -24,57 +69,57 @@ public enum IysTheme: String, CaseIterable, Identifiable {
 
     public var accent: Color {
         switch self {
-        case .console: return Color(hex: "E94560")
-        case .premium: return Color(hex: "9B5DE5")
+        case .console: return .iys(dark: "E94560", light: "D12F4E")
+        case .premium: return .iys(dark: "9B5DE5", light: "7A3FC7")
         }
     }
 
     public var userSurface: Color {
         switch self {
-        case .console: return Color(hex: "E94560", opacity: 0.16)
-        case .premium: return Color(hex: "9B5DE5", opacity: 0.18)
+        case .console: return .iys(dark: "E94560", light: "D12F4E", darkOpacity: 0.16, lightOpacity: 0.10)
+        case .premium: return .iys(dark: "9B5DE5", light: "7A3FC7", darkOpacity: 0.18, lightOpacity: 0.10)
         }
     }
 
     public var assistantSurface: Color {
         switch self {
-        case .console: return Color(hex: "242433")
-        case .premium: return Color(hex: "2A2438")
+        case .console: return .iys(dark: "242433", light: "EFEDF5")
+        case .premium: return .iys(dark: "2A2438", light: "F1ECF8")
         }
     }
 
     public var background: Color {
         switch self {
-        case .console: return Color(hex: "12121C")
-        case .premium: return Color(hex: "14141F")
+        case .console: return .iys(dark: "12121C", light: "F6F5FA")
+        case .premium: return .iys(dark: "14141F", light: "F7F5FB")
         }
     }
 
     public var base: Color {
         switch self {
-        case .console: return Color(hex: "1A1A2E")
-        case .premium: return Color(hex: "1C1A2E")
+        case .console: return .iys(dark: "1A1A2E", light: "FFFFFF")
+        case .premium: return .iys(dark: "1C1A2E", light: "FFFFFF")
         }
     }
 
     public var layer: Color {
         switch self {
-        case .console: return Color(hex: "222236")
-        case .premium: return Color(hex: "262433")
+        case .console: return .iys(dark: "222236", light: "EFEDF5")
+        case .premium: return .iys(dark: "262433", light: "F1ECF8")
         }
     }
 
     public var secondaryLayer: Color {
         switch self {
-        case .console: return Color(hex: "2C2C42")
-        case .premium: return Color(hex: "312A44")
+        case .console: return .iys(dark: "2C2C42", light: "E6E3EF")
+        case .premium: return .iys(dark: "312A44", light: "E9E2F4")
         }
     }
 
     public var border: Color {
         switch self {
-        case .console: return Color(hex: "9AA3AD", opacity: 0.28)
-        case .premium: return Color(hex: "9B5DE5", opacity: 0.28)
+        case .console: return .iys(dark: "9AA3AD", light: "505A6B", darkOpacity: 0.28, lightOpacity: 0.22)
+        case .premium: return .iys(dark: "9B5DE5", light: "7A3FC7", darkOpacity: 0.28, lightOpacity: 0.22)
         }
     }
 
@@ -118,12 +163,12 @@ public struct OCColor {
     public static var bgLayer2: Color { theme.secondaryLayer }
     public static var borderMuted: Color { theme.border }
     public static var borderBase: Color { theme.border.opacity(0.75) }
-    public static let borderStrong = Color(hex: "FFFFFF", opacity: 0.20)
-    public static let textPrimary  = Color(hex: "E0E0E0")
-    public static let textSecondary = Color(hex: "9AA3AD")
-    public static let textFaint    = Color(hex: "7A8490")
-    public static let iconPrimary  = Color(hex: "E0E0E0")
-    public static let iconMuted    = Color(hex: "9AA3AD")
+    public static let borderStrong = Color.iys(dark: "FFFFFF", light: "1B1B28", darkOpacity: 0.20, lightOpacity: 0.18)
+    public static let textPrimary  = Color.iys(dark: "E0E0E0", light: "1B1B28")
+    public static let textSecondary = Color.iys(dark: "9AA3AD", light: "545C6B")
+    public static let textFaint    = Color.iys(dark: "7A8490", light: "6E7684")
+    public static let iconPrimary  = Color.iys(dark: "E0E0E0", light: "1B1B28")
+    public static let iconMuted    = Color.iys(dark: "9AA3AD", light: "545C6B")
     /// Ink that sits on a filled accent. Coral and violet both need light text.
     public static let onAccent     = Color(hex: "F7F4EF")
 
@@ -147,28 +192,28 @@ public struct OCColor {
     public static let agentCustomBorder  = Color(hex: "9E99F7", opacity: 0.30)
 
     // Syntax & Diff
-    public static let diffAddFg      = Color(hex: "C4FFC0")
-    public static let diffDeleteFg   = Color(hex: "EC2F14")
-    public static let syntaxComment  = Color(hex: "8F8F8F")
-    public static let syntaxKeyword  = Color(hex: "EDB2F1")
-    public static let syntaxString   = Color(hex: "00CEB9")
-    public static let syntaxPrimitive = Color(hex: "8CB0FF")
-    public static let syntaxProperty = Color(hex: "FAB283")
-    public static let syntaxType     = Color(hex: "FCD53A")
+    public static let diffAddFg      = Color.iys(dark: "C4FFC0", light: "166534")
+    public static let diffDeleteFg   = Color.iys(dark: "EC2F14", light: "B91C1C")
+    public static let syntaxComment  = Color.iys(dark: "8F8F8F", light: "6B7280")
+    public static let syntaxKeyword  = Color.iys(dark: "EDB2F1", light: "9D174D")
+    public static let syntaxString   = Color.iys(dark: "00CEB9", light: "0F766E")
+    public static let syntaxPrimitive = Color.iys(dark: "8CB0FF", light: "1D4ED8")
+    public static let syntaxProperty = Color.iys(dark: "FAB283", light: "C2410C")
+    public static let syntaxType     = Color.iys(dark: "FCD53A", light: "A16207")
 
-    public static let diffAddBg      = Color(hex: "14361D", opacity: 0.60)
-    public static let diffDeleteBg   = Color(hex: "461516", opacity: 0.60)
-    public static let diffContextBg  = Color(hex: "161616")
+    public static let diffAddBg      = Color.iys(dark: "14361D", light: "DCFCE7", darkOpacity: 0.60, lightOpacity: 1)
+    public static let diffDeleteBg   = Color.iys(dark: "461516", light: "FEE2E2", darkOpacity: 0.60, lightOpacity: 1)
+    public static let diffContextBg  = Color.iys(dark: "161616", light: "F4F3F8")
     public static var diffSelectedBg: Color { theme.accent.opacity(0.10) }
 
     // Semantic
-    public static let success        = Color(hex: "4ADE80")
-    public static let warning        = Color(hex: "FBBF24")
-    public static let danger         = Color(hex: "F87171")
-    public static let info           = Color(hex: "22D3EE")
+    public static let success        = Color.iys(dark: "4ADE80", light: "15803D")
+    public static let warning        = Color.iys(dark: "FBBF24", light: "A16207")
+    public static let danger         = Color.iys(dark: "F87171", light: "C62828")
+    public static let info           = Color.iys(dark: "22D3EE", light: "0E7490")
 
     // Liquid Glass approximations (for Figma parity; prefer system APIs in code)
-    public static let glassNavFill   = Color.white.opacity(0.06)
+    public static let glassNavFill   = Color.iys(dark: "FFFFFF", light: "FFFFFF", darkOpacity: 0.06, lightOpacity: 0.55)
     public static let glassNavBlur: CGFloat = 28
     public static let glassNavHighlight = Color.white.opacity(0.10)
     public static let glassNavStroke = Color.white.opacity(0.12)

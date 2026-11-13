@@ -180,6 +180,18 @@ Como esas apps que te muestran un informe cuando algo falla. Antes de cada paso 
 
 ---
 
+## ✨ Asistente: Google, memoria y avisos de tu PC
+
+En iPhone toca **Asistente** en Proyectos; en Android abre la pestaña **Asistente**.
+
+- **Google con tu propia cuenta:** Gmail, Calendar, Tasks, Drive, Contactos, Docs, Sheets y Classroom. Nada se envía ni se cambia sin que lo confirmes.
+- **Memoria por carpetas semánticas** (dominio › rama › subtema), con búsqueda tolerante a errores, historial y un grafo que puedes acomodar. GUS usa solo las notas que vienen al caso.
+- **Avisos de tu PC:** el daemon de iSyCode / IsyMCP publica un JSON (por ejemplo en `raw.githubusercontent.com`) y el teléfono te avisa de cada tarea nueva.
+- **Tools para cualquier modelo** (`gmail.read.inbox`, `as.save.context`…), y las de escritura piden tu aprobación cada vez.
+- **Modo oscuro automático** en las dos apps; también puedes fijar claro u oscuro.
+
+Configuración paso a paso: [docs/GOOGLE_ASSISTANT.md](docs/GOOGLE_ASSISTANT.md).
+
 ## 💻 Conecta tu computadora
 
 ### OpenCode (disponible hoy)
