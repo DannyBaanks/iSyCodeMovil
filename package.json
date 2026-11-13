@@ -5,7 +5,7 @@
   "description": "Pair IysCode Movil with OpenCode-compatible desktop runtimes.",
   "type": "module",
   "scripts": {
-    "test:bridge": "node --test Bridge/test/iyscodemovil.test.mjs Bridge/test/sandbox.test.mjs",
+    "test:bridge": "node --test Bridge/test/iyscodemovil.test.mjs Bridge/test/sandbox.test.mjs Bridge/test/workspace.test.mjs",
     "probe:openisy-transport": "node Bridge/test/openisy-transport-probe.mjs",
     "probe:official-opencode": "node Bridge/test/official-opencode-probe.mjs"
   },

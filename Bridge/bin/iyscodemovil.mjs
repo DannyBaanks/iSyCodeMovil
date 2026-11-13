@@ -7,6 +7,7 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { assertGrokTransport, startGrokLink } from "./grok_bridge.mjs";
+import { runContextCommand } from "./context_cli.mjs";
 
 const RUNTIMES = {
     opencode: {
@@ -206,6 +207,7 @@ export function runtimeCommand(options, platform = process.platform, env = proce
 export function childEnvironment(env, username, password, runtimeEnv = {}) { return { ...env, ...runtimeEnv, OPENCODE_SERVER_USERNAME: username, OPENCODE_SERVER_PASSWORD: password }; }
 
 export async function main(args = process.argv.slice(2), env = process.env) {
+    if (args[0] === "context") return runContextCommand(args.slice(1));
     let options;
     let runtime;
     let codexInfo;

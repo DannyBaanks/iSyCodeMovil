@@ -256,7 +256,7 @@ class GoogleParsersTest {
             server.takeRequest()
             val append = server.takeRequest()
             assertEquals("POST", append.method)
-            assertEquals("/v4/spreadsheets/SHEET/values/%27Mis%20datos%27%21A1:append?valueInputOption=USER_ENTERED", append.path)
+            assertEquals("/v4/spreadsheets/SHEET/values/%27Mis%20datos%27%21A1:append?valueInputOption=RAW", append.path)
             assertEquals("""{"values":[["a","b"]]}""", append.body.readUtf8())
         } finally {
             server.shutdown()
