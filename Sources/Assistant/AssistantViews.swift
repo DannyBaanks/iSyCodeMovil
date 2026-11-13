@@ -611,9 +611,12 @@ private struct SemanticGraphCard: View {
     }
 
     private func rebuild() {
-        graph = SemanticContext.buildGraph(nodes)
-        positions = SemanticContext.layout(graph, seed: seed)
-        if let id = selectedId, !graph.nodes.contains(where: { $0.id == id }) { selectedId = nil }
+        // Work on a local value: reading `graph` right after assigning the
+        // @State can still return the old (empty) graph, which left no positions.
+        let built = SemanticContext.buildGraph(nodes)
+        graph = built
+        positions = SemanticContext.layout(built, seed: seed)
+        if let id = selectedId, !built.nodes.contains(where: { $0.id == id }) { selectedId = nil }
     }
 
     private func color(_ node: GraphNode) -> Color {
