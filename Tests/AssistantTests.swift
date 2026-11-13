@@ -53,6 +53,9 @@ final class AssistantTests: XCTestCase {
         XCTAssertEqual(Set([bridges[0].source, bridges[0].target]), ["b", "d"])
         XCTAssertEqual(SemanticContext.layout(graph), SemanticContext.layout(graph))
         XCTAssertEqual(SemanticContext.layout(graph).count, graph.nodes.count)
+        // Regression: without fitting, repulsion put every node ~1000 points away and the canvas looked empty.
+        XCTAssertTrue(SemanticContext.layout(graph).values.allSatisfy { abs($0.x) <= 120.01 && abs($0.y) <= 120.01 })
+        XCTAssertTrue(SemanticContext.layout(graph).values.contains { abs($0.x) > 100 || abs($0.y) > 100 })
     }
 
     func testCatalogRoutingAndConfirmation() {
