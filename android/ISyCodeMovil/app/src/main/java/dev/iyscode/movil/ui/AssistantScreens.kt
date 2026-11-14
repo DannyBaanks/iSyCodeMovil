@@ -94,6 +94,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -573,6 +574,8 @@ private fun SemanticGraphCard(nodes: List<ContextNode>) {
     var bridgesOnly by rememberSaveable { mutableStateOf(false) }
     var layoutSeed by remember { mutableStateOf(0) }
     val measurer = rememberTextMeasurer()
+    // Layout coordinates are in dp; the canvas draws in pixels.
+    val px = LocalDensity.current.density
     val byId = graph.nodes.associateBy { it.id }
     val neighbors = selectedId?.let { id -> graph.links.filter { it.source == id || it.target == id }.flatMap { listOf(it.source, it.target) }.toSet() }
     val labelColor = Iys.textPrimary
@@ -608,13 +611,13 @@ private fun SemanticGraphCard(nodes: List<ContextNode>) {
                 .border(1.dp, Iys.border, RoundedCornerShape(16.dp)),
         ) {
             var canvas by remember { mutableStateOf(IntSize.Zero) }
-            fun toScreen(p: GraphPoint) = Offset(canvas.width / 2f + (p.x + pan.x) * scale, canvas.height / 2f + (p.y + pan.y) * scale)
+            fun toScreen(p: GraphPoint) = Offset(canvas.width / 2f + (p.x + pan.x) * scale * px, canvas.height / 2f + (p.y + pan.y) * scale * px)
             fun hit(offset: Offset): GraphNode? = graph.nodes.minByOrNull { node ->
                 val s = toScreen(positions[node.id] ?: GraphPoint(0f, 0f))
                 (s - offset).getDistance()
             }?.takeIf { node ->
                 val s = toScreen(positions[node.id] ?: GraphPoint(0f, 0f))
-                (s - offset).getDistance() <= (node.radius + 10) * scale.coerceAtLeast(0.8f)
+                (s - offset).getDistance() <= (node.radius / 2.2f + 10) * px * scale.coerceAtLeast(0.8f)
             }
             var dragging by remember { mutableStateOf<String?>(null) }
             Canvas(
@@ -633,9 +636,9 @@ private fun SemanticGraphCard(nodes: List<ContextNode>) {
                             val id = dragging
                             if (id != null) {
                                 val p = positions[id] ?: GraphPoint(0f, 0f)
-                                positions[id] = GraphPoint(p.x + amount.x / scale, p.y + amount.y / scale)
+                                positions[id] = GraphPoint(p.x + amount.x / (scale * px), p.y + amount.y / (scale * px))
                             } else {
-                                pan += Offset(amount.x / scale, amount.y / scale)
+                                pan += Offset(amount.x / (scale * px), amount.y / (scale * px))
                             }
                         }
                     },
@@ -647,7 +650,7 @@ private fun SemanticGraphCard(nodes: List<ContextNode>) {
                         val cx = members.map { it.x }.average().toFloat()
                         val cy = members.map { it.y }.average().toFloat()
                         val reach = members.maxOf { sqrt((it.x - cx) * (it.x - cx) + (it.y - cy) * (it.y - cy)) } + 40f
-                        drawCircle(nodeColor(hub).copy(alpha = 0.07f), reach * scale, toScreen(GraphPoint(cx, cy)))
+                        drawCircle(nodeColor(hub).copy(alpha = 0.07f), reach * scale * px, toScreen(GraphPoint(cx, cy)))
                     }
                 }
                 graph.links.forEach { link ->

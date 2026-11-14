@@ -116,6 +116,9 @@ class SemanticContextTest {
         assertEquals(graph.nodes.size, layout.size)
         assertTrue(layout.values.all { it.x.isFinite() && it.y.isFinite() })
         assertEquals("deterministic", layout, SemanticContext.layout(graph))
+        // Regression: without fitting, repulsion put every node ~1000 dp away and the canvas looked empty.
+        assertTrue(layout.values.all { kotlin.math.abs(it.x) <= 120.01f && kotlin.math.abs(it.y) <= 120.01f })
+        assertTrue(layout.values.any { kotlin.math.abs(it.x) > 100f || kotlin.math.abs(it.y) > 100f })
     }
 }
 

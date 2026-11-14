@@ -365,8 +365,10 @@ public enum SemanticContext {
     }
 
     /// Force-directed positions (Fruchterman–Reingold), deterministic for a
-    /// given seed so the picture does not jump between redraws.
-    public static func layout(_ graph: SemanticGraph, iterations: Int = 200, seed: Int = 0) -> [String: CGPoint] {
+    /// given seed so the picture does not jump between redraws. The result is
+    /// centered and scaled so every node lies within `fit` points of the
+    /// origin; without that, repulsion spreads a dozen nodes far past the canvas.
+    public static func layout(_ graph: SemanticGraph, iterations: Int = 200, seed: Int = 0, fit: Double = 120) -> [String: CGPoint] {
         let count = graph.nodes.count
         guard count > 0 else { return [:] }
         var x = [Double](repeating: 0, count: count)
@@ -414,6 +416,12 @@ public enum SemanticContext {
             }
             temperature = max(1.5, temperature * 0.97)
         }
-        return Dictionary(uniqueKeysWithValues: graph.nodes.enumerated().map { ($0.element.id, CGPoint(x: x[$0.offset], y: y[$0.offset])) })
+        let cx = x.reduce(0, +) / Double(count)
+        let cy = y.reduce(0, +) / Double(count)
+        let reach = zip(x, y).map { max(abs($0.0 - cx), abs($0.1 - cy)) }.max() ?? 0
+        let k = reach > 0 ? fit / reach : 1
+        return Dictionary(uniqueKeysWithValues: graph.nodes.enumerated().map {
+            ($0.element.id, CGPoint(x: (x[$0.offset] - cx) * k, y: (y[$0.offset] - cy) * k))
+        })
     }
 }

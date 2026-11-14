@@ -310,9 +310,11 @@ object SemanticContext {
 
     /**
      * Force-directed positions (Fruchterman–Reingold), deterministic for a
-     * given seed so the picture does not jump between redraws.
+     * given seed so the picture does not jump between redraws. The result is
+     * centered and scaled so every node lies within [fit] dp of the origin;
+     * without that, repulsion spreads a dozen nodes far past the canvas.
      */
-    fun layout(graph: Graph, iterations: Int = 200, seed: Int = 0): Map<String, GraphPoint> {
+    fun layout(graph: Graph, iterations: Int = 200, seed: Int = 0, fit: Float = 120f): Map<String, GraphPoint> {
         val count = graph.nodes.size
         if (count == 0) return emptyMap()
         val x = FloatArray(count)
@@ -365,6 +367,10 @@ object SemanticContext {
             }
             temperature = max(1.5f, temperature * 0.97f)
         }
-        return graph.nodes.withIndex().associate { it.value.id to GraphPoint(x[it.index], y[it.index]) }
+        val cx = x.average().toFloat()
+        val cy = y.average().toFloat()
+        val reach = (0 until count).maxOf { max(abs(x[it] - cx), abs(y[it] - cy)) }
+        val k = if (reach > 0f) fit / reach else 1f
+        return graph.nodes.withIndex().associate { it.value.id to GraphPoint((x[it.index] - cx) * k, (y[it.index] - cy) * k) }
     }
 }
