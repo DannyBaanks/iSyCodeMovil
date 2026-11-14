@@ -407,8 +407,11 @@ public enum SemanticContext {
                 dx[b] += ex / distance * force; dy[b] += ey / distance * force
             }
             for i in 0..<count {
-                dx[i] -= x[i] * 0.05
-                dy[i] -= y[i] * 0.05
+                // Strong pull to the center keeps the domains (which have no links
+                // between them) close together; otherwise fitting the far-apart
+                // domains crushes each one and the labels overlap.
+                dx[i] -= x[i] * 2
+                dy[i] -= y[i] * 2
                 let length = max(0.01, (dx[i] * dx[i] + dy[i] * dy[i]).squareRoot())
                 let step = min(length, temperature)
                 x[i] += dx[i] / length * step

@@ -358,8 +358,11 @@ object SemanticContext {
                 dx[b] += ex / distance * force; dy[b] += ey / distance * force
             }
             for (i in 0 until count) {
-                dx[i] -= x[i] * 0.05f
-                dy[i] -= y[i] * 0.05f
+                // Strong pull to the center keeps the domains (which have no links
+                // between them) close together; otherwise fitting the far-apart
+                // domains crushes each one and the labels overlap.
+                dx[i] -= x[i] * 2f
+                dy[i] -= y[i] * 2f
                 val length = max(0.01f, sqrt(dx[i] * dx[i] + dy[i] * dy[i]))
                 val step = min(length, temperature)
                 x[i] += dx[i] / length * step

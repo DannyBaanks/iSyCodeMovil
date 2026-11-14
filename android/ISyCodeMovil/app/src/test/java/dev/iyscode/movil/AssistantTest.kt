@@ -119,6 +119,11 @@ class SemanticContextTest {
         // Regression: without fitting, repulsion put every node ~1000 dp away and the canvas looked empty.
         assertTrue(layout.values.all { kotlin.math.abs(it.x) <= 120.01f && kotlin.math.abs(it.y) <= 120.01f })
         assertTrue(layout.values.any { kotlin.math.abs(it.x) > 100f || kotlin.math.abs(it.y) > 100f })
+        // Nodes must not pile up: with weak gravity the domains drifted apart and each one was crushed by the fit.
+        val points = layout.values.toList()
+        val closest = points.indices.flatMap { i -> (i + 1 until points.size).map { j ->
+            kotlin.math.hypot((points[i].x - points[j].x).toDouble(), (points[i].y - points[j].y).toDouble()) } }.min()
+        assertTrue("closest pair $closest dp", closest > 30)
     }
 }
 
