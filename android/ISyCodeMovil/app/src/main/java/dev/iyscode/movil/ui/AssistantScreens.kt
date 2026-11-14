@@ -687,19 +687,17 @@ private fun SemanticGraphCard(nodes: List<ContextNode>) {
                     }
                 }
             }
-            if (showLegend) {
-                Column(
-                    Modifier.align(Alignment.TopStart).padding(8.dp)
-                        .background(Iys.bgBase.copy(alpha = 0.9f), RoundedCornerShape(10.dp)).padding(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    LegendRow(Iys.red, "Crítica")
-                    LegendRow(Iys.orange, "Alta")
-                    LegendRow(Iys.blue, "Normal")
-                    LegendRow(Iys.violet, "Dominio", ring = true)
-                    LegendRow(Iys.accent, "Rama", ring = true)
-                    LegendRow(Iys.yellow, "Puente (temas en común)", dashed = true)
-                }
+        }
+        if (showLegend) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                LegendRow(Iys.red, "Crítica")
+                LegendRow(Iys.orange, "Alta")
+                LegendRow(Iys.blue, "Normal")
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                LegendRow(Iys.violet, "Dominio", ring = true)
+                LegendRow(Iys.accent, "Rama", ring = true)
+                LegendRow(Iys.yellow, "Puente", dashed = true)
             }
         }
         Muted("${graph.nodes.count { it.kind == GraphNodeKind.CONTEXT }} notas · ${graph.links.count { it.kind == GraphLinkKind.SEMANTIC }} puentes", Iys.textFaint)

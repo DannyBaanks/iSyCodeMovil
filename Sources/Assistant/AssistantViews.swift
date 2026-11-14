@@ -593,15 +593,13 @@ private struct SemanticGraphCard: View {
                 }
             }
             GeometryReader { geo in
-                ZStack(alignment: .topLeading) {
-                    canvas(size: geo.size)
-                    if showLegend { legend.padding(8) }
-                }
+                canvas(size: geo.size)
             }
             .frame(height: 360)
             .background(RoundedRectangle(cornerRadius: 16).fill(Color.iys(dark: "0D0D16", light: "F1EFF7")))
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(OCColor.borderMuted, lineWidth: 1))
+            if showLegend { legend }
             Muted("\(graph.nodes.filter { $0.kind == .context }.count) notas · \(graph.links.filter { $0.kind == .semantic }.count) puentes",
                   color: OCColor.textFaint)
             if let id = selectedId, let node = graph.nodes.first(where: { $0.id == id }) { detail(node) }
@@ -717,7 +715,8 @@ private struct SemanticGraphCard: View {
     }
 
     private var legend: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading),
+                            GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: 6) {
             legendRow(priorityColor(.critical), "Crítica")
             legendRow(priorityColor(.high), "Alta")
             legendRow(priorityColor(.normal), "Normal")
@@ -725,11 +724,9 @@ private struct SemanticGraphCard: View {
             legendRow(OCColor.agentBuild, "Rama", ring: true)
             HStack(spacing: 6) {
                 Rectangle().fill(Color.iys(dark: "FBBF24", light: "A16207")).frame(width: 14, height: 2)
-                Text("Puente (temas en común)").font(.system(size: 11)).foregroundColor(OCColor.textPrimary)
+                Text("Puente").font(.system(size: 11)).foregroundColor(OCColor.textPrimary)
             }
         }
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 10).fill(OCColor.bgBase.opacity(0.92)))
     }
 
     private func legendRow(_ color: Color, _ label: String, ring: Bool = false) -> some View {

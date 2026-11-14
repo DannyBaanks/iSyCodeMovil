@@ -56,6 +56,11 @@ final class AssistantTests: XCTestCase {
         // Regression: without fitting, repulsion put every node ~1000 points away and the canvas looked empty.
         XCTAssertTrue(SemanticContext.layout(graph).values.allSatisfy { abs($0.x) <= 120.01 && abs($0.y) <= 120.01 })
         XCTAssertTrue(SemanticContext.layout(graph).values.contains { abs($0.x) > 100 || abs($0.y) > 100 })
+        // Nodes must not pile up: with weak gravity the domains drifted apart and each one was crushed by the fit.
+        let points = Array(SemanticContext.layout(graph).values)
+        var closest = Double.infinity
+        for i in points.indices { for j in points.indices where j > i { closest = min(closest, hypot(points[i].x - points[j].x, points[i].y - points[j].y)) } }
+        XCTAssertGreaterThan(closest, 30)
     }
 
     func testCatalogRoutingAndConfirmation() {
