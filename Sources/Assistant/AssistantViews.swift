@@ -789,9 +789,9 @@ private struct SemanticGraphCard: View {
         }
         let spanX = max(80, maxX - minX)
         let spanY = max(80, maxY - minY)
-        let fitX = (size.width - 64) / spanX
-        let fitY = (size.height - 60) / spanY
-        scale = min(1.30, max(0.65, min(fitX, fitY)))
+        let fitX = (size.width - 80) / spanX
+        let fitY = (size.height - 70) / spanY
+        scale = min(1.15, max(0.65, min(fitX, fitY)))
     }
 
     private func color(_ node: GraphNode) -> Color {
@@ -993,7 +993,7 @@ private struct SemanticGraphCard: View {
                 case .context:
                     shouldShow = noteCount <= 14 || scale >= 1.05 || isSelected || isNeighbor
                 case .cluster:
-                    shouldShow = isSelected || isNeighbor || scale >= 1.20
+                    shouldShow = isSelected || isNeighbor || scale >= 1.25
                 }
                 guard shouldShow else { continue }
 
@@ -1015,7 +1015,8 @@ private struct SemanticGraphCard: View {
                 guard let chosen = placeLabelRect(
                     center: c, radius: r, size: CGSize(width: boxW, height: boxH),
                     canvasSize: canvasSize, preferAbove: preferAbove,
-                    allowFallback: isSelected || node.kind == .domain, occupied: occupiedRects
+                    allowFallback: isSelected || node.kind == .domain || (node.kind == .context && noteCount <= 6),
+                    occupied: occupiedRects
                 ) else { continue }
 
                 occupiedRects.append(chosen)
@@ -1036,7 +1037,7 @@ private struct SemanticGraphCard: View {
                 let textSize = resolved.measure(in: CGSize(width: 150, height: 24))
                 let boxW = textSize.width + 10
                 let boxH = textSize.height + 4
-                let shifts: [CGFloat] = [0, 10, -10, 18, -18]
+                let shifts: [CGFloat] = [0, 14, -14, 24, -24, 34, -34]
                 let candidates = shifts.map { s -> CGRect in
                     let p = CGPoint(x: badge.point.x + badge.normal.x * s, y: badge.point.y + badge.normal.y * s)
                     return CGRect(
@@ -1098,34 +1099,36 @@ private struct SemanticGraphCard: View {
 
     private func placeLabelRect(center: CGPoint, radius: CGFloat, size: CGSize, canvasSize: CGSize,
                                 preferAbove: Bool, allowFallback: Bool, occupied: [CGRect]) -> CGRect? {
-        let gap: CGFloat = 5
         let w = size.width, h = size.height
-        let below = CGPoint(x: center.x - w / 2, y: center.y + radius + gap)
-        let above = CGPoint(x: center.x - w / 2, y: center.y - radius - gap - h)
-        let right = CGPoint(x: center.x + radius + gap, y: center.y - h / 2)
-        let left = CGPoint(x: center.x - radius - gap - w, y: center.y - h / 2)
-        let belowRight = CGPoint(x: center.x - 4, y: center.y + radius + gap)
-        let belowLeft = CGPoint(x: center.x + 4 - w, y: center.y + radius + gap)
-        let aboveRight = CGPoint(x: center.x - 4, y: center.y - radius - gap - h)
-        let aboveLeft = CGPoint(x: center.x + 4 - w, y: center.y - radius - gap - h)
-        let candidates = preferAbove
-            ? [above, below, right, left, aboveRight, aboveLeft, belowRight, belowLeft]
-            : [below, above, right, left, belowRight, belowLeft, aboveRight, aboveLeft]
-
-        let clamped = candidates.map { origin in
-            CGRect(
-                x: min(max(6, origin.x), max(6, canvasSize.width - 6 - w)),
-                y: min(max(6, origin.y), max(6, canvasSize.height - 6 - h)),
-                width: w, height: h
-            )
-        }
-        if let clear = clamped.first(where: { candidate in
-            !occupied.contains(where: { $0.intersects(candidate.insetBy(dx: -2, dy: -2)) })
-        }) {
-            return clear
+        var ringCandidates: [CGRect] = []
+        for gap in [CGFloat(5), CGFloat(11)] {
+            let below = CGPoint(x: center.x - w / 2, y: center.y + radius + gap)
+            let above = CGPoint(x: center.x - w / 2, y: center.y - radius - gap - h)
+            let right = CGPoint(x: center.x + radius + gap, y: center.y - h / 2)
+            let left = CGPoint(x: center.x - radius - gap - w, y: center.y - h / 2)
+            let belowRight = CGPoint(x: center.x - 4, y: center.y + radius + gap)
+            let belowLeft = CGPoint(x: center.x + 4 - w, y: center.y + radius + gap)
+            let aboveRight = CGPoint(x: center.x - 4, y: center.y - radius - gap - h)
+            let aboveLeft = CGPoint(x: center.x + 4 - w, y: center.y - radius - gap - h)
+            let ordered = preferAbove
+                ? [above, below, right, left, aboveRight, aboveLeft, belowRight, belowLeft]
+                : [below, above, right, left, belowRight, belowLeft, aboveRight, aboveLeft]
+            let clamped = ordered.map { origin in
+                CGRect(
+                    x: min(max(6, origin.x), max(6, canvasSize.width - 6 - w)),
+                    y: min(max(6, origin.y), max(6, canvasSize.height - 6 - h)),
+                    width: w, height: h
+                )
+            }
+            if let clear = clamped.first(where: { candidate in
+                !occupied.contains(where: { $0.intersects(candidate.insetBy(dx: -2, dy: -2)) })
+            }) {
+                return clear
+            }
+            if ringCandidates.isEmpty { ringCandidates = clamped } else { ringCandidates.append(contentsOf: clamped) }
         }
         guard allowFallback else { return nil }
-        return clamped.min { lhs, rhs in
+        return ringCandidates.min { lhs, rhs in
             let overlapArea: (CGRect) -> CGFloat = { candidate in
                 occupied.reduce(0) { sum, other in
                     let inter = candidate.intersection(other)

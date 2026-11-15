@@ -685,11 +685,11 @@ private fun SemanticGraphCard(
             scale = 1f
             return
         }
-        val availW = (size.width / px - 64f).coerceAtLeast(80f)
-        val availH = (size.height / px - 60f).coerceAtLeast(80f)
+        val availW = (size.width / px - 80f).coerceAtLeast(80f)
+        val availH = (size.height / px - 70f).coerceAtLeast(80f)
         val spanX = (maxX - minX).coerceAtLeast(80f)
         val spanY = (maxY - minY).coerceAtLeast(80f)
-        scale = min(availW / spanX, availH / spanY).coerceIn(0.65f, 1.30f)
+        scale = min(availW / spanX, availH / spanY).coerceIn(0.65f, 1.15f)
     }
 
     fun focusNode(id: String) {
@@ -1011,7 +1011,7 @@ private fun SemanticGraphCard(
                     val shouldShow = when (node.kind) {
                         GraphNodeKind.DOMAIN -> true
                         GraphNodeKind.CONTEXT -> noteCount <= 14 || scale >= 1.05f || isSelected || isNeighbor
-                        GraphNodeKind.CLUSTER -> isSelected || isNeighbor || scale >= 1.20f
+                        GraphNodeKind.CLUSTER -> isSelected || isNeighbor || scale >= 1.25f
                     }
                     if (!shouldShow) continue
 
@@ -1050,7 +1050,7 @@ private fun SemanticGraphCard(
                         gapPx = 5f * px,
                         padPx = 6f * px,
                         preferAbove = preferAbove,
-                        allowFallback = isSelected || node.kind == GraphNodeKind.DOMAIN,
+                        allowFallback = isSelected || node.kind == GraphNodeKind.DOMAIN || (node.kind == GraphNodeKind.CONTEXT && noteCount <= 6),
                         occupied = occupiedRects,
                     ) ?: continue
 
@@ -1082,7 +1082,7 @@ private fun SemanticGraphCard(
                     val boxW = layout.size.width + 10f * px
                     val boxH = layout.size.height + 4f * px
                     val pad = 6f * px
-                    val candidates = listOf(0f, 10f * px, -10f * px, 18f * px, -18f * px).map { shift ->
+                    val candidates = listOf(0f, 14f * px, -14f * px, 24f * px, -24f * px, 34f * px, -34f * px).map { shift ->
                         val cx = badge.point.x + badge.normal.x * shift
                         val cy = badge.point.y + badge.normal.y * shift
                         val left = (cx - boxW / 2f).coerceIn(pad, max(pad, size.width - pad - boxW))
@@ -1216,31 +1216,35 @@ private fun placeLabelRect(
     occupied: List<Rect>,
 ): Rect? {
     val edgeInset = 4f * (gapPx / 5f).coerceAtLeast(1f)
-    val below = Offset(center.x - boxW / 2f, center.y + radiusPx + gapPx)
-    val above = Offset(center.x - boxW / 2f, center.y - radiusPx - gapPx - boxH)
-    val right = Offset(center.x + radiusPx + gapPx, center.y - boxH / 2f)
-    val left = Offset(center.x - radiusPx - gapPx - boxW, center.y - boxH / 2f)
-    val belowRight = Offset(center.x - edgeInset, center.y + radiusPx + gapPx)
-    val belowLeft = Offset(center.x + edgeInset - boxW, center.y + radiusPx + gapPx)
-    val aboveRight = Offset(center.x - edgeInset, center.y - radiusPx - gapPx - boxH)
-    val aboveLeft = Offset(center.x + edgeInset - boxW, center.y - radiusPx - gapPx - boxH)
-    val ordered = if (preferAbove) {
-        listOf(above, below, right, left, aboveRight, aboveLeft, belowRight, belowLeft)
-    } else {
-        listOf(below, above, right, left, belowRight, belowLeft, aboveRight, aboveLeft)
+    val allClamped = mutableListOf<Rect>()
+    for (ringGap in listOf(gapPx, gapPx * 2.2f)) {
+        val below = Offset(center.x - boxW / 2f, center.y + radiusPx + ringGap)
+        val above = Offset(center.x - boxW / 2f, center.y - radiusPx - ringGap - boxH)
+        val right = Offset(center.x + radiusPx + ringGap, center.y - boxH / 2f)
+        val left = Offset(center.x - radiusPx - ringGap - boxW, center.y - boxH / 2f)
+        val belowRight = Offset(center.x - edgeInset, center.y + radiusPx + ringGap)
+        val belowLeft = Offset(center.x + edgeInset - boxW, center.y + radiusPx + ringGap)
+        val aboveRight = Offset(center.x - edgeInset, center.y - radiusPx - ringGap - boxH)
+        val aboveLeft = Offset(center.x + edgeInset - boxW, center.y - radiusPx - ringGap - boxH)
+        val ordered = if (preferAbove) {
+            listOf(above, below, right, left, aboveRight, aboveLeft, belowRight, belowLeft)
+        } else {
+            listOf(below, above, right, left, belowRight, belowLeft, aboveRight, aboveLeft)
+        }
+        val clamped = ordered.map { origin ->
+            val x = origin.x.coerceIn(padPx, max(padPx, canvasW - padPx - boxW))
+            val y = origin.y.coerceIn(padPx, max(padPx, canvasH - padPx - boxH))
+            Rect(x, y, x + boxW, y + boxH)
+        }
+        val clear = clamped.firstOrNull { candidate ->
+            val padded = Rect(candidate.left - 2f, candidate.top - 2f, candidate.right + 2f, candidate.bottom + 2f)
+            occupied.none { it.overlaps(padded) }
+        }
+        if (clear != null) return clear
+        allClamped.addAll(clamped)
     }
-    val clamped = ordered.map { origin ->
-        val x = origin.x.coerceIn(padPx, max(padPx, canvasW - padPx - boxW))
-        val y = origin.y.coerceIn(padPx, max(padPx, canvasH - padPx - boxH))
-        Rect(x, y, x + boxW, y + boxH)
-    }
-    val clear = clamped.firstOrNull { candidate ->
-        val padded = Rect(candidate.left - 2f, candidate.top - 2f, candidate.right + 2f, candidate.bottom + 2f)
-        occupied.none { it.overlaps(padded) }
-    }
-    if (clear != null) return clear
     if (!allowFallback) return null
-    return clamped.minByOrNull { candidate ->
+    return allClamped.minByOrNull { candidate ->
         occupied.sumOf { other ->
             val ix = min(candidate.right, other.right) - max(candidate.left, other.left)
             val iy = min(candidate.bottom, other.bottom) - max(candidate.top, other.top)
