@@ -105,11 +105,27 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
         enforceGUSPermissionToggles = enabled
     }
 
-    /// A tool is blocked when it is a catalogued GUS permission the person turned off.
+    /// A tool is blocked when it maps to a catalogued GUS permission the person turned off.
     private func blockedByGUSPermission(_ toolName: String) -> Bool {
-        enforceGUSPermissionToggles
-            && GUSToolPermissionCatalog.permissions.contains { $0.id == toolName }
-            && !GUSToolPermissionCatalog.isEnabled(toolName, defaults: defaults)
+        guard enforceGUSPermissionToggles else { return false }
+        if toolName == "undo" {
+            return !GUSToolPermissionCatalog.isEnabled("edit_file", defaults: defaults)
+                && !GUSToolPermissionCatalog.isEnabled("write_file", defaults: defaults)
+        }
+        let permissionID = Self.gusPermissionID(for: toolName)
+        return GUSToolPermissionCatalog.permissions.contains { $0.id == permissionID }
+            && !GUSToolPermissionCatalog.isEnabled(permissionID, defaults: defaults)
+    }
+
+    private static func gusPermissionID(for toolName: String) -> String {
+        switch toolName {
+        case "list": return "list_directory"
+        case "read", "read_file_range": return "read_file"
+        case "find", "search_text": return "search_files"
+        case "edit", "replace_lines": return "edit_file"
+        case "write", "append_file", "copy_file": return "write_file"
+        default: return toolName
+        }
     }
 
     public func tools(relevantTo messages: [ModelMessage]) async -> [AgentTool] {
@@ -126,7 +142,8 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
         tools = tools.filter { !blockedByGUSPermission($0.name) }
         projectedNativeNames = Set(tools.map(\.name))
         if simpleToolsEnabled {
-            return await simple.tools() + tools
+            let simpleTools = (await simple.tools()).filter { !blockedByGUSPermission($0.name) }
+            return simpleTools + tools
         }
         let fileTools = (await fileSystem.availableTools).filter { !blockedByGUSPermission($0.name) }
         return fileTools + [SimpleWorkspaceToolExecutor.cloneTool] + tools
