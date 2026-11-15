@@ -12,7 +12,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +56,8 @@ import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Replay
@@ -81,15 +86,23 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -112,6 +125,7 @@ import dev.iyscode.movil.assistant.ContextNode
 import dev.iyscode.movil.assistant.ContextPriority
 import dev.iyscode.movil.assistant.GoogleOAuth
 import dev.iyscode.movil.assistant.GoogleService
+import dev.iyscode.movil.assistant.Graph
 import dev.iyscode.movil.assistant.GraphLinkKind
 import dev.iyscode.movil.assistant.GraphNode
 import dev.iyscode.movil.assistant.GraphNodeKind
@@ -125,6 +139,10 @@ import dev.iyscode.movil.assistant.ToolMode
 import dev.iyscode.movil.assistant.TreeFolder
 import java.text.DateFormat
 import java.util.Date
+import kotlin.math.abs
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sqrt
 
 // Asistente: Google, memoria semántica y el monitor de tu PC.
@@ -395,6 +413,7 @@ private fun MemorySection(vm: AssistantViewModel, ui: AssistantUi, nodes: List<C
     val prefs = remember { context.getSharedPreferences("assistant", Context.MODE_PRIVATE) }
     var query by rememberSaveable { mutableStateOf("") }
     var graphView by rememberSaveable { mutableStateOf(false) }
+    var focusedGraphNodeId by rememberSaveable { mutableStateOf<String?>(null) }
     val history = remember { mutableStateListOf<String>().apply { addAll(prefs.getString(HISTORY_KEY, "").orEmpty().split('\n').filter { it.isNotBlank() }) } }
     fun addHistory(term: String) {
         val clean = term.trim()
@@ -436,22 +455,43 @@ private fun MemorySection(vm: AssistantViewModel, ui: AssistantUi, nodes: List<C
         if (nodes.isEmpty()) {
             item { Card { Muted("Todavía no hay notas. Guarda la primera abajo, o toca \"Guardar en memoria\" bajo una respuesta de GUS.") } }
         } else if (graphView) {
-            item { SemanticGraphCard(visible) }
+            item { SemanticGraphCard(visible, focusedNodeId = focusedGraphNodeId, onFocusConsumed = { focusedGraphNodeId = null }) }
         } else {
             val tree = SemanticContext.buildTree(visible)
-            treeItems(tree, expandAll = query.isNotBlank(), developer = ui.developerMode, onDelete = vm::deleteMemory)
+            treeItems(
+                tree,
+                expandAll = query.isNotBlank(),
+                developer = ui.developerMode,
+                onOpenGraph = { node ->
+                    focusedGraphNodeId = "ctx:${node.id}"
+                    graphView = true
+                },
+                onDelete = vm::deleteMemory,
+            )
         }
         item { SaveMemoryCard(vm) }
         item { RetrievalProbe(vm, nodes.isNotEmpty()) }
     }
 }
 
-private fun LazyListScope.treeItems(folders: List<TreeFolder>, expandAll: Boolean, developer: Boolean, onDelete: (ContextNode) -> Unit) {
-    folders.forEach { folder -> item(key = "folder-" + folder.fullPath.joinToString("/")) { FolderView(folder, expandAll, developer, onDelete) } }
+private fun LazyListScope.treeItems(
+    folders: List<TreeFolder>,
+    expandAll: Boolean,
+    developer: Boolean,
+    onOpenGraph: (ContextNode) -> Unit,
+    onDelete: (ContextNode) -> Unit,
+) {
+    folders.forEach { folder -> item(key = "folder-" + folder.fullPath.joinToString("/")) { FolderView(folder, expandAll, developer, onOpenGraph, onDelete) } }
 }
 
 @Composable
-private fun FolderView(folder: TreeFolder, expandAll: Boolean, developer: Boolean, onDelete: (ContextNode) -> Unit) {
+private fun FolderView(
+    folder: TreeFolder,
+    expandAll: Boolean,
+    developer: Boolean,
+    onOpenGraph: (ContextNode) -> Unit,
+    onDelete: (ContextNode) -> Unit,
+) {
     var open by rememberSaveable(folder.fullPath.joinToString("/")) { mutableStateOf(folder.depth == 1) }
     val expanded = open || expandAll
     val levelName = when (folder.depth) { 1 -> "Dominio"; 2 -> "Rama"; else -> "Subtema" }
@@ -469,14 +509,19 @@ private fun FolderView(folder: TreeFolder, expandAll: Boolean, developer: Boolea
             Muted(if (developer) "$levelName · ${folder.totalNodes} · ~${folder.totalTokens} tok" else "${folder.totalNodes}", Iys.textFaint)
         }
         if (expanded) {
-            folder.subfolders.forEach { FolderView(it, expandAll, developer, onDelete) }
-            folder.nodes.forEach { node -> MemoryNodeCard(node, developer, onDelete) }
+            folder.subfolders.forEach { FolderView(it, expandAll, developer, onOpenGraph, onDelete) }
+            folder.nodes.forEach { node -> MemoryNodeCard(node, developer, onOpenGraph, onDelete) }
         }
     }
 }
 
 @Composable
-private fun MemoryNodeCard(node: ContextNode, developer: Boolean, onDelete: (ContextNode) -> Unit) {
+private fun MemoryNodeCard(
+    node: ContextNode,
+    developer: Boolean,
+    onOpenGraph: (ContextNode) -> Unit,
+    onDelete: (ContextNode) -> Unit,
+) {
     var confirm by remember { mutableStateOf(false) }
     Column(
         Modifier.padding(start = 14.dp, top = 4.dp, bottom = 4.dp).fillMaxWidth()
@@ -487,6 +532,9 @@ private fun MemoryNodeCard(node: ContextNode, developer: Boolean, onDelete: (Con
             Box(Modifier.size(8.dp).background(priorityColor(node.priority), CircleShape))
             Spacer(Modifier.width(6.dp))
             Text(node.title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            IconButton(onClick = { onOpenGraph(node) }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.Hub, "Ver en grafo", tint = Iys.violet, modifier = Modifier.size(16.dp))
+            }
             IconButton(onClick = { confirm = true }, modifier = Modifier.size(28.dp)) {
                 Icon(Icons.Filled.Delete, "Borrar", tint = Iys.textFaint, modifier = Modifier.size(16.dp))
             }
@@ -564,22 +612,40 @@ private fun RetrievalProbe(vm: AssistantViewModel, hasNodes: Boolean) {
 // ── Graph (Obsidian-style) ──────────────────────────────────────────────────
 
 @Composable
-private fun SemanticGraphCard(nodes: List<ContextNode>) {
-    val graph = remember(nodes) { SemanticContext.buildGraph(nodes) }
-    val positions = remember(graph) { mutableStateMapOf<String, GraphPoint>().apply { putAll(SemanticContext.layout(graph)) } }
-    var scale by remember { mutableStateOf(1f) }
-    var pan by remember(graph) { mutableStateOf(Offset.Zero) }
-    var selectedId by remember(graph) { mutableStateOf<String?>(null) }
-    var showLegend by rememberSaveable { mutableStateOf(true) }
+private fun SemanticGraphCard(
+    nodes: List<ContextNode>,
+    focusedNodeId: String? = null,
+    onFocusConsumed: () -> Unit = {},
+) {
+    val fullGraph = remember(nodes) { SemanticContext.buildGraph(nodes) }
+    val bridgeGraph = remember(fullGraph) { SemanticContext.bridgeSubgraph(fullGraph) }
+    val fullPositions = remember(fullGraph) { mutableStateMapOf<String, GraphPoint>().apply { putAll(SemanticContext.layout(fullGraph)) } }
+    val bridgePositions = remember(bridgeGraph) { mutableStateMapOf<String, GraphPoint>().apply { putAll(SemanticContext.layout(bridgeGraph)) } }
     var bridgesOnly by rememberSaveable { mutableStateOf(false) }
+    val activeGraph = if (bridgesOnly) bridgeGraph else fullGraph
+    val activePositions = if (bridgesOnly) bridgePositions else fullPositions
+    var scale by remember { mutableStateOf(1f) }
+    var pan by remember(nodes) { mutableStateOf(Offset.Zero) }
+    var selectedId by remember(nodes) { mutableStateOf<String?>(null) }
+    var showLegend by rememberSaveable { mutableStateOf(true) }
+    var showHelp by rememberSaveable { mutableStateOf(false) }
     var layoutSeed by remember { mutableStateOf(0) }
+    var canvas by remember { mutableStateOf(IntSize.Zero) }
+    var userAdjustedCamera by remember(nodes) { mutableStateOf(false) }
     val measurer = rememberTextMeasurer()
     // Layout coordinates are in dp; the canvas draws in pixels.
     val px = LocalDensity.current.density
-    val byId = graph.nodes.associateBy { it.id }
-    val neighbors = selectedId?.let { id -> graph.links.filter { it.source == id || it.target == id }.flatMap { listOf(it.source, it.target) }.toSet() }
+    val fullById = remember(fullGraph) { fullGraph.nodes.associateBy { it.id } }
     val labelColor = Iys.textPrimary
     val faint = Iys.textFaint
+    val secondaryColor = Iys.textSecondary
+    val borderMuted = Iys.border
+    val layerBg = Iys.surface
+    val canvasBg = if (Iys.dark) Color(0xFF0B0C14) else Color(0xFFF4F2FA)
+    val pillBg = (if (Iys.dark) Color(0xFF131522) else Color(0xFFFFFFFF)).copy(alpha = 0.92f)
+    val bridgeGold = if (Iys.dark) Color(0xFFFBBF24) else Color(0xFFB45309)
+    val semanticLinkCount = remember(fullGraph) { fullGraph.links.count { it.kind == GraphLinkKind.SEMANTIC } }
+    val contextCount = remember(fullGraph) { fullGraph.nodes.count { it.kind == GraphNodeKind.CONTEXT } }
 
     fun nodeColor(node: GraphNode): Color = when (node.kind) {
         GraphNodeKind.DOMAIN -> Iys.violet
@@ -587,103 +653,515 @@ private fun SemanticGraphCard(nodes: List<ContextNode>) {
         GraphNodeKind.CONTEXT -> priorityColor(node.priority)
     }
 
+    fun visualRadiusPx(node: GraphNode): Float {
+        val baseDp = when (node.kind) {
+            GraphNodeKind.DOMAIN -> 17f
+            GraphNodeKind.CLUSTER -> 10f
+            GraphNodeKind.CONTEXT -> when (node.priority) {
+                ContextPriority.CRITICAL -> 9.5f
+                ContextPriority.HIGH -> 8.2f
+                ContextPriority.NORMAL -> 7.2f
+            }
+        }
+        return baseDp * scale * px
+    }
+
+    fun toScreen(p: GraphPoint, size: IntSize = canvas): Offset =
+        Offset(size.width / 2f + (p.x + pan.x) * scale * px, size.height / 2f + (p.y + pan.y) * scale * px)
+
+    fun fitGraph(targetGraph: Graph = activeGraph, targetPositions: Map<String, GraphPoint> = activePositions, size: IntSize = canvas) {
+        val visiblePos = targetGraph.nodes.mapNotNull { targetPositions[it.id] }
+        if (visiblePos.isEmpty()) {
+            pan = Offset.Zero
+            scale = 1f
+            return
+        }
+        val minX = visiblePos.minOf { it.x }
+        val maxX = visiblePos.maxOf { it.x }
+        val minY = visiblePos.minOf { it.y }
+        val maxY = visiblePos.maxOf { it.y }
+        pan = Offset(-(minX + maxX) / 2f, -(minY + maxY) / 2f)
+        if (size.width <= (96 * px).toInt() || size.height <= (96 * px).toInt()) {
+            scale = 1f
+            return
+        }
+        val availW = (size.width / px - 80f).coerceAtLeast(80f)
+        val availH = (size.height / px - 70f).coerceAtLeast(80f)
+        val spanX = (maxX - minX).coerceAtLeast(80f)
+        val spanY = (maxY - minY).coerceAtLeast(80f)
+        scale = min(availW / spanX, availH / spanY).coerceIn(0.65f, 1.15f)
+    }
+
+    fun focusNode(id: String) {
+        userAdjustedCamera = true
+        selectedId = id
+        val map = if (bridgesOnly) bridgePositions else fullPositions
+        val p = map[id]
+        if (p != null) {
+            pan = Offset(-p.x, -p.y)
+            if (scale < 1.05f) scale = 1.05f
+        }
+    }
+
+    fun hitNode(offset: Offset, graphSnapshot: Graph, posSnapshot: Map<String, GraphPoint>): GraphNode? {
+        var bestNode: GraphNode? = null
+        var bestRank = Int.MAX_VALUE
+        var bestDist = Float.MAX_VALUE
+        for (node in graphSnapshot.nodes) {
+            val world = posSnapshot[node.id] ?: continue
+            val s = toScreen(world)
+            val d = (s - offset).getDistance()
+            val threshold = max(24f * px, visualRadiusPx(node) + 12f * px)
+            if (d > threshold) continue
+            val rank = when (node.kind) {
+                GraphNodeKind.CONTEXT -> 0
+                GraphNodeKind.CLUSTER -> 1
+                GraphNodeKind.DOMAIN -> 2
+            }
+            if (rank < bestRank || (rank == bestRank && d < bestDist)) {
+                bestNode = node
+                bestRank = rank
+                bestDist = d
+            }
+        }
+        return bestNode
+    }
+
+    LaunchedEffect(canvas, fullGraph) {
+        if (!userAdjustedCamera && canvas.width > (64 * px).toInt()) {
+            fitGraph(activeGraph, activePositions, canvas)
+        }
+    }
+
+    LaunchedEffect(bridgesOnly) {
+        userAdjustedCamera = false
+        if (selectedId != null && activeGraph.nodes.none { it.id == selectedId }) {
+            selectedId = null
+        }
+        if (canvas.width > (64 * px).toInt()) {
+            fitGraph(activeGraph, activePositions, canvas)
+        }
+    }
+
+    LaunchedEffect(focusedNodeId, fullGraph) {
+        val target = focusedNodeId ?: return@LaunchedEffect
+        onFocusConsumed()
+        if (fullGraph.nodes.any { it.id == target }) {
+            if (bridgesOnly && bridgeGraph.nodes.none { it.id == target }) {
+                bridgesOnly = false
+            }
+            focusNode(target)
+        }
+    }
+
+    val currentGraph by rememberUpdatedState(activeGraph)
+    val currentPositions by rememberUpdatedState(activePositions)
+    val currentBridgesOnly by rememberUpdatedState(bridgesOnly)
+
     Card {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Constelación", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            IconButton(onClick = { scale = (scale / 1.25f).coerceAtLeast(0.4f) }) { Icon(Icons.Filled.Remove, "Alejar", tint = Iys.textSecondary) }
-            Muted("${(scale * 100).toInt()}%")
-            IconButton(onClick = { scale = (scale * 1.25f).coerceAtMost(3f) }) { Icon(Icons.Filled.Add, "Acercar", tint = Iys.textSecondary) }
+            Column(Modifier.weight(1f)) {
+                Text("Constelación", style = MaterialTheme.typography.titleMedium)
+                Muted("$contextCount ${if (contextCount == 1) "nota" else "notas"} · $semanticLinkCount ${if (semanticLinkCount == 1) "puente" else "puentes"}", faint)
+            }
+            IconButton(onClick = { userAdjustedCamera = true; scale = (scale / 1.25f).coerceIn(0.45f, 3f) }, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Filled.Remove, "Alejar", tint = Iys.accent, modifier = Modifier.size(18.dp))
+            }
+            Text(
+                "${(scale * 100).toInt()}%",
+                style = MaterialTheme.typography.bodySmall,
+                color = secondaryColor,
+                modifier = Modifier.clickable { userAdjustedCamera = false; fitGraph() }.padding(horizontal = 2.dp),
+            )
+            IconButton(onClick = { userAdjustedCamera = true; scale = (scale * 1.25f).coerceIn(0.45f, 3f) }, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Filled.Add, "Acercar", tint = Iys.accent, modifier = Modifier.size(18.dp))
+            }
+            IconButton(onClick = { userAdjustedCamera = false; fitGraph() }, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Filled.CenterFocusStrong, "Centrar grafo", tint = Iys.accent, modifier = Modifier.size(17.dp))
+            }
+            IconButton(
+                onClick = {
+                    layoutSeed += 1
+                    userAdjustedCamera = false
+                    if (bridgesOnly) {
+                        bridgePositions.clear()
+                        bridgePositions.putAll(SemanticContext.layout(bridgeGraph, seed = layoutSeed))
+                        fitGraph(bridgeGraph, bridgePositions, canvas)
+                    } else {
+                        fullPositions.clear()
+                        fullPositions.putAll(SemanticContext.layout(fullGraph, seed = layoutSeed))
+                        fitGraph(fullGraph, fullPositions, canvas)
+                    }
+                },
+                modifier = Modifier.size(30.dp),
+            ) {
+                Icon(Icons.Filled.Refresh, "Reorganizar", tint = Iys.accent, modifier = Modifier.size(17.dp))
+            }
+            IconButton(onClick = { showHelp = !showHelp }, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Filled.Info, "Ayuda de gestos", tint = if (showHelp) labelColor else Iys.accent, modifier = Modifier.size(17.dp))
+            }
         }
-        Muted("Arrastra los círculos para acomodarlos, arrastra el fondo para moverte y toca uno para ver su detalle.")
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Pill("Todo", !bridgesOnly, onClick = { bridgesOnly = false })
-            Pill("Solo puentes", bridgesOnly, onClick = { bridgesOnly = true })
-            Pill(if (showLegend) "Ocultar leyenda" else "Leyenda", showLegend, onClick = { showLegend = !showLegend })
-            Pill("Reorganizar", false, onClick = {
-                layoutSeed += 1
-                positions.clear(); positions.putAll(SemanticContext.layout(graph, seed = layoutSeed))
-                pan = Offset.Zero; scale = 1f
-            })
+            Pill("Puentes ($semanticLinkCount)", bridgesOnly, onClick = { bridgesOnly = true })
+            Pill("Leyenda", showLegend, onClick = { showLegend = !showLegend })
+        }
+        if (showHelp) {
+            Muted("Toca un nodo para enfocar sus conexiones · Arrastra círculos o fondo · Pellizca para zoom.", faint)
         }
         Box(
             Modifier.fillMaxWidth().height(360.dp)
-                .background(if (Iys.dark) Color(0xFF0D0D16) else Color(0xFFF1EFF7), RoundedCornerShape(16.dp))
-                .border(1.dp, Iys.border, RoundedCornerShape(16.dp)),
+                .background(canvasBg, RoundedCornerShape(16.dp))
+                .border(1.dp, borderMuted, RoundedCornerShape(16.dp)),
+            contentAlignment = Alignment.Center,
         ) {
-            var canvas by remember { mutableStateOf(IntSize.Zero) }
-            fun toScreen(p: GraphPoint) = Offset(canvas.width / 2f + (p.x + pan.x) * scale * px, canvas.height / 2f + (p.y + pan.y) * scale * px)
-            fun hit(offset: Offset): GraphNode? = graph.nodes.minByOrNull { node ->
-                val s = toScreen(positions[node.id] ?: GraphPoint(0f, 0f))
-                (s - offset).getDistance()
-            }?.takeIf { node ->
-                val s = toScreen(positions[node.id] ?: GraphPoint(0f, 0f))
-                (s - offset).getDistance() <= (node.radius / 2.2f + 10) * px * scale.coerceAtLeast(0.8f)
-            }
-            var dragging by remember { mutableStateOf<String?>(null) }
             Canvas(
-                Modifier.fillMaxSize()
+                Modifier.fillMaxSize().clipToBounds()
                     .onSizeChanged { canvas = it }
-                    .pointerInput(graph) {
-                        detectTapGestures(onTap = { offset -> selectedId = hit(offset)?.id })
+                    .pointerInput(Unit) {
+                        detectTapGestures(onTap = { offset ->
+                            val tapped = hitNode(offset, currentGraph, currentPositions)
+                            selectedId = if (selectedId == tapped?.id) null else tapped?.id
+                        })
                     }
-                    .pointerInput(graph) {
-                        detectDragGestures(
-                            onDragStart = { offset -> dragging = hit(offset)?.id },
-                            onDragEnd = { dragging = null },
-                            onDragCancel = { dragging = null },
-                        ) { change, amount ->
-                            change.consume()
-                            val id = dragging
-                            if (id != null) {
-                                val p = positions[id] ?: GraphPoint(0f, 0f)
-                                positions[id] = GraphPoint(p.x + amount.x / (scale * px), p.y + amount.y / (scale * px))
-                            } else {
-                                pan += Offset(amount.x / (scale * px), amount.y / (scale * px))
+                    .pointerInput(Unit) {
+                        val slop = viewConfiguration.touchSlop
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val downPos = down.position
+                            var draggingId: String? = null
+                            var startedDrag = false
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val pressed = event.changes.filter { it.pressed }
+                                if (pressed.isEmpty()) break
+                                if (pressed.size >= 2) {
+                                    draggingId = null
+                                    startedDrag = true
+                                    userAdjustedCamera = true
+                                    val z = event.calculateZoom()
+                                    val p = event.calculatePan()
+                                    if (z != 1f) scale = (scale * z).coerceIn(0.45f, 3.0f)
+                                    if (p != Offset.Zero) pan += Offset(p.x / (scale * px), p.y / (scale * px))
+                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                } else {
+                                    val change = pressed.first()
+                                    val delta = change.positionChange()
+                                    if (!startedDrag && hypot(change.position.x - downPos.x, change.position.y - downPos.y) > slop) {
+                                        startedDrag = true
+                                        draggingId = hitNode(downPos, currentGraph, currentPositions)?.id
+                                    }
+                                    if (startedDrag && delta != Offset.Zero) {
+                                        val id = draggingId
+                                        if (id != null) {
+                                            val targetMap = if (currentBridgesOnly) bridgePositions else fullPositions
+                                            val cur = targetMap[id] ?: GraphPoint(0f, 0f)
+                                            targetMap[id] = GraphPoint(cur.x + delta.x / (scale * px), cur.y + delta.y / (scale * px))
+                                        } else {
+                                            userAdjustedCamera = true
+                                            pan += Offset(delta.x / (scale * px), delta.y / (scale * px))
+                                        }
+                                        change.consume()
+                                    }
+                                }
                             }
                         }
                     },
             ) {
-                // Domain halos first, so everything else sits on top.
-                graph.nodes.filter { it.kind == GraphNodeKind.DOMAIN }.forEach { hub ->
-                    val members = graph.nodes.filter { it.domain == hub.domain }.mapNotNull { positions[it.id] }
-                    if (members.isNotEmpty()) {
-                        val cx = members.map { it.x }.average().toFloat()
-                        val cy = members.map { it.y }.average().toFloat()
-                        val reach = members.maxOf { sqrt((it.x - cx) * (it.x - cx) + (it.y - cy) * (it.y - cy)) } + 40f
-                        drawCircle(nodeColor(hub).copy(alpha = 0.07f), reach * scale * px, toScreen(GraphPoint(cx, cy)))
+                val graph = activeGraph
+                val neighbors = selectedId?.let { id ->
+                    graph.links.filter { it.source == id || it.target == id }.flatMap { listOf(it.source, it.target) }.toSet()
+                }
+                val noteCount = graph.nodes.count { it.kind == GraphNodeKind.CONTEXT }
+                val semanticTotal = graph.links.count { it.kind == GraphLinkKind.SEMANTIC }
+                val canvasCenter = Offset(size.width / 2f, size.height / 2f)
+                val domainCentroids = mutableMapOf<String, Offset>()
+
+                // 1. Subtle framed domain halos (only in "Todo" mode).
+                if (!bridgesOnly) {
+                    val selectedDomain = selectedId?.let { id -> graph.nodes.firstOrNull { it.id == id }?.domain }
+                    graph.nodes.filter { it.kind == GraphNodeKind.DOMAIN }.forEach { hub ->
+                        val members = graph.nodes.filter { it.domain == hub.domain }.mapNotNull { activePositions[it.id] }
+                        if (members.isNotEmpty()) {
+                            val cx = members.map { it.x }.average().toFloat()
+                            val cy = members.map { it.y }.average().toFloat()
+                            val center = toScreen(GraphPoint(cx, cy))
+                            domainCentroids[hub.domain] = center
+                            val maxReach = members.maxOf { sqrt((it.x - cx) * (it.x - cx) + (it.y - cy) * (it.y - cy)) }
+                            val r = min(size.width * 0.44f, (maxReach + 22f) * scale * px)
+                            val focusedDomain = selectedDomain == hub.domain
+                            val hubColor = nodeColor(hub)
+                            drawCircle(hubColor.copy(alpha = if (focusedDomain) 0.085f else 0.035f), r, center)
+                            drawCircle(
+                                hubColor.copy(alpha = if (focusedDomain) 0.36f else 0.14f),
+                                r,
+                                center,
+                                style = Stroke(width = 1f * px, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f * px, 5f * px))),
+                            )
+                        }
                     }
                 }
-                graph.links.forEach { link ->
-                    if (bridgesOnly && link.kind == GraphLinkKind.HIERARCHY) return@forEach
-                    val a = positions[link.source] ?: return@forEach
-                    val b = positions[link.target] ?: return@forEach
+
+                // 2. Hierarchy links first, then curved quadratic semantic bridges.
+                graph.links.filter { it.kind == GraphLinkKind.HIERARCHY }.forEach { link ->
+                    val a = activePositions[link.source] ?: return@forEach
+                    val b = activePositions[link.target] ?: return@forEach
                     val lit = selectedId == null || link.source == selectedId || link.target == selectedId
-                    val semantic = link.kind == GraphLinkKind.SEMANTIC
                     drawLine(
-                        color = (if (semantic) Iys.yellow else faint).copy(alpha = if (lit) 0.85f else 0.15f),
-                        start = toScreen(a), end = toScreen(b), strokeWidth = (if (semantic) 1.6f else 1.2f) * density,
-                        pathEffect = if (semantic) PathEffect.dashPathEffect(floatArrayOf(10f, 8f)) else null,
+                        color = faint.copy(alpha = if (lit) 0.45f else 0.10f),
+                        start = toScreen(a),
+                        end = toScreen(b),
+                        strokeWidth = (if (lit) 1.25f else 0.9f) * px,
                     )
                 }
-                graph.nodes.forEach { node ->
-                    val p = positions[node.id] ?: return@forEach
-                    val center = toScreen(p)
-                    val dim = neighbors != null && node.id !in neighbors
-                    val color = nodeColor(node).copy(alpha = if (dim) 0.25f else 1f)
-                    val r = node.radius * scale * density / 2.2f
-                    if (node.kind == GraphNodeKind.CONTEXT) {
-                        drawCircle(color, r, center)
-                    } else {
-                        drawCircle(color.copy(alpha = if (dim) 0.08f else 0.18f), r, center)
-                        drawCircle(color, r, center, style = Stroke(width = 2f * density))
+
+                data class BridgeBadge(val point: Offset, val normal: Offset, val text: String, val priority: Boolean)
+                val bridgeBadges = mutableListOf<BridgeBadge>()
+                graph.links.filter { it.kind == GraphLinkKind.SEMANTIC }.forEach { link ->
+                    val a = activePositions[link.source] ?: return@forEach
+                    val b = activePositions[link.target] ?: return@forEach
+                    val pA = toScreen(a)
+                    val pB = toScreen(b)
+                    val lit = selectedId == null || link.source == selectedId || link.target == selectedId
+                    val (ctrl, curveMid, normal) = bridgeControlAndMid(pA, pB, canvasCenter, archCapPx = 28f * scale * px)
+                    val path = Path().apply {
+                        moveTo(pA.x, pA.y)
+                        quadraticTo(ctrl.x, ctrl.y, pB.x, pB.y)
                     }
-                    if (node.id == selectedId) drawCircle(labelColor, r + 4 * density, center, style = Stroke(width = 1.5f * density))
-                    val showLabel = node.kind != GraphNodeKind.CONTEXT || node.id == selectedId || scale >= 1.2f || neighbors?.contains(node.id) == true
-                    if (showLabel && !dim) {
-                        val label = if (node.label.length > 22) node.label.take(20) + "…" else node.label
-                        val layout = measurer.measure(label, TextStyle(fontSize = 10.sp, color = labelColor,
-                            fontWeight = if (node.kind == GraphNodeKind.DOMAIN) FontWeight.Bold else FontWeight.Normal))
-                        drawText(layout, topLeft = Offset(center.x - layout.size.width / 2f, center.y + r + 3 * density))
+                    val baseWidth = (if (lit) 1.8f + min(1.0f, max(0, link.strength - 1) * 0.4f) else 1.1f) * px
+                    if (lit) {
+                        drawPath(path, color = bridgeGold.copy(alpha = 0.18f), style = Stroke(width = baseWidth + 3.5f * px))
+                    }
+                    drawPath(
+                        path,
+                        color = bridgeGold.copy(alpha = if (lit) 0.92f else 0.15f),
+                        style = Stroke(width = baseWidth, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f * px, 4f * px))),
+                    )
+                    val isSelectedEdge = selectedId != null && (link.source == selectedId || link.target == selectedId)
+                    if (lit && (bridgesOnly || isSelectedEdge || semanticTotal <= 3)) {
+                        val clean = link.label.removePrefix("Comparten: ")
+                        val badge = if (clean.length > 22) clean.take(20) + "…" else clean
+                        bridgeBadges.add(BridgeBadge(curveMid, normal, badge, isSelectedEdge || bridgesOnly))
+                    }
+                }
+
+                // 3. Reserve node circles in 2D occupied table so labels never cross dots; erase lines inside rings.
+                val occupiedRects = mutableListOf<Rect>()
+                graph.nodes.forEach { node ->
+                    val p = activePositions[node.id] ?: return@forEach
+                    val center = toScreen(p)
+                    val r = visualRadiusPx(node)
+                    val dim = neighbors != null && node.id !in neighbors
+                    val tint = nodeColor(node).copy(alpha = if (dim) 0.25f else 1f)
+                    occupiedRects.add(Rect(center.x - r - 3f * px, center.y - r - 3f * px, center.x + r + 3f * px, center.y + r + 3f * px))
+
+                    if (node.kind == GraphNodeKind.CONTEXT) {
+                        if (!dim && (node.priority == ContextPriority.CRITICAL || node.id == selectedId)) {
+                            drawCircle(tint.copy(alpha = 0.24f), r + 4f * px, center)
+                        }
+                        drawCircle(canvasBg, r + 1.8f * px, center)
+                        drawCircle(tint, r, center)
+                    } else {
+                        drawCircle(canvasBg, r, center)
+                        drawCircle(tint.copy(alpha = if (dim) 0.08f else 0.16f), r, center)
+                        drawCircle(tint, r, center, style = Stroke(width = (if (node.kind == GraphNodeKind.DOMAIN) 2.2f else 1.6f) * px))
+                        if (node.kind == GraphNodeKind.DOMAIN) {
+                            val countLayout = measurer.measure(
+                                node.childCount.toString(),
+                                TextStyle(
+                                    fontSize = max(9f, 10f * min(1.2f, scale)).sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = tint,
+                                ),
+                            )
+                            drawText(
+                                countLayout,
+                                topLeft = Offset(center.x - countLayout.size.width / 2f, center.y - countLayout.size.height / 2f),
+                            )
+                        } else {
+                            drawCircle(tint, 2.4f * px, center)
+                        }
+                    }
+                    if (node.id == selectedId) {
+                        drawCircle(labelColor, r + 4f * px, center, style = Stroke(width = 1.8f * px))
+                    }
+                }
+
+                // 4. Priority-ordered non-overlapping capsule labels clamped inside viewport.
+                val orderedForLabels = graph.nodes.sortedBy { n ->
+                    when {
+                        n.id == selectedId -> 0
+                        neighbors?.contains(n.id) == true -> 1
+                        n.kind == GraphNodeKind.DOMAIN -> 2
+                        n.kind == GraphNodeKind.CONTEXT -> 3 + when (n.priority) {
+                            ContextPriority.CRITICAL -> 0
+                            ContextPriority.HIGH -> 1
+                            ContextPriority.NORMAL -> 2
+                        }
+                        else -> 6
+                    }
+                }
+
+                for (node in orderedForLabels) {
+                    val p = activePositions[node.id] ?: continue
+                    val dim = neighbors != null && node.id !in neighbors
+                    if (dim) continue
+                    val isSelected = node.id == selectedId
+                    val isNeighbor = neighbors?.contains(node.id) == true
+                    val shouldShow = when (node.kind) {
+                        GraphNodeKind.DOMAIN -> true
+                        GraphNodeKind.CONTEXT -> noteCount <= 14 || scale >= 1.05f || isSelected || isNeighbor
+                        GraphNodeKind.CLUSTER -> isSelected || isNeighbor || scale >= 1.25f
+                    }
+                    if (!shouldShow) continue
+
+                    val center = toScreen(p)
+                    val r = visualRadiusPx(node)
+                    val maxChars = if (node.kind == GraphNodeKind.DOMAIN) 24 else 22
+                    val label = if (node.label.length > maxChars) node.label.take(maxChars - 2) + "…" else node.label
+                    val fontSize = when (node.kind) {
+                        GraphNodeKind.DOMAIN -> 10.5.sp
+                        GraphNodeKind.CONTEXT -> 9.8.sp
+                        GraphNodeKind.CLUSTER -> 9.sp
+                    }
+                    val weight = when (node.kind) {
+                        GraphNodeKind.DOMAIN -> FontWeight.Bold
+                        GraphNodeKind.CONTEXT -> FontWeight.SemiBold
+                        GraphNodeKind.CLUSTER -> FontWeight.Medium
+                    }
+                    val textColor = if (node.kind == GraphNodeKind.CLUSTER && !isSelected) secondaryColor else labelColor
+                    val layout = measurer.measure(
+                        label,
+                        TextStyle(fontSize = fontSize, fontWeight = weight, color = textColor),
+                        maxLines = 1,
+                    )
+                    val boxW = layout.size.width + 10f * px
+                    val boxH = layout.size.height + 4f * px
+                    val domainCenter = domainCentroids[node.domain] ?: canvasCenter
+                    val preferAbove = center.y < domainCenter.y - 6f * px
+
+                    val chosen = placeLabelRect(
+                        center = center,
+                        radiusPx = r,
+                        boxW = boxW,
+                        boxH = boxH,
+                        canvasW = size.width,
+                        canvasH = size.height,
+                        gapPx = 5f * px,
+                        padPx = 6f * px,
+                        preferAbove = preferAbove,
+                        allowFallback = isSelected || node.kind == GraphNodeKind.DOMAIN || (node.kind == GraphNodeKind.CONTEXT && noteCount <= 6),
+                        occupied = occupiedRects,
+                    ) ?: continue
+
+                    occupiedRects.add(chosen)
+                    val corner = CornerRadius(6f * px, 6f * px)
+                    drawRoundRect(pillBg, topLeft = chosen.topLeft, size = chosen.size, cornerRadius = corner)
+                    val pillBorder = when {
+                        isSelected -> labelColor
+                        node.kind == GraphNodeKind.DOMAIN -> nodeColor(node).copy(alpha = 0.55f)
+                        else -> borderMuted.copy(alpha = 0.8f)
+                    }
+                    drawRoundRect(
+                        pillBorder,
+                        topLeft = chosen.topLeft,
+                        size = chosen.size,
+                        cornerRadius = corner,
+                        style = Stroke(width = (if (isSelected) 1.2f else 0.8f) * px),
+                    )
+                    drawText(layout, topLeft = Offset(chosen.left + 5f * px, chosen.top + 2f * px))
+                }
+
+                // 5. Bridge keyword pills on curve midpoints with normal nudges to avoid label collisions.
+                bridgeBadges.forEach { badge ->
+                    val layout = measurer.measure(
+                        badge.text,
+                        TextStyle(fontSize = 8.8.sp, fontWeight = FontWeight.SemiBold, color = bridgeGold),
+                        maxLines = 1,
+                    )
+                    val boxW = layout.size.width + 10f * px
+                    val boxH = layout.size.height + 4f * px
+                    val pad = 6f * px
+                    val candidates = listOf(0f, 14f * px, -14f * px, 24f * px, -24f * px, 34f * px, -34f * px).map { shift ->
+                        val cx = badge.point.x + badge.normal.x * shift
+                        val cy = badge.point.y + badge.normal.y * shift
+                        val left = (cx - boxW / 2f).coerceIn(pad, max(pad, size.width - pad - boxW))
+                        val top = (cy - boxH / 2f).coerceIn(pad, max(pad, size.height - pad - boxH))
+                        Rect(left, top, left + boxW, top + boxH)
+                    }
+                    val chosenBadge = candidates.firstOrNull { cand ->
+                        val padded = Rect(cand.left - 2f * px, cand.top - 2f * px, cand.right + 2f * px, cand.bottom + 2f * px)
+                        occupiedRects.none { it.overlaps(padded) }
+                    } ?: if (badge.priority) candidates.first() else null
+                    val rect = chosenBadge ?: return@forEach
+                    occupiedRects.add(rect)
+                    val corner = CornerRadius(5f * px, 5f * px)
+                    drawRoundRect(pillBg, topLeft = rect.topLeft, size = rect.size, cornerRadius = corner)
+                    drawRoundRect(
+                        bridgeGold.copy(alpha = 0.6f),
+                        topLeft = rect.topLeft,
+                        size = rect.size,
+                        cornerRadius = corner,
+                        style = Stroke(width = 0.8f * px),
+                    )
+                    drawText(layout, topLeft = Offset(rect.left + 5f * px, rect.top + 2f * px))
+                }
+            }
+            if (bridgesOnly && bridgeGraph.links.isEmpty()) {
+                Column(
+                    Modifier.padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(Icons.Filled.Hub, null, tint = bridgeGold, modifier = Modifier.size(28.dp))
+                    Text("Aún no hay puentes entre ramas", style = MaterialTheme.typography.titleSmall, color = labelColor)
+                    Muted("Guarda dos notas con conceptos clave compartidos en distintas ramas para enlazarlas.")
+                    Pill("Ver constelación", true, onClick = { bridgesOnly = false })
+                }
+            }
+        }
+        selectedId?.let { fullById[it] }?.let { node ->
+            HorizontalDivider(color = borderMuted)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    Modifier.size(10.dp).let { mod ->
+                        if (node.kind == GraphNodeKind.CONTEXT) mod.background(nodeColor(node), CircleShape)
+                        else mod.border(2.dp, nodeColor(node), CircleShape)
+                    },
+                )
+                Text(node.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                IconButton(onClick = { selectedId = null }, modifier = Modifier.size(26.dp)) {
+                    Icon(Icons.Filled.Close, "Cerrar detalle", tint = faint, modifier = Modifier.size(16.dp))
+                }
+            }
+            Muted(node.path.joinToString(" › "), Iys.accent)
+            Muted(node.summary)
+            val related = fullGraph.links
+                .filter { it.source == node.id || it.target == node.id }
+                .sortedBy { if (it.kind == GraphLinkKind.SEMANTIC) 0 else 1 }
+            if (related.isNotEmpty()) {
+                Text("Conectado con", style = MaterialTheme.typography.labelLarge)
+                related.forEach { link ->
+                    val other = fullById[if (link.source == node.id) link.target else link.source] ?: return@forEach
+                    val isSemantic = link.kind == GraphLinkKind.SEMANTIC
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .background(layerBg, RoundedCornerShape(8.dp))
+                            .clickable {
+                                if (bridgesOnly && bridgeGraph.nodes.none { it.id == other.id }) {
+                                    bridgesOnly = false
+                                }
+                                focusNode(other.id)
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(other.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.width(8.dp))
+                        Muted(
+                            if (isSemantic) link.label.removePrefix("Comparten: ") else "carpeta",
+                            if (isSemantic) bridgeGold else faint,
+                        )
                     }
                 }
             }
@@ -697,26 +1175,80 @@ private fun SemanticGraphCard(nodes: List<ContextNode>) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 LegendRow(Iys.violet, "Dominio", ring = true)
                 LegendRow(Iys.accent, "Rama", ring = true)
-                LegendRow(Iys.yellow, "Puente", dashed = true)
+                LegendRow(bridgeGold, "Puente", dashed = true)
             }
         }
-        Muted("${graph.nodes.count { it.kind == GraphNodeKind.CONTEXT }} notas · ${graph.links.count { it.kind == GraphLinkKind.SEMANTIC }} puentes", Iys.textFaint)
-        selectedId?.let { byId[it] }?.let { node ->
-            HorizontalDivider(color = Iys.border)
-            Text(node.label, style = MaterialTheme.typography.titleMedium)
-            Muted(node.path.joinToString(" › "), Iys.accent)
-            Muted(node.summary)
-            val related = graph.links.filter { it.source == node.id || it.target == node.id }
-            if (related.isNotEmpty()) {
-                Text("Conectado con", style = MaterialTheme.typography.labelLarge)
-                related.forEach { link ->
-                    val other = byId[if (link.source == node.id) link.target else link.source] ?: return@forEach
-                    Row(Modifier.fillMaxWidth().clickable { selectedId = other.id }.padding(vertical = 3.dp)) {
-                        Text(other.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Muted(if (link.kind == GraphLinkKind.SEMANTIC) link.label else "carpeta", Iys.textFaint)
-                    }
-                }
-            }
+    }
+}
+
+private fun bridgeControlAndMid(a: Offset, b: Offset, center: Offset, archCapPx: Float): Triple<Offset, Offset, Offset> {
+    val midX = (a.x + b.x) / 2f
+    val midY = (a.y + b.y) / 2f
+    val dx = b.x - a.x
+    val dy = b.y - a.y
+    val dist = max(1f, hypot(dx, dy))
+    var nx = -dy / dist
+    var ny = dx / dist
+    if ((midX - center.x) * nx + (midY - center.y) * ny < 0f) {
+        nx = -nx
+        ny = -ny
+    }
+    val arch = min(archCapPx, dist * 0.2f)
+    val ctrl = Offset(midX + nx * arch, midY + ny * arch)
+    val curveMid = Offset(
+        0.25f * a.x + 0.5f * ctrl.x + 0.25f * b.x,
+        0.25f * a.y + 0.5f * ctrl.y + 0.25f * b.y,
+    )
+    return Triple(ctrl, curveMid, Offset(nx, ny))
+}
+
+private fun placeLabelRect(
+    center: Offset,
+    radiusPx: Float,
+    boxW: Float,
+    boxH: Float,
+    canvasW: Float,
+    canvasH: Float,
+    gapPx: Float,
+    padPx: Float,
+    preferAbove: Boolean,
+    allowFallback: Boolean,
+    occupied: List<Rect>,
+): Rect? {
+    val edgeInset = 4f * (gapPx / 5f).coerceAtLeast(1f)
+    val allClamped = mutableListOf<Rect>()
+    for (ringGap in listOf(gapPx, gapPx * 2.2f)) {
+        val below = Offset(center.x - boxW / 2f, center.y + radiusPx + ringGap)
+        val above = Offset(center.x - boxW / 2f, center.y - radiusPx - ringGap - boxH)
+        val right = Offset(center.x + radiusPx + ringGap, center.y - boxH / 2f)
+        val left = Offset(center.x - radiusPx - ringGap - boxW, center.y - boxH / 2f)
+        val belowRight = Offset(center.x - edgeInset, center.y + radiusPx + ringGap)
+        val belowLeft = Offset(center.x + edgeInset - boxW, center.y + radiusPx + ringGap)
+        val aboveRight = Offset(center.x - edgeInset, center.y - radiusPx - ringGap - boxH)
+        val aboveLeft = Offset(center.x + edgeInset - boxW, center.y - radiusPx - ringGap - boxH)
+        val ordered = if (preferAbove) {
+            listOf(above, below, right, left, aboveRight, aboveLeft, belowRight, belowLeft)
+        } else {
+            listOf(below, above, right, left, belowRight, belowLeft, aboveRight, aboveLeft)
+        }
+        val clamped = ordered.map { origin ->
+            val x = origin.x.coerceIn(padPx, max(padPx, canvasW - padPx - boxW))
+            val y = origin.y.coerceIn(padPx, max(padPx, canvasH - padPx - boxH))
+            Rect(x, y, x + boxW, y + boxH)
+        }
+        val clear = clamped.firstOrNull { candidate ->
+            val padded = Rect(candidate.left - 2f, candidate.top - 2f, candidate.right + 2f, candidate.bottom + 2f)
+            occupied.none { it.overlaps(padded) }
+        }
+        if (clear != null) return clear
+        allClamped.addAll(clamped)
+    }
+    if (!allowFallback) return null
+    return allClamped.minByOrNull { candidate ->
+        occupied.sumOf { other ->
+            val ix = min(candidate.right, other.right) - max(candidate.left, other.left)
+            val iy = min(candidate.bottom, other.bottom) - max(candidate.top, other.top)
+            if (ix > 0f && iy > 0f) (ix * iy).toDouble() else 0.0
         }
     }
 }

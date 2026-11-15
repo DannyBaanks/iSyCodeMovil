@@ -61,6 +61,23 @@ final class AssistantTests: XCTestCase {
         var closest = Double.infinity
         for i in points.indices { for j in points.indices where j > i { closest = min(closest, hypot(points[i].x - points[j].x, points[i].y - points[j].y)) } }
         XCTAssertGreaterThan(closest, 30)
+
+        let bridgeOnly = SemanticContext.bridgeSubgraph(from: graph)
+        XCTAssertEqual(Set(bridgeOnly.nodes.map(\.id)), ["b", "d"])
+        XCTAssertEqual(bridgeOnly.links.count, 1)
+
+        // With the 5th engineering note ("android"), both cross-branch bridges surface.
+        let readmeNodes = nodes + [
+            ContextNode(id: "e", title: "Builds del daemon", summary: "El daemon de la PC avisa cuando termina un build de iOS o Android.",
+                        path: ["Ingeniería", "Modelos y agentes", "Contexto y herramientas"], priority: .high),
+        ]
+        let richGraph = SemanticContext.buildGraph(readmeNodes)
+        XCTAssertEqual(richGraph.links.filter { $0.kind == .semantic }.count, 2)
+        let richLayout = SemanticContext.layout(richGraph)
+        let richPoints = Array(richLayout.values)
+        var richClosest = Double.infinity
+        for i in richPoints.indices { for j in richPoints.indices where j > i { richClosest = min(richClosest, hypot(richPoints[i].x - richPoints[j].x, richPoints[i].y - richPoints[j].y)) } }
+        XCTAssertGreaterThan(richClosest, 35)
     }
 
     func testCatalogRoutingAndConfirmation() {
