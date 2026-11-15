@@ -584,7 +584,7 @@ private struct SemanticGraphCard: View {
     @State private var dragging: String?
     @State private var lastDrag: CGSize = .zero
     @State private var canvasSize: CGSize = .zero
-    @State private var didInitialFit = false
+    @State private var userAdjustedCamera = false
 
     private var activeGraph: SemanticGraph { bridgesOnly ? bridgeGraph : fullGraph }
     private var activePositions: [String: CGPoint] { bridgesOnly ? bridgePositions : fullPositions }
@@ -620,6 +620,7 @@ private struct SemanticGraphCard: View {
             consumeRequestedFocus()
         }
         .onChange(of: bridgesOnly) { _ in
+            userAdjustedCamera = false
             withAnimation(.easeOut(duration: 0.2)) {
                 if let id = selectedId, !activeGraph.nodes.contains(where: { $0.id == id }) {
                     selectedId = nil
@@ -642,6 +643,7 @@ private struct SemanticGraphCard: View {
                 Button { zoom(by: 1 / 1.25) } label: { Image(systemName: "minus.magnifyingglass").font(.system(size: 13)) }
                     .accessibilityLabel("Alejar")
                 Button {
+                    userAdjustedCamera = false
                     withAnimation(.easeOut(duration: 0.2)) { fitGraph(to: canvasSize) }
                 } label: {
                     Text("\(Int(scale * 100))%").font(OCTypography.metaMono).foregroundColor(OCColor.textSecondary)
@@ -651,11 +653,13 @@ private struct SemanticGraphCard: View {
                 Button { zoom(by: 1.25) } label: { Image(systemName: "plus.magnifyingglass").font(.system(size: 13)) }
                     .accessibilityLabel("Acercar")
                 Button {
+                    userAdjustedCamera = false
                     withAnimation(.easeOut(duration: 0.2)) { fitGraph(to: canvasSize) }
                 } label: { Image(systemName: "scope").font(.system(size: 13)) }
                     .accessibilityLabel("Centrar grafo")
                 Button {
                     seed += 1
+                    userAdjustedCamera = false
                     withAnimation(.easeOut(duration: 0.25)) {
                         if bridgesOnly {
                             bridgePositions = SemanticContext.layout(bridgeGraph, seed: seed)
@@ -706,16 +710,14 @@ private struct SemanticGraphCard: View {
             }
             .onAppear {
                 canvasSize = geo.size
-                if !didInitialFit && geo.size.width > 10 {
+                if !userAdjustedCamera && geo.size.width > 64 {
                     fitGraph(to: geo.size)
-                    didInitialFit = true
                 }
             }
             .onChange(of: geo.size) { newSize in
                 canvasSize = newSize
-                if !didInitialFit && newSize.width > 10 {
+                if !userAdjustedCamera && newSize.width > 64 {
                     fitGraph(to: newSize)
-                    didInitialFit = true
                 }
             }
         }
@@ -733,11 +735,11 @@ private struct SemanticGraphCard: View {
         if !preserveExisting {
             fullPositions = SemanticContext.layout(built, seed: seed)
             bridgePositions = SemanticContext.layout(bridged, seed: seed)
+            userAdjustedCamera = false
         }
         if let id = selectedId, !built.nodes.contains(where: { $0.id == id }) { selectedId = nil }
-        if canvasSize.width > 10 {
+        if !userAdjustedCamera && canvasSize.width > 64 {
             fitGraph(to: canvasSize)
-            didInitialFit = true
         }
     }
 
@@ -754,6 +756,7 @@ private struct SemanticGraphCard: View {
     }
 
     private func focusNode(_ id: String) {
+        userAdjustedCamera = true
         selectedId = id
         if let p = activePositions[id] {
             pan = CGSize(width: -p.x, height: -p.y)
@@ -762,6 +765,7 @@ private struct SemanticGraphCard: View {
     }
 
     private func zoom(by factor: CGFloat) {
+        userAdjustedCamera = true
         withAnimation(.easeOut(duration: 0.15)) {
             scale = min(3.0, max(0.45, scale * factor))
         }
@@ -785,9 +789,9 @@ private struct SemanticGraphCard: View {
         }
         let spanX = max(80, maxX - minX)
         let spanY = max(80, maxY - minY)
-        let fitX = (size.width - 104) / spanX
-        let fitY = (size.height - 84) / spanY
-        scale = min(1.3, max(0.65, min(fitX, fitY)))
+        let fitX = (size.width - 64) / spanX
+        let fitY = (size.height - 60) / spanY
+        scale = min(1.30, max(0.65, min(fitX, fitY)))
     }
 
     private func color(_ node: GraphNode) -> Color {
@@ -842,7 +846,7 @@ private struct SemanticGraphCard: View {
         return bestMatch?.node
     }
 
-    private func bridgeGeometry(from a: CGPoint, to b: CGPoint, center: CGPoint) -> (control: CGPoint, midpoint: CGPoint) {
+    private func bridgeGeometry(from a: CGPoint, to b: CGPoint, center: CGPoint) -> (control: CGPoint, midpoint: CGPoint, normal: CGPoint) {
         let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
         let dx = b.x - a.x, dy = b.y - a.y
         let dist = max(1, hypot(dx, dy))
@@ -853,7 +857,7 @@ private struct SemanticGraphCard: View {
         let arch = min(28 * scale, dist * 0.2)
         let ctrl = CGPoint(x: mid.x + nx * arch, y: mid.y + ny * arch)
         let curveMid = CGPoint(x: 0.25 * a.x + 0.5 * ctrl.x + 0.25 * b.x, y: 0.25 * a.y + 0.5 * ctrl.y + 0.25 * b.y)
-        return (ctrl, curveMid)
+        return (ctrl, curveMid, CGPoint(x: nx, y: ny))
     }
 
     private func canvas(size: CGSize) -> some View {
@@ -863,7 +867,6 @@ private struct SemanticGraphCard: View {
             Set(graph.links.filter { $0.source == id || $0.target == id }.flatMap { [$0.source, $0.target] })
         }
         let noteCount = graph.nodes.filter { $0.kind == .context }.count
-        let clusterCount = graph.nodes.filter { $0.kind == .cluster }.count
         let semanticTotal = graph.links.filter { $0.kind == .semantic }.count
 
         return Canvas { context, canvasSize in
@@ -891,7 +894,7 @@ private struct SemanticGraphCard: View {
             }
 
             // 2. Hierarchy links first, then curved semantic bridges on top.
-            var bridgeBadges: [(point: CGPoint, text: String, priority: Bool)] = []
+            var bridgeBadges: [(point: CGPoint, normal: CGPoint, text: String, priority: Bool)] = []
             for link in graph.links where link.kind == .hierarchy {
                 guard let a = positions[link.source], let b = positions[link.target] else { continue }
                 let lit = selectedId == nil || link.source == selectedId || link.target == selectedId
@@ -904,7 +907,7 @@ private struct SemanticGraphCard: View {
                 guard let a = positions[link.source], let b = positions[link.target] else { continue }
                 let pA = screen(a, canvasSize), pB = screen(b, canvasSize)
                 let lit = selectedId == nil || link.source == selectedId || link.target == selectedId
-                let (ctrl, curveMid) = bridgeGeometry(from: pA, to: pB, center: canvasCenter)
+                let (ctrl, curveMid, normal) = bridgeGeometry(from: pA, to: pB, center: canvasCenter)
                 var path = Path()
                 path.move(to: pA)
                 path.addQuadCurve(to: pB, control: ctrl)
@@ -919,7 +922,7 @@ private struct SemanticGraphCard: View {
                 if lit && (bridgesOnly || isSelectedEdge || semanticTotal <= 3) {
                     let clean = link.label.replacingOccurrences(of: "Comparten: ", with: "")
                     let badge = clean.count > 22 ? String(clean.prefix(20)) + "…" : clean
-                    bridgeBadges.append((curveMid, badge, isSelectedEdge || bridgesOnly))
+                    bridgeBadges.append((curveMid, normal, badge, isSelectedEdge || bridgesOnly))
                 }
             }
 
@@ -990,7 +993,7 @@ private struct SemanticGraphCard: View {
                 case .context:
                     shouldShow = noteCount <= 14 || scale >= 1.05 || isSelected || isNeighbor
                 case .cluster:
-                    shouldShow = isSelected || isNeighbor || scale >= 1.12 || (clusterCount <= 5 && noteCount <= 8)
+                    shouldShow = isSelected || isNeighbor || scale >= 1.20
                 }
                 guard shouldShow else { continue }
 
@@ -1023,7 +1026,7 @@ private struct SemanticGraphCard: View {
                 context.draw(resolved, at: CGPoint(x: chosen.midX, y: chosen.midY), anchor: .center)
             }
 
-            // 5. Bridge keyword pills placed only where they do not collide with labels or dots.
+            // 5. Bridge keyword pills placed along curve midpoint with normal nudges to avoid collisions.
             for badge in bridgeBadges {
                 let resolved = context.resolve(
                     Text(badge.text)
@@ -1033,14 +1036,19 @@ private struct SemanticGraphCard: View {
                 let textSize = resolved.measure(in: CGSize(width: 150, height: 24))
                 let boxW = textSize.width + 10
                 let boxH = textSize.height + 4
-                let raw = CGRect(
-                    x: min(max(6, badge.point.x - boxW / 2), canvasSize.width - 6 - boxW),
-                    y: min(max(6, badge.point.y - boxH / 2), canvasSize.height - 6 - boxH),
-                    width: boxW, height: boxH
-                )
-                if !badge.priority && occupiedRects.contains(where: { $0.intersects(raw.insetBy(dx: -2, dy: -2)) }) {
-                    continue
+                let shifts: [CGFloat] = [0, 10, -10, 18, -18]
+                let candidates = shifts.map { s -> CGRect in
+                    let p = CGPoint(x: badge.point.x + badge.normal.x * s, y: badge.point.y + badge.normal.y * s)
+                    return CGRect(
+                        x: min(max(6, p.x - boxW / 2), canvasSize.width - 6 - boxW),
+                        y: min(max(6, p.y - boxH / 2), canvasSize.height - 6 - boxH),
+                        width: boxW, height: boxH
+                    )
                 }
+                let chosenBadge = candidates.first(where: { r in
+                    !occupiedRects.contains(where: { $0.intersects(r.insetBy(dx: -2, dy: -2)) })
+                }) ?? (badge.priority ? candidates.first : nil)
+                guard let raw = chosenBadge else { continue }
                 occupiedRects.append(raw)
                 let pill = Path(roundedRect: raw, cornerRadius: 5)
                 context.fill(pill, with: .color(pillBg))
@@ -1060,6 +1068,7 @@ private struct SemanticGraphCard: View {
                         let moved = CGPoint(x: current.x + delta.width / scale, y: current.y + delta.height / scale)
                         if bridgesOnly { bridgePositions[id] = moved } else { fullPositions[id] = moved }
                     } else {
+                        userAdjustedCamera = true
                         pan = CGSize(width: pan.width + delta.width / scale, height: pan.height + delta.height / scale)
                     }
                 }
@@ -1079,6 +1088,7 @@ private struct SemanticGraphCard: View {
         .simultaneousGesture(
             MagnificationGesture()
                 .onChanged { value in
+                    userAdjustedCamera = true
                     if pinchStartScale == nil { pinchStartScale = scale }
                     scale = min(3.0, max(0.45, (pinchStartScale ?? scale) * value))
                 }
@@ -1094,7 +1104,13 @@ private struct SemanticGraphCard: View {
         let above = CGPoint(x: center.x - w / 2, y: center.y - radius - gap - h)
         let right = CGPoint(x: center.x + radius + gap, y: center.y - h / 2)
         let left = CGPoint(x: center.x - radius - gap - w, y: center.y - h / 2)
-        let candidates = preferAbove ? [above, below, right, left] : [below, above, right, left]
+        let belowRight = CGPoint(x: center.x - 4, y: center.y + radius + gap)
+        let belowLeft = CGPoint(x: center.x + 4 - w, y: center.y + radius + gap)
+        let aboveRight = CGPoint(x: center.x - 4, y: center.y - radius - gap - h)
+        let aboveLeft = CGPoint(x: center.x + 4 - w, y: center.y - radius - gap - h)
+        let candidates = preferAbove
+            ? [above, below, right, left, aboveRight, aboveLeft, belowRight, belowLeft]
+            : [below, above, right, left, belowRight, belowLeft, aboveRight, aboveLeft]
 
         let clamped = candidates.map { origin in
             CGRect(

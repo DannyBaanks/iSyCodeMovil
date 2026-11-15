@@ -631,7 +631,7 @@ private fun SemanticGraphCard(
     var showHelp by rememberSaveable { mutableStateOf(false) }
     var layoutSeed by remember { mutableStateOf(0) }
     var canvas by remember { mutableStateOf(IntSize.Zero) }
-    var didInitialFit by remember(nodes) { mutableStateOf(false) }
+    var userAdjustedCamera by remember(nodes) { mutableStateOf(false) }
     val measurer = rememberTextMeasurer()
     // Layout coordinates are in dp; the canvas draws in pixels.
     val px = LocalDensity.current.density
@@ -685,14 +685,15 @@ private fun SemanticGraphCard(
             scale = 1f
             return
         }
-        val availW = (size.width / px - 104f).coerceAtLeast(80f)
-        val availH = (size.height / px - 84f).coerceAtLeast(80f)
+        val availW = (size.width / px - 64f).coerceAtLeast(80f)
+        val availH = (size.height / px - 60f).coerceAtLeast(80f)
         val spanX = (maxX - minX).coerceAtLeast(80f)
         val spanY = (maxY - minY).coerceAtLeast(80f)
-        scale = min(availW / spanX, availH / spanY).coerceIn(0.65f, 1.3f)
+        scale = min(availW / spanX, availH / spanY).coerceIn(0.65f, 1.30f)
     }
 
     fun focusNode(id: String) {
+        userAdjustedCamera = true
         selectedId = id
         val map = if (bridgesOnly) bridgePositions else fullPositions
         val p = map[id]
@@ -727,17 +728,17 @@ private fun SemanticGraphCard(
     }
 
     LaunchedEffect(canvas, fullGraph) {
-        if (!didInitialFit && canvas.width > (10 * px).toInt()) {
+        if (!userAdjustedCamera && canvas.width > (64 * px).toInt()) {
             fitGraph(activeGraph, activePositions, canvas)
-            didInitialFit = true
         }
     }
 
     LaunchedEffect(bridgesOnly) {
+        userAdjustedCamera = false
         if (selectedId != null && activeGraph.nodes.none { it.id == selectedId }) {
             selectedId = null
         }
-        if (canvas.width > (10 * px).toInt()) {
+        if (canvas.width > (64 * px).toInt()) {
             fitGraph(activeGraph, activePositions, canvas)
         }
     }
@@ -763,24 +764,25 @@ private fun SemanticGraphCard(
                 Text("Constelación", style = MaterialTheme.typography.titleMedium)
                 Muted("$contextCount ${if (contextCount == 1) "nota" else "notas"} · $semanticLinkCount ${if (semanticLinkCount == 1) "puente" else "puentes"}", faint)
             }
-            IconButton(onClick = { scale = (scale / 1.25f).coerceIn(0.45f, 3f) }, modifier = Modifier.size(30.dp)) {
+            IconButton(onClick = { userAdjustedCamera = true; scale = (scale / 1.25f).coerceIn(0.45f, 3f) }, modifier = Modifier.size(30.dp)) {
                 Icon(Icons.Filled.Remove, "Alejar", tint = Iys.accent, modifier = Modifier.size(18.dp))
             }
             Text(
                 "${(scale * 100).toInt()}%",
                 style = MaterialTheme.typography.bodySmall,
                 color = secondaryColor,
-                modifier = Modifier.clickable { fitGraph() }.padding(horizontal = 2.dp),
+                modifier = Modifier.clickable { userAdjustedCamera = false; fitGraph() }.padding(horizontal = 2.dp),
             )
-            IconButton(onClick = { scale = (scale * 1.25f).coerceIn(0.45f, 3f) }, modifier = Modifier.size(30.dp)) {
+            IconButton(onClick = { userAdjustedCamera = true; scale = (scale * 1.25f).coerceIn(0.45f, 3f) }, modifier = Modifier.size(30.dp)) {
                 Icon(Icons.Filled.Add, "Acercar", tint = Iys.accent, modifier = Modifier.size(18.dp))
             }
-            IconButton(onClick = { fitGraph() }, modifier = Modifier.size(30.dp)) {
+            IconButton(onClick = { userAdjustedCamera = false; fitGraph() }, modifier = Modifier.size(30.dp)) {
                 Icon(Icons.Filled.CenterFocusStrong, "Centrar grafo", tint = Iys.accent, modifier = Modifier.size(17.dp))
             }
             IconButton(
                 onClick = {
                     layoutSeed += 1
+                    userAdjustedCamera = false
                     if (bridgesOnly) {
                         bridgePositions.clear()
                         bridgePositions.putAll(SemanticContext.layout(bridgeGraph, seed = layoutSeed))
@@ -836,6 +838,7 @@ private fun SemanticGraphCard(
                                 if (pressed.size >= 2) {
                                     draggingId = null
                                     startedDrag = true
+                                    userAdjustedCamera = true
                                     val z = event.calculateZoom()
                                     val p = event.calculatePan()
                                     if (z != 1f) scale = (scale * z).coerceIn(0.45f, 3.0f)
@@ -855,6 +858,7 @@ private fun SemanticGraphCard(
                                             val cur = targetMap[id] ?: GraphPoint(0f, 0f)
                                             targetMap[id] = GraphPoint(cur.x + delta.x / (scale * px), cur.y + delta.y / (scale * px))
                                         } else {
+                                            userAdjustedCamera = true
                                             pan += Offset(delta.x / (scale * px), delta.y / (scale * px))
                                         }
                                         change.consume()
@@ -869,7 +873,6 @@ private fun SemanticGraphCard(
                     graph.links.filter { it.source == id || it.target == id }.flatMap { listOf(it.source, it.target) }.toSet()
                 }
                 val noteCount = graph.nodes.count { it.kind == GraphNodeKind.CONTEXT }
-                val clusterCount = graph.nodes.count { it.kind == GraphNodeKind.CLUSTER }
                 val semanticTotal = graph.links.count { it.kind == GraphLinkKind.SEMANTIC }
                 val canvasCenter = Offset(size.width / 2f, size.height / 2f)
                 val domainCentroids = mutableMapOf<String, Offset>()
@@ -912,7 +915,7 @@ private fun SemanticGraphCard(
                     )
                 }
 
-                data class BridgeBadge(val point: Offset, val text: String, val priority: Boolean)
+                data class BridgeBadge(val point: Offset, val normal: Offset, val text: String, val priority: Boolean)
                 val bridgeBadges = mutableListOf<BridgeBadge>()
                 graph.links.filter { it.kind == GraphLinkKind.SEMANTIC }.forEach { link ->
                     val a = activePositions[link.source] ?: return@forEach
@@ -920,7 +923,7 @@ private fun SemanticGraphCard(
                     val pA = toScreen(a)
                     val pB = toScreen(b)
                     val lit = selectedId == null || link.source == selectedId || link.target == selectedId
-                    val (ctrl, curveMid) = bridgeControlAndMid(pA, pB, canvasCenter, archCapPx = 28f * scale * px)
+                    val (ctrl, curveMid, normal) = bridgeControlAndMid(pA, pB, canvasCenter, archCapPx = 28f * scale * px)
                     val path = Path().apply {
                         moveTo(pA.x, pA.y)
                         quadraticTo(ctrl.x, ctrl.y, pB.x, pB.y)
@@ -938,7 +941,7 @@ private fun SemanticGraphCard(
                     if (lit && (bridgesOnly || isSelectedEdge || semanticTotal <= 3)) {
                         val clean = link.label.removePrefix("Comparten: ")
                         val badge = if (clean.length > 22) clean.take(20) + "…" else clean
-                        bridgeBadges.add(BridgeBadge(curveMid, badge, isSelectedEdge || bridgesOnly))
+                        bridgeBadges.add(BridgeBadge(curveMid, normal, badge, isSelectedEdge || bridgesOnly))
                     }
                 }
 
@@ -1008,7 +1011,7 @@ private fun SemanticGraphCard(
                     val shouldShow = when (node.kind) {
                         GraphNodeKind.DOMAIN -> true
                         GraphNodeKind.CONTEXT -> noteCount <= 14 || scale >= 1.05f || isSelected || isNeighbor
-                        GraphNodeKind.CLUSTER -> isSelected || isNeighbor || scale >= 1.12f || (clusterCount <= 5 && noteCount <= 8)
+                        GraphNodeKind.CLUSTER -> isSelected || isNeighbor || scale >= 1.20f
                     }
                     if (!shouldShow) continue
 
@@ -1069,7 +1072,7 @@ private fun SemanticGraphCard(
                     drawText(layout, topLeft = Offset(chosen.left + 5f * px, chosen.top + 2f * px))
                 }
 
-                // 5. Bridge keyword pills on curve midpoints where they do not obscure node labels.
+                // 5. Bridge keyword pills on curve midpoints with normal nudges to avoid label collisions.
                 bridgeBadges.forEach { badge ->
                     val layout = measurer.measure(
                         badge.text,
@@ -1079,11 +1082,18 @@ private fun SemanticGraphCard(
                     val boxW = layout.size.width + 10f * px
                     val boxH = layout.size.height + 4f * px
                     val pad = 6f * px
-                    val left = (badge.point.x - boxW / 2f).coerceIn(pad, max(pad, size.width - pad - boxW))
-                    val top = (badge.point.y - boxH / 2f).coerceIn(pad, max(pad, size.height - pad - boxH))
-                    val rect = Rect(left, top, left + boxW, top + boxH)
-                    val paddedRect = Rect(rect.left - 2f * px, rect.top - 2f * px, rect.right + 2f * px, rect.bottom + 2f * px)
-                    if (!badge.priority && occupiedRects.any { it.overlaps(paddedRect) }) return@forEach
+                    val candidates = listOf(0f, 10f * px, -10f * px, 18f * px, -18f * px).map { shift ->
+                        val cx = badge.point.x + badge.normal.x * shift
+                        val cy = badge.point.y + badge.normal.y * shift
+                        val left = (cx - boxW / 2f).coerceIn(pad, max(pad, size.width - pad - boxW))
+                        val top = (cy - boxH / 2f).coerceIn(pad, max(pad, size.height - pad - boxH))
+                        Rect(left, top, left + boxW, top + boxH)
+                    }
+                    val chosenBadge = candidates.firstOrNull { cand ->
+                        val padded = Rect(cand.left - 2f * px, cand.top - 2f * px, cand.right + 2f * px, cand.bottom + 2f * px)
+                        occupiedRects.none { it.overlaps(padded) }
+                    } ?: if (badge.priority) candidates.first() else null
+                    val rect = chosenBadge ?: return@forEach
                     occupiedRects.add(rect)
                     val corner = CornerRadius(5f * px, 5f * px)
                     drawRoundRect(pillBg, topLeft = rect.topLeft, size = rect.size, cornerRadius = corner)
@@ -1171,7 +1181,7 @@ private fun SemanticGraphCard(
     }
 }
 
-private fun bridgeControlAndMid(a: Offset, b: Offset, center: Offset, archCapPx: Float): Pair<Offset, Offset> {
+private fun bridgeControlAndMid(a: Offset, b: Offset, center: Offset, archCapPx: Float): Triple<Offset, Offset, Offset> {
     val midX = (a.x + b.x) / 2f
     val midY = (a.y + b.y) / 2f
     val dx = b.x - a.x
@@ -1189,7 +1199,7 @@ private fun bridgeControlAndMid(a: Offset, b: Offset, center: Offset, archCapPx:
         0.25f * a.x + 0.5f * ctrl.x + 0.25f * b.x,
         0.25f * a.y + 0.5f * ctrl.y + 0.25f * b.y,
     )
-    return ctrl to curveMid
+    return Triple(ctrl, curveMid, Offset(nx, ny))
 }
 
 private fun placeLabelRect(
@@ -1205,11 +1215,20 @@ private fun placeLabelRect(
     allowFallback: Boolean,
     occupied: List<Rect>,
 ): Rect? {
+    val edgeInset = 4f * (gapPx / 5f).coerceAtLeast(1f)
     val below = Offset(center.x - boxW / 2f, center.y + radiusPx + gapPx)
     val above = Offset(center.x - boxW / 2f, center.y - radiusPx - gapPx - boxH)
     val right = Offset(center.x + radiusPx + gapPx, center.y - boxH / 2f)
     val left = Offset(center.x - radiusPx - gapPx - boxW, center.y - boxH / 2f)
-    val ordered = if (preferAbove) listOf(above, below, right, left) else listOf(below, above, right, left)
+    val belowRight = Offset(center.x - edgeInset, center.y + radiusPx + gapPx)
+    val belowLeft = Offset(center.x + edgeInset - boxW, center.y + radiusPx + gapPx)
+    val aboveRight = Offset(center.x - edgeInset, center.y - radiusPx - gapPx - boxH)
+    val aboveLeft = Offset(center.x + edgeInset - boxW, center.y - radiusPx - gapPx - boxH)
+    val ordered = if (preferAbove) {
+        listOf(above, below, right, left, aboveRight, aboveLeft, belowRight, belowLeft)
+    } else {
+        listOf(below, above, right, left, belowRight, belowLeft, aboveRight, aboveLeft)
+    }
     val clamped = ordered.map { origin ->
         val x = origin.x.coerceIn(padPx, max(padPx, canvasW - padPx - boxW))
         val y = origin.y.coerceIn(padPx, max(padPx, canvasH - padPx - boxH))
