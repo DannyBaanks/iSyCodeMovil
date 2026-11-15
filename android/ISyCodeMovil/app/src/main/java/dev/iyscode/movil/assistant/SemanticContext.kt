@@ -59,7 +59,7 @@ data class GraphNode(
     val summary: String,
 )
 
-data class GraphLink(val source: String, val target: String, val kind: GraphLinkKind, val label: String)
+data class GraphLink(val source: String, val target: String, val kind: GraphLinkKind, val label: String, val strength: Int = 1)
 data class Graph(val nodes: List<GraphNode>, val links: List<GraphLink>)
 data class GraphPoint(val x: Float, val y: Float)
 
@@ -293,15 +293,22 @@ object SemanticContext {
         }
 
         val wordsOf = nodes.associate { it.id to keywords("${it.title} ${it.summary}") }
+        val docFrequency = mutableMapOf<String, Int>()
+        for (words in wordsOf.values) {
+            for (word in words) docFrequency[word] = (docFrequency[word] ?: 0) + 1
+        }
         for (i in nodes.indices) {
             for (j in i + 1 until nodes.size) {
                 val a = nodes[i]
                 val b = nodes[j]
                 if (parentOf[a.id] == parentOf[b.id]) continue
                 val shared = wordsOf.getValue(a.id).intersect(wordsOf.getValue(b.id))
-                if (shared.size >= 2) {
+                val strongSingle = shared.size == 1 && shared.any { it.length >= 6 && (docFrequency[it] ?: 0) <= 3 }
+                if (shared.size >= 2 || strongSingle) {
+                    val top = shared.sorted()
                     links += GraphLink(a.id, b.id, GraphLinkKind.SEMANTIC,
-                        "Comparten: ${shared.sorted().take(3).joinToString(", ")}")
+                        "Comparten: ${top.take(3).joinToString(", ")}",
+                        strength = shared.size)
                 }
             }
         }
@@ -309,30 +316,83 @@ object SemanticContext {
     }
 
     /**
-     * Force-directed positions (Fruchterman–Reingold), deterministic for a
-     * given seed so the picture does not jump between redraws. The result is
-     * centered and scaled so every node lies within [fit] dp of the origin;
-     * without that, repulsion spreads a dozen nodes far past the canvas.
+     * Subgraph for "Solo puentes": keeps only notes joined by semantic bridges
+     * so unrelated hierarchy circles never float as disconnected dots.
+     */
+    fun bridgeSubgraph(graph: Graph): Graph {
+        val semanticLinks = graph.links.filter { it.kind == GraphLinkKind.SEMANTIC }
+        val linkedIds = semanticLinks.flatMap { listOf(it.source, it.target) }.toSet()
+        return Graph(graph.nodes.filter { it.id in linkedIds }, semanticLinks)
+    }
+
+    /**
+     * Sector-seeded force-directed positions (Fruchterman–Reingold), deterministic
+     * for a given seed so domains stay cleanly separated instead of tangling in
+     * the center. Scaled so every coordinate lies within [fit] dp of the origin.
      */
     fun layout(graph: Graph, iterations: Int = 200, seed: Int = 0, fit: Float = 120f): Map<String, GraphPoint> {
         val count = graph.nodes.size
         if (count == 0) return emptyMap()
+        if (count == 1) return mapOf(graph.nodes[0].id to GraphPoint(0f, 0f))
+
+        val domains = mutableListOf<String>()
+        for (node in graph.nodes) if (node.domain !in domains) domains += node.domain
+        val domainIndex = domains.withIndex().associate { it.value to it.index }
+        val domainCount = max(1, domains.size)
+        val clustersByDomain = graph.nodes.filter { it.kind == GraphNodeKind.CLUSTER }.groupBy { it.domain }
+        val contextByParent = graph.nodes.filter { it.kind == GraphNodeKind.CONTEXT }.groupBy { it.parentId ?: it.domain }
+
         val x = FloatArray(count)
         val y = FloatArray(count)
+        val sectorRadius = if (domainCount == 1) 0f else 54f * sqrt(domainCount.toFloat())
+        val pi = kotlin.math.PI.toFloat()
+
         for (i in 0 until count) {
-            val angle = i * 2.399963f + seed * 0.7f
-            val distance = 46f * sqrt(i + 1f)
-            x[i] = cos(angle) * distance
-            y[i] = sin(angle) * distance
+            val node = graph.nodes[i]
+            val dIdx = domainIndex[node.domain] ?: 0
+            val domainAngle = (2f * pi * dIdx / domainCount) + seed * 0.7f
+            val hubX = cos(domainAngle) * sectorRadius
+            val hubY = sin(domainAngle) * sectorRadius
+            val wedge = (2f * pi) / domainCount * 0.72f
+
+            when (node.kind) {
+                GraphNodeKind.DOMAIN -> {
+                    x[i] = hubX
+                    y[i] = hubY
+                }
+                GraphNodeKind.CLUSTER -> {
+                    val siblings = clustersByDomain[node.domain].orEmpty()
+                    val sIdx = siblings.indexOfFirst { it.id == node.id }.coerceAtLeast(0)
+                    val offset = if (siblings.size <= 1) 0f else (sIdx.toFloat() / (siblings.size - 1) - 0.5f) * wedge
+                    val angle = domainAngle + offset
+                    val r = 56f
+                    x[i] = hubX + cos(angle) * r
+                    y[i] = hubY + sin(angle) * r
+                }
+                GraphNodeKind.CONTEXT -> {
+                    val siblings = contextByParent[node.parentId ?: node.domain].orEmpty()
+                    val cIdx = siblings.indexOfFirst { it.id == node.id }.let { if (it >= 0) it else i }
+                    val clusterSiblings = clustersByDomain[node.domain].orEmpty()
+                    val pIdx = clusterSiblings.indexOfFirst { it.id == node.parentId }.coerceAtLeast(0)
+                    val baseOffset = if (clusterSiblings.size <= 1) 0f else (pIdx.toFloat() / (clusterSiblings.size - 1) - 0.5f) * wedge
+                    val fan = if (siblings.size <= 1) 0f else (cIdx.toFloat() / (siblings.size - 1) - 0.5f) * 0.9f
+                    val angle = domainAngle + baseOffset + fan
+                    val r = (if (domainCount == 1) 52f else 104f) + (cIdx % 2) * 16f
+                    x[i] = hubX + cos(angle) * r
+                    y[i] = hubY + sin(angle) * r
+                }
+            }
         }
+
         val indexOf = graph.nodes.withIndex().associate { it.value.id to it.index }
         val edges = graph.links.mapNotNull { link ->
             val a = indexOf[link.source]
             val b = indexOf[link.target]
-            if (a == null || b == null) null else Triple(a, b, if (link.kind == GraphLinkKind.HIERARCHY) 1f else 0.25f)
+            if (a == null || b == null) null else Triple(a, b, if (link.kind == GraphLinkKind.HIERARCHY) 1.05f else 0.25f)
         }
         val ideal = 90f
-        var temperature = 60f
+        val gravity = if (domainCount >= 2) 1.55f else 1.15f
+        var temperature = 50f
         val dx = FloatArray(count)
         val dy = FloatArray(count)
         repeat(iterations) {
@@ -344,7 +404,9 @@ object SemanticContext {
                     var ey = y[i] - y[j]
                     var distance = sqrt(ex * ex + ey * ey)
                     if (distance < 0.01f) { ex = 0.1f * (i + 1); ey = 0.1f * (j + 1); distance = sqrt(ex * ex + ey * ey) }
-                    val force = ideal * ideal / distance
+                    val crossDomain = if (graph.nodes[i].domain != graph.nodes[j].domain) 1.12f else 1f
+                    val nearBoost = if (distance < 72f) (72f / max(18f, distance)) else 1f
+                    val force = (ideal * ideal / distance) * crossDomain * nearBoost
                     dx[i] += ex / distance * force; dy[i] += ey / distance * force
                     dx[j] -= ex / distance * force; dy[j] -= ey / distance * force
                 }
@@ -358,17 +420,14 @@ object SemanticContext {
                 dx[b] += ex / distance * force; dy[b] += ey / distance * force
             }
             for (i in 0 until count) {
-                // Strong pull to the center keeps the domains (which have no links
-                // between them) close together; otherwise fitting the far-apart
-                // domains crushes each one and the labels overlap.
-                dx[i] -= x[i] * 2f
-                dy[i] -= y[i] * 2f
+                dx[i] -= x[i] * gravity
+                dy[i] -= y[i] * gravity
                 val length = max(0.01f, sqrt(dx[i] * dx[i] + dy[i] * dy[i]))
                 val step = min(length, temperature)
                 x[i] += dx[i] / length * step
                 y[i] += dy[i] / length * step
             }
-            temperature = max(1.5f, temperature * 0.97f)
+            temperature = max(1.2f, temperature * 0.97f)
         }
         val cx = x.average().toFloat()
         val cy = y.average().toFloat()

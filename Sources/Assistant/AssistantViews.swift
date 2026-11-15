@@ -368,6 +368,7 @@ private struct MemorySection: View {
     @AppStorage("assistant.memorySearchHistory") private var historyRaw = ""
     @State private var query = ""
     @State private var graphView = false
+    @State private var focusedGraphNodeId: String?
 
     private var history: [String] { historyRaw.split(separator: "\n").map(String.init) }
 
@@ -408,10 +409,13 @@ private struct MemorySection: View {
                 if store.memory.isEmpty {
                     CardBox { Muted("Todavía no hay notas. Guarda la primera abajo, o pídele a GUS que recuerde algo.") }
                 } else if graphView {
-                    SemanticGraphCard(nodes: matches)
+                    SemanticGraphCard(nodes: matches, requestedFocusId: $focusedGraphNodeId)
                 } else {
                     ForEach(SemanticContext.buildTree(matches)) { folder in
-                        FolderRow(folder: folder, expandAll: !query.isEmpty)
+                        FolderRow(folder: folder, expandAll: !query.isEmpty) { nodeId in
+                            focusedGraphNodeId = nodeId
+                            graphView = true
+                        }
                     }
                 }
                 SaveMemoryCard()
@@ -435,6 +439,7 @@ private struct FolderRow: View {
     @EnvironmentObject private var store: AssistantStore
     let folder: TreeFolder
     let expandAll: Bool
+    var onFocusInGraph: (String) -> Void = { _ in }
     @State private var open: Bool?
 
     var body: some View {
@@ -454,8 +459,8 @@ private struct FolderRow: View {
             }
             .buttonStyle(.plain)
             if expanded {
-                ForEach(folder.subfolders) { FolderRow(folder: $0, expandAll: expandAll) }
-                ForEach(folder.nodes) { MemoryNodeRow(node: $0) }
+                ForEach(folder.subfolders) { FolderRow(folder: $0, expandAll: expandAll, onFocusInGraph: onFocusInGraph) }
+                ForEach(folder.nodes) { MemoryNodeRow(node: $0, onFocusInGraph: onFocusInGraph) }
             }
         }
         .padding(.leading, CGFloat(folder.depth - 1) * 14)
@@ -465,14 +470,19 @@ private struct FolderRow: View {
 private struct MemoryNodeRow: View {
     @EnvironmentObject private var store: AssistantStore
     let node: ContextNode
+    var onFocusInGraph: (String) -> Void = { _ in }
     @State private var confirmDelete = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            HStack(spacing: 8) {
                 Circle().fill(priorityColor(node.priority)).frame(width: 8, height: 8)
                 Text(node.title).font(.system(size: 14, weight: .semibold)).foregroundColor(OCColor.textPrimary)
                 Spacer()
+                Button { onFocusInGraph(node.id) } label: {
+                    Image(systemName: "point.3.connected.trianglepath.dotted").font(.system(size: 13)).foregroundColor(OCColor.textFaint)
+                }
+                .accessibilityLabel("Ver en grafo")
                 Button { confirmDelete = true } label: { Image(systemName: "trash").font(.system(size: 13)).foregroundColor(OCColor.textFaint) }
                     .accessibilityLabel("Borrar nota")
             }
@@ -557,64 +567,227 @@ private struct RetrievalProbe: View {
 
 private struct SemanticGraphCard: View {
     let nodes: [ContextNode]
-    @State private var positions: [String: CGPoint] = [:]
+    @Binding var requestedFocusId: String?
+
+    @State private var fullGraph = SemanticGraph(nodes: [], links: [])
+    @State private var bridgeGraph = SemanticGraph(nodes: [], links: [])
+    @State private var fullPositions: [String: CGPoint] = [:]
+    @State private var bridgePositions: [String: CGPoint] = [:]
     @State private var scale: CGFloat = 1
+    @State private var pinchStartScale: CGFloat?
     @State private var pan: CGSize = .zero
     @State private var selectedId: String?
     @State private var showLegend = true
+    @State private var showHelp = false
     @State private var bridgesOnly = false
     @State private var seed = 0
     @State private var dragging: String?
     @State private var lastDrag: CGSize = .zero
-    @State private var graph = SemanticGraph(nodes: [], links: [])
+    @State private var canvasSize: CGSize = .zero
+    @State private var didInitialFit = false
+
+    private var activeGraph: SemanticGraph { bridgesOnly ? bridgeGraph : fullGraph }
+    private var activePositions: [String: CGPoint] { bridgesOnly ? bridgePositions : fullPositions }
+    private var semanticLinkCount: Int { fullGraph.links.filter { $0.kind == .semantic }.count }
+    private var contextCount: Int { fullGraph.nodes.filter { $0.kind == .context }.count }
+
+    private let canvasBg = Color.iys(dark: "0B0C14", light: "F4F2FA")
+    private let pillBg = Color.iys(dark: "131522", light: "FFFFFF").opacity(0.92)
+    private let bridgeGold = Color.iys(dark: "FBBF24", light: "B45309")
 
     var body: some View {
         CardBox {
-            HStack {
-                TitleText("Constelación")
-                Spacer()
-                Button { scale = max(0.4, scale / 1.25) } label: { Image(systemName: "minus.magnifyingglass") }
-                    .accessibilityLabel("Alejar")
-                Text("\(Int(scale * 100))%").font(OCTypography.metaMono).foregroundColor(OCColor.textSecondary)
-                Button { scale = min(3, scale * 1.25) } label: { Image(systemName: "plus.magnifyingglass") }
-                    .accessibilityLabel("Acercar")
+            headerBar
+            filterBar
+            if showHelp {
+                Muted("Toca un nodo para enfocar sus conexiones · Arrastra círculos o fondo · Pellizca para zoom.", color: OCColor.textFaint)
             }
-            Muted("Arrastra los círculos para acomodarlos, arrastra el fondo para moverte y toca uno para ver su detalle.")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    Pill(title: "Todo", selected: !bridgesOnly) { bridgesOnly = false }
-                    Pill(title: "Solo puentes", selected: bridgesOnly) { bridgesOnly = true }
-                    Pill(title: showLegend ? "Ocultar leyenda" : "Leyenda", selected: showLegend) { showLegend.toggle() }
-                    Pill(title: "Reorganizar", selected: false) {
-                        seed += 1
-                        positions = SemanticContext.layout(graph, seed: seed)
-                        pan = .zero; scale = 1
-                    }
-                }
+            graphViewport
+            if let id = selectedId, let node = fullGraph.nodes.first(where: { $0.id == id }) {
+                detail(node)
             }
-            GeometryReader { geo in
-                canvas(size: geo.size)
-            }
-            .frame(height: 360)
-            .background(RoundedRectangle(cornerRadius: 16).fill(Color.iys(dark: "0D0D16", light: "F1EFF7")))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(OCColor.borderMuted, lineWidth: 1))
             if showLegend { legend }
-            Muted("\(graph.nodes.filter { $0.kind == .context }.count) notas · \(graph.links.filter { $0.kind == .semantic }.count) puentes",
-                  color: OCColor.textFaint)
-            if let id = selectedId, let node = graph.nodes.first(where: { $0.id == id }) { detail(node) }
         }
-        .onAppear(perform: rebuild)
-        .onChange(of: nodes.map(\.id)) { _ in rebuild() }
+        .onAppear {
+            rebuild(preserveExisting: false)
+            consumeRequestedFocus()
+        }
+        .onChange(of: nodes.map(\.id)) { _ in
+            rebuild(preserveExisting: false)
+            consumeRequestedFocus()
+        }
+        .onChange(of: requestedFocusId) { _ in
+            consumeRequestedFocus()
+        }
+        .onChange(of: bridgesOnly) { _ in
+            withAnimation(.easeOut(duration: 0.2)) {
+                if let id = selectedId, !activeGraph.nodes.contains(where: { $0.id == id }) {
+                    selectedId = nil
+                }
+                fitGraph(to: canvasSize)
+            }
+        }
     }
 
-    private func rebuild() {
-        // Work on a local value: reading `graph` right after assigning the
-        // @State can still return the old (empty) graph, which left no positions.
+    private var headerBar: some View {
+        HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 1) {
+                TitleText("Constelación")
+                Text("\(contextCount) \(contextCount == 1 ? "nota" : "notas") · \(semanticLinkCount) \(semanticLinkCount == 1 ? "puente" : "puentes")")
+                    .font(OCTypography.metaMono)
+                    .foregroundColor(OCColor.textFaint)
+            }
+            Spacer()
+            HStack(spacing: 4) {
+                Button { zoom(by: 1 / 1.25) } label: { Image(systemName: "minus.magnifyingglass").font(.system(size: 13)) }
+                    .accessibilityLabel("Alejar")
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) { fitGraph(to: canvasSize) }
+                } label: {
+                    Text("\(Int(scale * 100))%").font(OCTypography.metaMono).foregroundColor(OCColor.textSecondary)
+                        .frame(minWidth: 38)
+                }
+                .accessibilityLabel("Ajustar vista")
+                Button { zoom(by: 1.25) } label: { Image(systemName: "plus.magnifyingglass").font(.system(size: 13)) }
+                    .accessibilityLabel("Acercar")
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) { fitGraph(to: canvasSize) }
+                } label: { Image(systemName: "scope").font(.system(size: 13)) }
+                    .accessibilityLabel("Centrar grafo")
+                Button {
+                    seed += 1
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        if bridgesOnly {
+                            bridgePositions = SemanticContext.layout(bridgeGraph, seed: seed)
+                        } else {
+                            fullPositions = SemanticContext.layout(fullGraph, seed: seed)
+                        }
+                        fitGraph(to: canvasSize)
+                    }
+                } label: { Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 13)) }
+                    .accessibilityLabel("Reorganizar")
+                Button { withAnimation(.easeInOut(duration: 0.15)) { showHelp.toggle() } } label: {
+                    Image(systemName: showHelp ? "questionmark.circle.fill" : "questionmark.circle").font(.system(size: 13))
+                }
+                .accessibilityLabel("Ayuda de gestos")
+            }
+            .foregroundColor(OCColor.agentBuild)
+        }
+    }
+
+    private var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                Pill(title: "Todo", selected: !bridgesOnly) { bridgesOnly = false }
+                Pill(title: "Puentes (\(semanticLinkCount))", selected: bridgesOnly) { bridgesOnly = true }
+                Pill(title: "Leyenda", selected: showLegend) { showLegend.toggle() }
+            }
+        }
+    }
+
+    private var graphViewport: some View {
+        GeometryReader { geo in
+            ZStack {
+                canvas(size: geo.size)
+                if bridgesOnly && bridgeGraph.links.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "point.3.connected.trianglepath.dotted")
+                            .font(.system(size: 24))
+                            .foregroundColor(bridgeGold)
+                        Text("Aún no hay puentes entre ramas")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(OCColor.textPrimary)
+                        Muted("Guarda dos notas con conceptos clave compartidos en distintas ramas para enlazarlas.")
+                            .multilineTextAlignment(.center)
+                        Pill(title: "Ver constelación", selected: true) { bridgesOnly = false }
+                    }
+                    .padding(18)
+                }
+            }
+            .onAppear {
+                canvasSize = geo.size
+                if !didInitialFit && geo.size.width > 10 {
+                    fitGraph(to: geo.size)
+                    didInitialFit = true
+                }
+            }
+            .onChange(of: geo.size) { newSize in
+                canvasSize = newSize
+                if !didInitialFit && newSize.width > 10 {
+                    fitGraph(to: newSize)
+                    didInitialFit = true
+                }
+            }
+        }
+        .frame(height: 360)
+        .background(RoundedRectangle(cornerRadius: 16).fill(canvasBg))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(OCColor.borderMuted, lineWidth: 1))
+    }
+
+    private func rebuild(preserveExisting: Bool) {
         let built = SemanticContext.buildGraph(nodes)
-        graph = built
-        positions = SemanticContext.layout(built, seed: seed)
+        let bridged = SemanticContext.bridgeSubgraph(from: built)
+        fullGraph = built
+        bridgeGraph = bridged
+        if !preserveExisting {
+            fullPositions = SemanticContext.layout(built, seed: seed)
+            bridgePositions = SemanticContext.layout(bridged, seed: seed)
+        }
         if let id = selectedId, !built.nodes.contains(where: { $0.id == id }) { selectedId = nil }
+        if canvasSize.width > 10 {
+            fitGraph(to: canvasSize)
+            didInitialFit = true
+        }
+    }
+
+    private func consumeRequestedFocus() {
+        guard let target = requestedFocusId else { return }
+        requestedFocusId = nil
+        guard fullGraph.nodes.contains(where: { $0.id == target }) else { return }
+        if bridgesOnly && !bridgeGraph.nodes.contains(where: { $0.id == target }) {
+            bridgesOnly = false
+        }
+        withAnimation(.easeOut(duration: 0.22)) {
+            focusNode(target)
+        }
+    }
+
+    private func focusNode(_ id: String) {
+        selectedId = id
+        if let p = activePositions[id] {
+            pan = CGSize(width: -p.x, height: -p.y)
+            if scale < 1.05 { scale = 1.05 }
+        }
+    }
+
+    private func zoom(by factor: CGFloat) {
+        withAnimation(.easeOut(duration: 0.15)) {
+            scale = min(3.0, max(0.45, scale * factor))
+        }
+    }
+
+    private func fitGraph(to size: CGSize) {
+        let visiblePos = activeGraph.nodes.compactMap { activePositions[$0.id] }
+        guard !visiblePos.isEmpty else {
+            pan = .zero
+            scale = 1
+            return
+        }
+        let minX = visiblePos.map(\.x).min() ?? 0
+        let maxX = visiblePos.map(\.x).max() ?? 0
+        let minY = visiblePos.map(\.y).min() ?? 0
+        let maxY = visiblePos.map(\.y).max() ?? 0
+        pan = CGSize(width: -(minX + maxX) / 2, height: -(minY + maxY) / 2)
+        guard size.width > 96, size.height > 96 else {
+            scale = 1
+            return
+        }
+        let spanX = max(80, maxX - minX)
+        let spanY = max(80, maxY - minY)
+        let fitX = (size.width - 104) / spanX
+        let fitY = (size.height - 84) / spanY
+        scale = min(1.3, max(0.65, min(fitX, fitY)))
     }
 
     private func color(_ node: GraphNode) -> Color {
@@ -625,69 +798,254 @@ private struct SemanticGraphCard: View {
         }
     }
 
+    private func visualRadius(_ node: GraphNode) -> CGFloat {
+        switch node.kind {
+        case .domain: return 17 * scale
+        case .cluster: return 10 * scale
+        case .context:
+            let base: CGFloat = node.priority == .critical ? 9.5 : node.priority == .high ? 8.2 : 7.2
+            return base * scale
+        }
+    }
+
     private func screen(_ p: CGPoint, _ size: CGSize) -> CGPoint {
         CGPoint(x: size.width / 2 + (p.x + pan.width) * scale, y: size.height / 2 + (p.y + pan.height) * scale)
     }
 
     private func hit(_ location: CGPoint, _ size: CGSize) -> GraphNode? {
-        graph.nodes
-            .map { node -> (GraphNode, CGFloat) in
-                let s = screen(positions[node.id] ?? .zero, size)
-                return (node, hypot(s.x - location.x, s.y - location.y))
+        let priorityOrder: [GraphNode] = activeGraph.nodes.sorted { lhs, rhs in
+            let rank: (GraphNodeKind) -> Int = { kind in
+                switch kind {
+                case .context: return 0
+                case .cluster: return 1
+                case .domain: return 2
+                }
             }
-            .filter { $0.1 <= CGFloat($0.0.radius + 10) * max(scale, 0.8) }
-            .min { $0.1 < $1.1 }?.0
+            return rank(lhs.kind) < rank(rhs.kind)
+        }
+        var bestMatch: (node: GraphNode, rank: Int, dist: CGFloat)?
+        for node in priorityOrder {
+            guard let world = activePositions[node.id] else { continue }
+            let s = screen(world, size)
+            let d = hypot(s.x - location.x, s.y - location.y)
+            let threshold = max(24, visualRadius(node) + 12)
+            guard d <= threshold else { continue }
+            let r = node.kind == .context ? 0 : node.kind == .cluster ? 1 : 2
+            if let current = bestMatch {
+                if r < current.rank || (r == current.rank && d < current.dist) {
+                    bestMatch = (node, r, d)
+                }
+            } else {
+                bestMatch = (node, r, d)
+            }
+        }
+        return bestMatch?.node
+    }
+
+    private func bridgeGeometry(from a: CGPoint, to b: CGPoint, center: CGPoint) -> (control: CGPoint, midpoint: CGPoint) {
+        let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+        let dx = b.x - a.x, dy = b.y - a.y
+        let dist = max(1, hypot(dx, dy))
+        var nx = -dy / dist, ny = dx / dist
+        if (mid.x - center.x) * nx + (mid.y - center.y) * ny < 0 {
+            nx = -nx; ny = -ny
+        }
+        let arch = min(28 * scale, dist * 0.2)
+        let ctrl = CGPoint(x: mid.x + nx * arch, y: mid.y + ny * arch)
+        let curveMid = CGPoint(x: 0.25 * a.x + 0.5 * ctrl.x + 0.25 * b.x, y: 0.25 * a.y + 0.5 * ctrl.y + 0.25 * b.y)
+        return (ctrl, curveMid)
     }
 
     private func canvas(size: CGSize) -> some View {
+        let graph = activeGraph
+        let positions = activePositions
         let neighbors: Set<String>? = selectedId.map { id in
             Set(graph.links.filter { $0.source == id || $0.target == id }.flatMap { [$0.source, $0.target] })
         }
+        let noteCount = graph.nodes.filter { $0.kind == .context }.count
+        let clusterCount = graph.nodes.filter { $0.kind == .cluster }.count
+        let semanticTotal = graph.links.filter { $0.kind == .semantic }.count
+
         return Canvas { context, canvasSize in
-            for hub in graph.nodes where hub.kind == .domain {
-                let members = graph.nodes.filter { $0.domain == hub.domain }.compactMap { positions[$0.id] }
-                guard !members.isEmpty else { continue }
-                let cx = members.map(\.x).reduce(0, +) / CGFloat(members.count)
-                let cy = members.map(\.y).reduce(0, +) / CGFloat(members.count)
-                let reach = (members.map { hypot($0.x - cx, $0.y - cy) }.max() ?? 0) + 40
-                let c = screen(CGPoint(x: cx, y: cy), canvasSize)
-                let r = reach * scale
-                context.fill(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)), with: .color(color(hub).opacity(0.07)))
+            let canvasCenter = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+            var domainCentroids: [String: CGPoint] = [:]
+
+            // 1. Subtle framed domain halos (only in "Todo" mode).
+            if !bridgesOnly {
+                for hub in graph.nodes where hub.kind == .domain {
+                    let members = graph.nodes.filter { $0.domain == hub.domain }.compactMap { positions[$0.id] }
+                    guard !members.isEmpty else { continue }
+                    let cx = members.map(\.x).reduce(0, +) / CGFloat(members.count)
+                    let cy = members.map(\.y).reduce(0, +) / CGFloat(members.count)
+                    let center = screen(CGPoint(x: cx, y: cy), canvasSize)
+                    domainCentroids[hub.domain] = center
+                    let maxReach = members.map { hypot($0.x - cx, $0.y - cy) }.max() ?? 0
+                    let r = min(canvasSize.width * 0.44, (maxReach + 22) * scale)
+                    let focusedDomain = selectedId.flatMap { id in graph.nodes.first(where: { $0.id == id })?.domain } == hub.domain
+                    let haloRect = CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)
+                    let haloPath = Path(ellipseIn: haloRect)
+                    context.fill(haloPath, with: .color(color(hub).opacity(focusedDomain ? 0.085 : 0.035)))
+                    context.stroke(haloPath, with: .color(color(hub).opacity(focusedDomain ? 0.36 : 0.14)),
+                                   style: StrokeStyle(lineWidth: 1, dash: [4, 5]))
+                }
             }
-            for link in graph.links {
-                if bridgesOnly && link.kind == .hierarchy { continue }
+
+            // 2. Hierarchy links first, then curved semantic bridges on top.
+            var bridgeBadges: [(point: CGPoint, text: String, priority: Bool)] = []
+            for link in graph.links where link.kind == .hierarchy {
                 guard let a = positions[link.source], let b = positions[link.target] else { continue }
                 let lit = selectedId == nil || link.source == selectedId || link.target == selectedId
                 var path = Path()
                 path.move(to: screen(a, canvasSize))
                 path.addLine(to: screen(b, canvasSize))
-                let semantic = link.kind == .semantic
-                let base = semantic ? Color.iys(dark: "FBBF24", light: "A16207") : OCColor.textFaint
-                context.stroke(path, with: .color(base.opacity(lit ? 0.85 : 0.15)),
-                               style: StrokeStyle(lineWidth: semantic ? 1.6 : 1.2, dash: semantic ? [6, 5] : []))
+                context.stroke(path, with: .color(OCColor.textFaint.opacity(lit ? 0.45 : 0.10)), lineWidth: lit ? 1.25 : 0.9)
             }
+            for link in graph.links where link.kind == .semantic {
+                guard let a = positions[link.source], let b = positions[link.target] else { continue }
+                let pA = screen(a, canvasSize), pB = screen(b, canvasSize)
+                let lit = selectedId == nil || link.source == selectedId || link.target == selectedId
+                let (ctrl, curveMid) = bridgeGeometry(from: pA, to: pB, center: canvasCenter)
+                var path = Path()
+                path.move(to: pA)
+                path.addQuadCurve(to: pB, control: ctrl)
+                let width = CGFloat(lit ? 1.8 + min(1.0, Double(max(0, link.strength - 1)) * 0.4) : 1.1)
+                if lit {
+                    context.stroke(path, with: .color(bridgeGold.opacity(0.18)), lineWidth: width + 3.5)
+                }
+                context.stroke(path, with: .color(bridgeGold.opacity(lit ? 0.92 : 0.15)),
+                               style: StrokeStyle(lineWidth: width, dash: [6, 4]))
+
+                let isSelectedEdge = selectedId != nil && (link.source == selectedId || link.target == selectedId)
+                if lit && (bridgesOnly || isSelectedEdge || semanticTotal <= 3) {
+                    let clean = link.label.replacingOccurrences(of: "Comparten: ", with: "")
+                    let badge = clean.count > 22 ? String(clean.prefix(20)) + "…" : clean
+                    bridgeBadges.append((curveMid, badge, isSelectedEdge || bridgesOnly))
+                }
+            }
+
+            // 3. Reserve node circles in 2D occupied-rect table so labels never collide with dots.
+            var occupiedRects: [CGRect] = []
             for node in graph.nodes {
                 guard let p = positions[node.id] else { continue }
                 let c = screen(p, canvasSize)
+                let r = visualRadius(node)
                 let dim = neighbors.map { !$0.contains(node.id) } ?? false
-                let r = CGFloat(node.radius) * scale / 2.2 * 2
+                occupiedRects.append(CGRect(x: c.x - r - 3, y: c.y - r - 3, width: r * 2 + 6, height: r * 2 + 6))
+
                 let rect = CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)
                 let tint = color(node).opacity(dim ? 0.25 : 1)
                 if node.kind == .context {
+                    if !dim && (node.priority == .critical || node.id == selectedId) {
+                        context.fill(Path(ellipseIn: rect.insetBy(dx: -4, dy: -4)), with: .color(tint.opacity(0.24)))
+                    }
+                    context.fill(Path(ellipseIn: rect.insetBy(dx: -1.8, dy: -1.8)), with: .color(canvasBg))
                     context.fill(Path(ellipseIn: rect), with: .color(tint))
                 } else {
-                    context.fill(Path(ellipseIn: rect), with: .color(tint.opacity(dim ? 0.08 : 0.18)))
-                    context.stroke(Path(ellipseIn: rect), with: .color(tint), lineWidth: 2)
+                    // Solid canvas fill erases underlying edge lines inside hollow domain/branch rings.
+                    context.fill(Path(ellipseIn: rect), with: .color(canvasBg))
+                    context.fill(Path(ellipseIn: rect), with: .color(tint.opacity(dim ? 0.08 : 0.16)))
+                    context.stroke(Path(ellipseIn: rect), with: .color(tint), lineWidth: node.kind == .domain ? 2.2 : 1.6)
+                    if node.kind == .domain {
+                        let countText = context.resolve(
+                            Text("\(node.childCount)")
+                                .font(.system(size: max(9, 10 * min(1.2, scale)), weight: .bold, design: .monospaced))
+                                .foregroundColor(tint)
+                        )
+                        context.draw(countText, at: c, anchor: .center)
+                    } else {
+                        let core = CGRect(x: c.x - 2.4, y: c.y - 2.4, width: 4.8, height: 4.8)
+                        context.fill(Path(ellipseIn: core), with: .color(tint))
+                    }
                 }
                 if node.id == selectedId {
-                    context.stroke(Path(ellipseIn: rect.insetBy(dx: -4, dy: -4)), with: .color(OCColor.textPrimary), lineWidth: 1.5)
+                    context.stroke(Path(ellipseIn: rect.insetBy(dx: -4, dy: -4)), with: .color(OCColor.textPrimary), lineWidth: 1.8)
                 }
-                let showLabel = node.kind != .context || node.id == selectedId || scale >= 1.2 || (neighbors?.contains(node.id) ?? false)
-                if showLabel && !dim {
-                    let label = node.label.count > 22 ? String(node.label.prefix(20)) + "…" : node.label
-                    context.draw(Text(label).font(.system(size: 10, weight: node.kind == .domain ? .bold : .regular))
-                        .foregroundColor(OCColor.textPrimary), at: CGPoint(x: c.x, y: c.y + r + 9))
+            }
+
+            // 4. Node labels ordered by visual priority with 2D non-overlapping capsule pills.
+            let orderedForLabels = graph.nodes.sorted { a, b in
+                let rank: (GraphNode) -> Int = { n in
+                    if n.id == selectedId { return 0 }
+                    if neighbors?.contains(n.id) == true { return 1 }
+                    switch n.kind {
+                    case .domain: return 2
+                    case .context: return 3 + (n.priority == .critical ? 0 : n.priority == .high ? 1 : 2)
+                    case .cluster: return 6
+                    }
                 }
+                return rank(a) < rank(b)
+            }
+
+            for node in orderedForLabels {
+                guard let p = positions[node.id] else { continue }
+                let dim = neighbors.map { !$0.contains(node.id) } ?? false
+                if dim { continue }
+
+                let isSelected = node.id == selectedId
+                let isNeighbor = neighbors?.contains(node.id) ?? false
+                let shouldShow: Bool
+                switch node.kind {
+                case .domain:
+                    shouldShow = true
+                case .context:
+                    shouldShow = noteCount <= 14 || scale >= 1.05 || isSelected || isNeighbor
+                case .cluster:
+                    shouldShow = isSelected || isNeighbor || scale >= 1.12 || (clusterCount <= 5 && noteCount <= 8)
+                }
+                guard shouldShow else { continue }
+
+                let c = screen(p, canvasSize)
+                let r = visualRadius(node)
+                let maxChars = node.kind == .domain ? 24 : 22
+                let label = node.label.count > maxChars ? String(node.label.prefix(maxChars - 2)) + "…" : node.label
+                let fontSize: CGFloat = node.kind == .domain ? 10.5 : node.kind == .context ? 9.8 : 9.0
+                let weight: Font.Weight = node.kind == .domain ? .bold : node.kind == .context ? .semibold : .medium
+                let labelColor = node.kind == .cluster && !isSelected ? OCColor.textSecondary : OCColor.textPrimary
+
+                let resolved = context.resolve(Text(label).font(.system(size: fontSize, weight: weight)).foregroundColor(labelColor))
+                let textSize = resolved.measure(in: CGSize(width: 170, height: 28))
+                let boxW = textSize.width + 10
+                let boxH = textSize.height + 4
+                let domainCenter = domainCentroids[node.domain] ?? canvasCenter
+                let preferAbove = c.y < domainCenter.y - 6
+
+                guard let chosen = placeLabelRect(
+                    center: c, radius: r, size: CGSize(width: boxW, height: boxH),
+                    canvasSize: canvasSize, preferAbove: preferAbove,
+                    allowFallback: isSelected || node.kind == .domain, occupied: occupiedRects
+                ) else { continue }
+
+                occupiedRects.append(chosen)
+                let pillPath = Path(roundedRect: chosen, cornerRadius: 6)
+                context.fill(pillPath, with: .color(pillBg))
+                let border = isSelected ? OCColor.textPrimary : (node.kind == .domain ? color(node).opacity(0.55) : OCColor.borderMuted.opacity(0.8))
+                context.stroke(pillPath, with: .color(border), lineWidth: isSelected ? 1.2 : 0.8)
+                context.draw(resolved, at: CGPoint(x: chosen.midX, y: chosen.midY), anchor: .center)
+            }
+
+            // 5. Bridge keyword pills placed only where they do not collide with labels or dots.
+            for badge in bridgeBadges {
+                let resolved = context.resolve(
+                    Text(badge.text)
+                        .font(.system(size: 8.8, weight: .semibold, design: .monospaced))
+                        .foregroundColor(bridgeGold)
+                )
+                let textSize = resolved.measure(in: CGSize(width: 150, height: 24))
+                let boxW = textSize.width + 10
+                let boxH = textSize.height + 4
+                let raw = CGRect(
+                    x: min(max(6, badge.point.x - boxW / 2), canvasSize.width - 6 - boxW),
+                    y: min(max(6, badge.point.y - boxH / 2), canvasSize.height - 6 - boxH),
+                    width: boxW, height: boxH
+                )
+                if !badge.priority && occupiedRects.contains(where: { $0.intersects(raw.insetBy(dx: -2, dy: -2)) }) {
+                    continue
+                }
+                occupiedRects.append(raw)
+                let pill = Path(roundedRect: raw, cornerRadius: 5)
+                context.fill(pill, with: .color(pillBg))
+                context.stroke(pill, with: .color(bridgeGold.opacity(0.6)), lineWidth: 0.8)
+                context.draw(resolved, at: CGPoint(x: raw.midX, y: raw.midY), anchor: .center)
             }
         }
         .contentShape(Rectangle())
@@ -698,8 +1056,9 @@ private struct SemanticGraphCard: View {
                     let delta = CGSize(width: value.translation.width - lastDrag.width, height: value.translation.height - lastDrag.height)
                     lastDrag = value.translation
                     if let id = dragging {
-                        let p = positions[id] ?? .zero
-                        positions[id] = CGPoint(x: p.x + delta.width / scale, y: p.y + delta.height / scale)
+                        let current = activePositions[id] ?? .zero
+                        let moved = CGPoint(x: current.x + delta.width / scale, y: current.y + delta.height / scale)
+                        if bridgesOnly { bridgePositions[id] = moved } else { fullPositions[id] = moved }
                     } else {
                         pan = CGSize(width: pan.width + delta.width / scale, height: pan.height + delta.height / scale)
                     }
@@ -707,11 +1066,58 @@ private struct SemanticGraphCard: View {
                 .onEnded { _ in dragging = nil; lastDrag = .zero }
         )
         .simultaneousGesture(
-            SpatialTapGesture().onEnded { value in selectedId = hit(value.location, size)?.id }
+            SpatialTapGesture().onEnded { value in
+                withAnimation(.easeOut(duration: 0.18)) {
+                    if let tapped = hit(value.location, size) {
+                        selectedId = (selectedId == tapped.id) ? nil : tapped.id
+                    } else {
+                        selectedId = nil
+                    }
+                }
+            }
         )
         .simultaneousGesture(
-            MagnificationGesture().onChanged { value in scale = min(3, max(0.4, value)) }
+            MagnificationGesture()
+                .onChanged { value in
+                    if pinchStartScale == nil { pinchStartScale = scale }
+                    scale = min(3.0, max(0.45, (pinchStartScale ?? scale) * value))
+                }
+                .onEnded { _ in pinchStartScale = nil }
         )
+    }
+
+    private func placeLabelRect(center: CGPoint, radius: CGFloat, size: CGSize, canvasSize: CGSize,
+                                preferAbove: Bool, allowFallback: Bool, occupied: [CGRect]) -> CGRect? {
+        let gap: CGFloat = 5
+        let w = size.width, h = size.height
+        let below = CGPoint(x: center.x - w / 2, y: center.y + radius + gap)
+        let above = CGPoint(x: center.x - w / 2, y: center.y - radius - gap - h)
+        let right = CGPoint(x: center.x + radius + gap, y: center.y - h / 2)
+        let left = CGPoint(x: center.x - radius - gap - w, y: center.y - h / 2)
+        let candidates = preferAbove ? [above, below, right, left] : [below, above, right, left]
+
+        let clamped = candidates.map { origin in
+            CGRect(
+                x: min(max(6, origin.x), max(6, canvasSize.width - 6 - w)),
+                y: min(max(6, origin.y), max(6, canvasSize.height - 6 - h)),
+                width: w, height: h
+            )
+        }
+        if let clear = clamped.first(where: { candidate in
+            !occupied.contains(where: { $0.intersects(candidate.insetBy(dx: -2, dy: -2)) })
+        }) {
+            return clear
+        }
+        guard allowFallback else { return nil }
+        return clamped.min { lhs, rhs in
+            let overlapArea: (CGRect) -> CGFloat = { candidate in
+                occupied.reduce(0) { sum, other in
+                    let inter = candidate.intersection(other)
+                    return sum + (inter.isNull ? 0 : inter.width * inter.height)
+                }
+            }
+            return overlapArea(lhs) < overlapArea(rhs)
+        }
     }
 
     private var legend: some View {
@@ -723,7 +1129,12 @@ private struct SemanticGraphCard: View {
             legendRow(violet, "Dominio", ring: true)
             legendRow(OCColor.agentBuild, "Rama", ring: true)
             HStack(spacing: 6) {
-                Rectangle().fill(Color.iys(dark: "FBBF24", light: "A16207")).frame(width: 14, height: 2)
+                Path { p in
+                    p.move(to: CGPoint(x: 0, y: 5))
+                    p.addLine(to: CGPoint(x: 14, y: 5))
+                }
+                .stroke(bridgeGold, style: StrokeStyle(lineWidth: 2, dash: [4, 2]))
+                .frame(width: 14, height: 10)
                 Text("Puente").font(.system(size: 11)).foregroundColor(OCColor.textPrimary)
             }
         }
@@ -740,29 +1151,63 @@ private struct SemanticGraphCard: View {
     }
 
     private func detail(_ node: GraphNode) -> some View {
-        let related = graph.links.filter { $0.source == node.id || $0.target == node.id }
-        return VStack(alignment: .leading, spacing: 6) {
-            Divider()
-            TitleText(node.label)
+        let related = fullGraph.links.filter { $0.source == node.id || $0.target == node.id }
+            .sorted { ($0.kind == .semantic ? 0 : 1) < ($1.kind == .semantic ? 0 : 1) }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                if node.kind == .context {
+                    Circle().fill(color(node)).frame(width: 10, height: 10)
+                } else {
+                    Circle().stroke(color(node), lineWidth: 2).frame(width: 10, height: 10)
+                }
+                Text(node.label).font(.system(size: 15, weight: .semibold)).foregroundColor(OCColor.textPrimary)
+                Spacer()
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { selectedId = nil }
+                } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundColor(OCColor.textFaint)
+                }
+                .accessibilityLabel("Cerrar detalle")
+            }
             Muted(node.path.joined(separator: " › "), color: OCColor.agentBuild)
             Muted(node.summary)
             if !related.isEmpty {
-                Text("Conectado con").font(.system(size: 13, weight: .semibold)).foregroundColor(OCColor.textPrimary)
+                Text("Conectado con").font(.system(size: 12, weight: .semibold)).foregroundColor(OCColor.textSecondary)
                 ForEach(Array(related.enumerated()), id: \.offset) { _, link in
                     let otherId = link.source == node.id ? link.target : link.source
-                    if let other = graph.nodes.first(where: { $0.id == otherId }) {
-                        Button { selectedId = other.id } label: {
-                            HStack {
-                                Text(other.label).font(.system(size: 14)).foregroundColor(OCColor.textPrimary).lineLimit(1)
-                                Spacer()
-                                Text(link.kind == .semantic ? link.label : "carpeta").font(.system(size: 12)).foregroundColor(OCColor.textFaint).lineLimit(1)
+                    if let other = fullGraph.nodes.first(where: { $0.id == otherId }) {
+                        let isSemantic = link.kind == .semantic
+                        Button {
+                            withAnimation(.easeOut(duration: 0.22)) {
+                                if bridgesOnly && !bridgeGraph.nodes.contains(where: { $0.id == other.id }) {
+                                    bridgesOnly = false
+                                }
+                                focusNode(other.id)
                             }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: isSemantic ? "sparkles" : "folder")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(isSemantic ? bridgeGold : OCColor.textFaint)
+                                Text(other.label).font(.system(size: 13, weight: .medium)).foregroundColor(OCColor.textPrimary).lineLimit(1)
+                                Spacer()
+                                Text(isSemantic ? link.label.replacingOccurrences(of: "Comparten: ", with: "") : "carpeta")
+                                    .font(.system(size: 11, design: isSemantic ? .monospaced : .default))
+                                    .foregroundColor(isSemantic ? bridgeGold : OCColor.textFaint)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(OCColor.bgLayer1))
                         }
                         .buttonStyle(.plain)
                     }
                 }
             }
         }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(OCColor.bgLayer1.opacity(0.65)))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(OCColor.borderMuted, lineWidth: 1))
     }
 }
 

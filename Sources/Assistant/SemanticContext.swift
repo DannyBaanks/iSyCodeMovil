@@ -91,6 +91,15 @@ public struct GraphLink: Sendable {
     public let target: String
     public let kind: GraphLinkKind
     public let label: String
+    public let strength: Int
+
+    public init(source: String, target: String, kind: GraphLinkKind, label: String, strength: Int = 1) {
+        self.source = source
+        self.target = target
+        self.kind = kind
+        self.label = label
+        self.strength = strength
+    }
 }
 
 public struct SemanticGraph: Sendable {
@@ -350,42 +359,99 @@ public enum SemanticContext {
         }
 
         let wordsOf = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, keywords("\($0.title) \($0.summary)")) })
+        var docFrequency: [String: Int] = [:]
+        for words in wordsOf.values {
+            for word in words { docFrequency[word, default: 0] += 1 }
+        }
         for i in nodes.indices {
             for j in nodes.indices where j > i {
                 let a = nodes[i], b = nodes[j]
                 if parentOf[a.id] == parentOf[b.id] { continue }
                 let shared = wordsOf[a.id]!.intersection(wordsOf[b.id]!)
-                if shared.count >= 2 {
+                let strongSingle = shared.count == 1 && shared.contains { ($0.count >= 6) && (docFrequency[$0] ?? 0) <= 3 }
+                if shared.count >= 2 || strongSingle {
+                    let top = shared.sorted()
                     links.append(GraphLink(source: a.id, target: b.id, kind: .semantic,
-                        label: "Comparten: " + shared.sorted().prefix(3).joined(separator: ", ")))
+                        label: "Comparten: " + top.prefix(3).joined(separator: ", "),
+                        strength: shared.count))
                 }
             }
         }
         return SemanticGraph(nodes: graphNodes, links: links)
     }
 
-    /// Force-directed positions (Fruchterman–Reingold), deterministic for a
-    /// given seed so the picture does not jump between redraws. The result is
-    /// centered and scaled so every node lies within `fit` points of the
-    /// origin; without that, repulsion spreads a dozen nodes far past the canvas.
+    /// Subgraph for "Solo puentes": keeps only notes joined by semantic bridges
+    /// so unrelated hierarchy circles never float as disconnected dots.
+    public static func bridgeSubgraph(from graph: SemanticGraph) -> SemanticGraph {
+        let semanticLinks = graph.links.filter { $0.kind == .semantic }
+        let linkedIds = Set(semanticLinks.flatMap { [$0.source, $0.target] })
+        return SemanticGraph(
+            nodes: graph.nodes.filter { linkedIds.contains($0.id) },
+            links: semanticLinks
+        )
+    }
+
+    /// Sector-seeded force-directed positions (Fruchterman–Reingold), deterministic
+    /// for a given seed so domains stay cleanly separated instead of tangling in
+    /// the center. Scaled so every coordinate lies within `fit` points of the origin.
     public static func layout(_ graph: SemanticGraph, iterations: Int = 200, seed: Int = 0, fit: Double = 120) -> [String: CGPoint] {
         let count = graph.nodes.count
         guard count > 0 else { return [:] }
+        if count == 1 { return [graph.nodes[0].id: .zero] }
+
+        var domains: [String] = []
+        for node in graph.nodes where !domains.contains(node.domain) { domains.append(node.domain) }
+        let domainIndex = Dictionary(uniqueKeysWithValues: domains.enumerated().map { ($0.element, $0.offset) })
+        let domainCount = max(1, domains.count)
+
+        let clustersByDomain = Dictionary(grouping: graph.nodes.filter { $0.kind == .cluster }, by: \.domain)
+        let contextByParent = Dictionary(grouping: graph.nodes.filter { $0.kind == .context }) { $0.parentId ?? $0.domain }
+
         var x = [Double](repeating: 0, count: count)
         var y = [Double](repeating: 0, count: count)
-        for i in 0..<count {
-            let angle = Double(i) * 2.399963 + Double(seed) * 0.7
-            let distance = 46 * (Double(i) + 1).squareRoot()
-            x[i] = cos(angle) * distance
-            y[i] = sin(angle) * distance
+        let sectorRadius = domainCount == 1 ? 0.0 : 54.0 * Double(domainCount).squareRoot()
+
+        for (i, node) in graph.nodes.enumerated() {
+            let dIdx = domainIndex[node.domain] ?? 0
+            let domainAngle = (2.0 * Double.pi * Double(dIdx) / Double(domainCount)) + Double(seed) * 0.7
+            let hubX = cos(domainAngle) * sectorRadius
+            let hubY = sin(domainAngle) * sectorRadius
+            let wedge = (2.0 * Double.pi) / Double(domainCount) * 0.72
+
+            switch node.kind {
+            case .domain:
+                x[i] = hubX
+                y[i] = hubY
+            case .cluster:
+                let siblings = clustersByDomain[node.domain] ?? []
+                let sIdx = siblings.firstIndex(where: { $0.id == node.id }) ?? 0
+                let offset = siblings.count <= 1 ? 0.0 : (Double(sIdx) / Double(siblings.count - 1) - 0.5) * wedge
+                let angle = domainAngle + offset
+                let r = 56.0
+                x[i] = hubX + cos(angle) * r
+                y[i] = hubY + sin(angle) * r
+            case .context:
+                let siblings = contextByParent[node.parentId ?? node.domain] ?? []
+                let cIdx = siblings.firstIndex(where: { $0.id == node.id }) ?? i
+                let clusterSiblings = clustersByDomain[node.domain] ?? []
+                let pIdx = clusterSiblings.firstIndex(where: { $0.id == node.parentId }) ?? 0
+                let baseOffset = clusterSiblings.count <= 1 ? 0.0 : (Double(pIdx) / Double(clusterSiblings.count - 1) - 0.5) * wedge
+                let fan = siblings.count <= 1 ? 0.0 : (Double(cIdx) / Double(siblings.count - 1) - 0.5) * 0.9
+                let angle = domainAngle + baseOffset + fan
+                let r = (domainCount == 1 ? 52.0 : 104.0) + Double(cIdx % 2) * 16.0
+                x[i] = hubX + cos(angle) * r
+                y[i] = hubY + sin(angle) * r
+            }
         }
+
         let indexOf = Dictionary(uniqueKeysWithValues: graph.nodes.enumerated().map { ($0.element.id, $0.offset) })
         let edges: [(Int, Int, Double)] = graph.links.compactMap { link in
             guard let a = indexOf[link.source], let b = indexOf[link.target] else { return nil }
-            return (a, b, link.kind == .hierarchy ? 1 : 0.25)
+            return (a, b, link.kind == .hierarchy ? 1.05 : 0.25)
         }
         let ideal = 90.0
-        var temperature = 60.0
+        let gravity = domainCount >= 2 ? 1.55 : 1.15
+        var temperature = 50.0
         for _ in 0..<iterations {
             var dx = [Double](repeating: 0, count: count)
             var dy = [Double](repeating: 0, count: count)
@@ -393,8 +459,14 @@ public enum SemanticContext {
                 for j in (i + 1)..<max(i + 1, count) where j < count {
                     var ex = x[i] - x[j], ey = y[i] - y[j]
                     var distance = (ex * ex + ey * ey).squareRoot()
-                    if distance < 0.01 { ex = 0.1 * Double(i + 1); ey = 0.1 * Double(j + 1); distance = (ex * ex + ey * ey).squareRoot() }
-                    let force = ideal * ideal / distance
+                    if distance < 0.01 {
+                        ex = 0.1 * Double(i + 1)
+                        ey = 0.1 * Double(j + 1)
+                        distance = (ex * ex + ey * ey).squareRoot()
+                    }
+                    let crossDomain = graph.nodes[i].domain != graph.nodes[j].domain ? 1.12 : 1.0
+                    let nearBoost = distance < 72.0 ? (72.0 / max(18.0, distance)) : 1.0
+                    let force = (ideal * ideal / distance) * crossDomain * nearBoost
                     dx[i] += ex / distance * force; dy[i] += ey / distance * force
                     dx[j] -= ex / distance * force; dy[j] -= ey / distance * force
                 }
@@ -407,17 +479,14 @@ public enum SemanticContext {
                 dx[b] += ex / distance * force; dy[b] += ey / distance * force
             }
             for i in 0..<count {
-                // Strong pull to the center keeps the domains (which have no links
-                // between them) close together; otherwise fitting the far-apart
-                // domains crushes each one and the labels overlap.
-                dx[i] -= x[i] * 2
-                dy[i] -= y[i] * 2
+                dx[i] -= x[i] * gravity
+                dy[i] -= y[i] * gravity
                 let length = max(0.01, (dx[i] * dx[i] + dy[i] * dy[i]).squareRoot())
                 let step = min(length, temperature)
                 x[i] += dx[i] / length * step
                 y[i] += dy[i] / length * step
             }
-            temperature = max(1.5, temperature * 0.97)
+            temperature = max(1.2, temperature * 0.97)
         }
         let cx = x.reduce(0, +) / Double(count)
         let cy = y.reduce(0, +) / Double(count)

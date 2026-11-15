@@ -124,6 +124,21 @@ class SemanticContextTest {
         val closest = points.indices.flatMap { i -> (i + 1 until points.size).map { j ->
             kotlin.math.hypot((points[i].x - points[j].x).toDouble(), (points[i].y - points[j].y).toDouble()) } }.min()
         assertTrue("closest pair $closest dp", closest > 30)
+
+        val bridgeOnly = SemanticContext.bridgeSubgraph(graph)
+        assertEquals(setOf("b", "d"), bridgeOnly.nodes.map { it.id }.toSet())
+        assertEquals(1, bridgeOnly.links.size)
+
+        val readmeNodes = nodes + ContextNode(
+            "e", "Builds del daemon", "El daemon de la PC avisa cuando termina un build de iOS o Android.",
+            listOf("Ingeniería", "Modelos y agentes", "Contexto y herramientas"), ContextPriority.HIGH,
+        )
+        val richGraph = SemanticContext.buildGraph(readmeNodes)
+        assertEquals(2, richGraph.links.count { it.kind == GraphLinkKind.SEMANTIC })
+        val richPoints = SemanticContext.layout(richGraph).values.toList()
+        val richClosest = richPoints.indices.flatMap { i -> (i + 1 until richPoints.size).map { j ->
+            kotlin.math.hypot((richPoints[i].x - richPoints[j].x).toDouble(), (richPoints[i].y - richPoints[j].y).toDouble()) } }.min()
+        assertTrue("rich closest pair $richClosest dp", richClosest > 35)
     }
 }
 
