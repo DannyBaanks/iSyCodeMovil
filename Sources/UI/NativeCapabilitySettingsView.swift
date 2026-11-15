@@ -12,6 +12,31 @@ struct NativeCapabilitySettingsView: View {
     var body: some View {
         List {
             Section {
+                ForEach(GUSToolPermissionCatalog.permissions) { permission in
+                    Toggle(isOn: gusPermissionBinding(for: permission)) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                Text(permission.title)
+                                if permission.changesData {
+                                    Text("PIDE APROBACIÓN")
+                                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(OCColor.warning)
+                                }
+                            }
+                            Text(permission.detail)
+                                .font(OCTypography.meta)
+                                .foregroundStyle(OCColor.textFaint)
+                        }
+                    }
+                    .accessibilityIdentifier("gus-tool-permission-\(permission.id)")
+                }
+            } header: {
+                Text("Herramientas de GUS local")
+            } footer: {
+                Text("Cada herramienta empieza apagada. Activarla solo la incluye en las opciones de GUS; cada cambio de archivos todavía espera una aprobación independiente en pantalla. El modelo corre en el iPhone.")
+            }
+
+            Section {
                 ForEach(capabilities) { capability in
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: icon(for: capability))
@@ -101,6 +126,13 @@ struct NativeCapabilitySettingsView: View {
             hasExternalFolderGrant: store.sandboxFolderName != nil,
             hasConfiguredShortcut: configuredShortcut != nil,
             notificationAuthorization: notificationState
+        )
+    }
+
+    private func gusPermissionBinding(for permission: GUSToolPermissionCatalog.Permission) -> Binding<Bool> {
+        Binding(
+            get: { GUSToolPermissionCatalog.isEnabled(permission.id) },
+            set: { GUSToolPermissionCatalog.setEnabled($0, for: permission.id) }
         )
     }
 

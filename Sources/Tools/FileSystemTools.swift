@@ -8,7 +8,7 @@ public actor FileSystemToolExecutor: @preconcurrency ToolExecutor {
     static let readOutputLimit = 60_000
     public static let toolNames: Set<String> = [
         "read_file", "write_file", "list_directory", "search_files",
-        "file_info", "create_directory", "delete_file", "move_file"
+        "file_info", "create_directory", "delete_file", "move_file", "edit_file"
     ]
     
     public init(workspace: any Workspace) {
@@ -24,7 +24,8 @@ public actor FileSystemToolExecutor: @preconcurrency ToolExecutor {
             fileInfoTool,
             createDirectoryTool,
             deleteFileTool,
-            moveFileTool
+            moveFileTool,
+            editFileTool
         ]
     }
     
@@ -49,6 +50,8 @@ public actor FileSystemToolExecutor: @preconcurrency ToolExecutor {
                 return try await executeDeleteFile(invocation, startTime: startTime)
             case "move_file":
                 return try await executeMoveFile(invocation, startTime: startTime)
+            case "edit_file":
+                return try await executeEditFile(invocation, startTime: startTime)
             default:
                 return ToolExecutionResult(
                     toolCallId: invocation.id,
@@ -264,6 +267,26 @@ public actor FileSystemToolExecutor: @preconcurrency ToolExecutor {
             )
         )
     }
+
+    private var editFileTool: AgentTool {
+        AgentTool(
+            name: "edit_file",
+            description: "Replace one exact text occurrence in a UTF-8 file. Fails if old_text is missing or appears more than once; use read_file first to inspect the current content.",
+            properties: [
+                "path": AgentTool.PropertySchema(type: "string", description: "Relative file path from workspace root", enumValues: nil),
+                "old_text": AgentTool.PropertySchema(type: "string", description: "Exact text to find; must occur exactly once", enumValues: nil),
+                "new_text": AgentTool.PropertySchema(type: "string", description: "Replacement text", enumValues: nil)
+            ],
+            required: ["path", "old_text", "new_text"],
+            capabilities: AgentTool.ToolCapabilities(
+                requiresFileSystem: true,
+                isDestructive: true,
+                approvalReason: "¿Apruebas reemplazar el texto exacto mostrado en este archivo?",
+                requiresApprovalEveryTime: true,
+                restrictions: ["Sandbox: only within workspace", "UTF-8 text files only", "The exact old_text must occur once"]
+            )
+        )
+    }
     
     // MARK: - Tool Implementations
     
@@ -274,7 +297,6 @@ public actor FileSystemToolExecutor: @preconcurrency ToolExecutor {
         guard !path.isEmpty else {
             throw WorkspaceError.invalidPath("path is required")
         }
-        
         let data = try await workspace.readFile(at: path)
         
         // Check size limit (10MB)
@@ -483,6 +505,9 @@ public actor FileSystemToolExecutor: @preconcurrency ToolExecutor {
         guard !path.isEmpty else {
             throw WorkspaceError.invalidPath("path is required")
         }
+        guard !isWorkspaceRootPath(path) else {
+            throw WorkspaceError.invalidPath("The workspace root cannot be deleted")
+        }
         
         if recursive {
             // Truly recursive delete: delete all contents first (depth-first)
@@ -529,6 +554,25 @@ public actor FileSystemToolExecutor: @preconcurrency ToolExecutor {
             error: nil,
             duration: Date().timeIntervalSince(startTime)
         )
+    }
+
+    private func executeEditFile(_ invocation: ToolInvocation, startTime: Date) async throws -> ToolExecutionResult {
+        let path = invocation.arguments["path"] ?? ""
+        let oldText = invocation.arguments["old_text"] ?? ""
+        let newText = invocation.arguments["new_text"] ?? ""
+        guard !path.isEmpty else { throw WorkspaceError.invalidPath("path is required") }
+        let byteCount = try await workspace.replaceText(at: path, oldText: oldText, with: newText)
+        return ToolExecutionResult(
+            toolCallId: invocation.id,
+            output: "Edited exactly one occurrence in \(path) (\(byteCount) bytes)",
+            duration: Date().timeIntervalSince(startTime)
+        )
+    }
+
+    private func isWorkspaceRootPath(_ path: String) -> Bool {
+        path.replacingOccurrences(of: "\\", with: "/")
+            .split(separator: "/")
+            .allSatisfy { $0 == "." }
     }
     
     // MARK: - Glob matching (delegado a GlobMatcher público para testabilidad)
