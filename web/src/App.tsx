@@ -8,15 +8,16 @@ import { ConfirmModal, type PendingConfirmation } from './components/ConfirmModa
 import { ContextPanel } from './components/ContextPanel';
 import { GoogleSignInButton } from './components/GoogleSignInButton';
 import { OptionsPanel } from './components/OptionsPanel';
+import { SummaryPanel } from './components/SummaryPanel';
 import { WorkspacePanel } from './components/WorkspacePanel';
 import { Notice } from './components/ui';
 
 type Section = 'assistant' | 'context' | 'workspace' | 'activity' | 'options';
 
 const TABS: Array<{ id: Section; label: string; devLabel?: string; devOnly?: boolean }> = [
-  { id: 'assistant', label: 'Asistente' },
-  { id: 'context', label: 'Memoria & Contexto', devLabel: 'Árbol de contexto' },
-  { id: 'workspace', label: 'Mis Apps de Google', devLabel: 'Herramientas de Google' },
+  { id: 'assistant', label: 'Resumen' },
+  { id: 'context', label: 'Memoria', devLabel: 'Memoria & Contexto' },
+  { id: 'workspace', label: 'Google', devLabel: 'Herramientas de Google' },
   { id: 'activity', label: 'Bitácora', devOnly: true },
   { id: 'options', label: 'Opciones' },
 ];
@@ -100,9 +101,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
+    <div data-design-system="isycode-local-first" className="min-h-screen bg-[var(--background)] text-[var(--text-primary)] transition-colors">
       <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md sticky top-0 z-30">
-        <a href="#assistant" onClick={(e) => { e.preventDefault(); setSection('assistant'); }} className="text-lg font-bold tracking-tight whitespace-nowrap shrink-0">iSyCode Móvil</a>
+          <a href="#assistant" onClick={(e) => { e.preventDefault(); setSection('assistant'); }} className="text-lg font-bold tracking-tight whitespace-nowrap shrink-0">iSyCode Móvil</a>
         <nav aria-label="Navegación principal" className="flex items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-400 overflow-x-auto">
           {visibleTabs.map((tab) => (
             <a key={tab.id} href={`#${tab.id}`} onClick={(e) => { e.preventDefault(); setSection(tab.id); }} aria-current={section === tab.id ? 'page' : undefined}
@@ -118,16 +119,21 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
         <section className="pb-6 border-b border-slate-200 dark:border-slate-800">
-          <p className="text-xs font-mono text-slate-500 dark:text-slate-400">Gmail · Calendar · Drive · Docs · Sheets · Tasks · Keep · Maps · Memoria semántica</p>
-          <h1 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight" style={{ textWrap: 'balance' }}>Tu asistente conectado con Google y tu memoria</h1>
+          <p className="text-xs font-mono text-slate-500 dark:text-slate-400">Asistente local · Google · Memoria · Confirmación humana</p>
+          <h1 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight" style={{ textWrap: 'balance' }}>Tu asistente local para Google y tus tareas</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-            Corre en tu computadora y solo escucha en <code className="font-mono">127.0.0.1</code>. Lo que cambia algo siempre te pide confirmación.
+            Corre en tu computadora. Revisa el estado de cada conexión y confirma cualquier operación que cambie algo.
           </p>
         </section>
 
         {loadError && <Notice tone="error">{loadError}</Notice>}
 
-        {section === 'assistant' && <AssistantPanel status={status} developerMode={developerMode} onConfirmAction={confirmAction} onOpenOptions={() => setSection('options')} />}
+        {section === 'assistant' && (
+          <>
+            <SummaryPanel status={status} loadError={loadError} activity={activity} onOpenOptions={() => setSection('options')} onOpenActivity={() => setSection('activity')} />
+            <AssistantPanel status={status} developerMode={developerMode} onConfirmAction={confirmAction} onOpenOptions={() => setSection('options')} />
+          </>
+        )}
         {section === 'context' && <ContextPanel nodes={nodes} file={contextFile} developerMode={developerMode} onChanged={refreshContext} onConfirm={setPending} />}
         {section === 'workspace' && <WorkspacePanel tools={tools} status={status} developerMode={developerMode} onConfirm={setPending} onActivity={() => { void refreshActivity(); void refreshContext(); }} />}
         {section === 'activity' && <ActivityPanel entries={activity} onRefresh={() => void refreshActivity()} />}

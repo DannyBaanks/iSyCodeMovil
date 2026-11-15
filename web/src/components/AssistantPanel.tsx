@@ -91,6 +91,7 @@ export const AssistantPanel: React.FC<Props> = ({ status, developerMode, onConfi
                 <button
                   type="button"
                   disabled={busy || blocked}
+                  title={blocked ? (!geminiReady ? 'Configura el asistente para habilitar esta acción.' : 'Conecta Google para habilitar esta acción.') : undefined}
                   onClick={() => { setPrompt(qa.prompt); void send(qa.prompt, qa.grounding); }}
                   className="w-full text-left rounded-xl border border-slate-200 dark:border-slate-800 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
@@ -101,8 +102,8 @@ export const AssistantPanel: React.FC<Props> = ({ status, developerMode, onConfi
             );
           })}
         </ul>
-        {!geminiReady && <div className="mt-4"><Notice tone="warn">Falta <code className="font-mono">GEMINI_API_KEY</code> en <code className="font-mono">web/.env</code>. Sin ella el asistente no puede responder.</Notice></div>}
-        {geminiReady && !signedIn && <div className="mt-4"><Notice>Inicia sesión con Google para las acciones de correo, agenda, tareas y Drive.</Notice></div>}
+        {!geminiReady && <div className="mt-4"><Notice tone="warn"><span className="block">Falta <code className="font-mono">GEMINI_API_KEY</code> en <code className="font-mono">web/.env</code>. Sin ella el asistente no puede responder.</span><button type="button" onClick={onOpenOptions} className="mt-2 text-xs font-semibold underline underline-offset-4">Ver opciones de configuración</button></Notice></div>}
+        {geminiReady && !signedIn && <div className="mt-4"><Notice><span className="block">Conecta Google para las acciones de correo, agenda, tareas y Drive. Las búsquedas web y mapas no requieren sesión.</span><button type="button" onClick={onOpenOptions} className="mt-2 text-xs font-semibold underline underline-offset-4">Revisar opciones</button></Notice></div>}
       </Card>
 
       <Card className="lg:col-span-7 p-5 flex flex-col gap-4">

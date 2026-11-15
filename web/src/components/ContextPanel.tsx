@@ -33,7 +33,7 @@ const Folder_: React.FC<{ folder: SemanticTreeFolder; highlight: Set<string>; on
             <li key={node.id} className={`group my-1 rounded-xl border px-3 py-2 ${highlight.has(node.id) ? 'border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30' : 'border-slate-200 dark:border-slate-800'}`}>
               <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-medium">{node.title}</p>
-                <button type="button" onClick={() => onDelete(node)} aria-label={`Borrar ${node.title}`} className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"><Trash2 className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={() => onDelete(node)} aria-label={`Borrar ${node.title}`} className="rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
               <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">{node.summary}</p>
               <p className="mt-1 text-[11px] font-mono text-slate-400">
@@ -160,7 +160,7 @@ export const ContextPanel: React.FC<Props> = ({ nodes, file, developerMode, onCh
             <form onSubmit={save} className="mt-3 space-y-2.5">
               <input required value={form.title} maxLength={120} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Título corto" className={inputClass} aria-label="Título" />
               <textarea required value={form.summary} maxLength={1200} rows={3} onChange={(e) => setForm({ ...form, summary: e.target.value })} placeholder="Lo que quieres que el asistente recuerde" className={inputClass} aria-label="Resumen" />
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <input required list="ctx-domains" value={form.domain} maxLength={60} onChange={(e) => setForm({ ...form, domain: e.target.value })} placeholder="Dominio" className={inputClass} aria-label="Carpeta 1: dominio" />
                 <input required value={form.category} maxLength={60} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Categoría" className={inputClass} aria-label="Carpeta 2: categoría" />
                 <input required value={form.topic} maxLength={60} onChange={(e) => setForm({ ...form, topic: e.target.value })} placeholder="Tema" className={inputClass} aria-label="Carpeta 3: tema" />
