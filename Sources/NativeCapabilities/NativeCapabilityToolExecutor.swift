@@ -37,6 +37,8 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
     private var projectedNativeNames = Set<String>()
     private var sharedMemoryAllowed = false
     private var currentConversationID: String?
+    /// Set for on-device GUS: tools the person switched off in Ajustes are never offered or run.
+    private var enforceGUSPermissionToggles = false
 
     public init(workspace: any Workspace, persistence: (any Persistence)? = nil, defaults: UserDefaults = .standard) {
         self.fileSystem = MiniAgentFileSystemToolExecutor(workspace: workspace)
@@ -99,6 +101,33 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
 
     public var availableTools: [AgentTool] { Self.nativeTools }
 
+    public func setGUSPermissionMode(_ enabled: Bool) {
+        enforceGUSPermissionToggles = enabled
+    }
+
+    /// A tool is blocked when it maps to a catalogued GUS permission the person turned off.
+    private func blockedByGUSPermission(_ toolName: String) -> Bool {
+        guard enforceGUSPermissionToggles else { return false }
+        if toolName == "undo" {
+            return !GUSToolPermissionCatalog.isEnabled("edit_file", defaults: defaults)
+                && !GUSToolPermissionCatalog.isEnabled("write_file", defaults: defaults)
+        }
+        let permissionID = Self.gusPermissionID(for: toolName)
+        return GUSToolPermissionCatalog.permissions.contains { $0.id == permissionID }
+            && !GUSToolPermissionCatalog.isEnabled(permissionID, defaults: defaults)
+    }
+
+    private static func gusPermissionID(for toolName: String) -> String {
+        switch toolName {
+        case "list": return "list_directory"
+        case "read", "read_file_range": return "read_file"
+        case "find", "search_text": return "search_files"
+        case "edit", "replace_lines": return "edit_file"
+        case "write", "append_file", "copy_file": return "write_file"
+        default: return toolName
+        }
+    }
+
     public func tools(relevantTo messages: [ModelMessage]) async -> [AgentTool] {
         let projectedIDs = NativeCapabilityToolProjection.relevantCapabilityIDs(for: messages)
         let projectedNative = Self.nativeTools.filter { projectedIDs.contains($0.name) }
@@ -110,11 +139,13 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
                 tools.append(Self.searchConversationsTool)
             }
         }
+        tools = tools.filter { !blockedByGUSPermission($0.name) }
         projectedNativeNames = Set(tools.map(\.name))
         if simpleToolsEnabled {
-            return await simple.tools() + tools
+            let simpleTools = (await simple.tools()).filter { !blockedByGUSPermission($0.name) }
+            return simpleTools + tools
         }
-        let fileTools = await fileSystem.availableTools
+        let fileTools = (await fileSystem.availableTools).filter { !blockedByGUSPermission($0.name) }
         return fileTools + [SimpleWorkspaceToolExecutor.cloneTool] + tools
     }
 
@@ -123,6 +154,9 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
     }
 
     public func execute(_ invocation: ToolInvocation, approval: PermissionResponse.Decision?) async -> ToolExecutionResult {
+        guard !blockedByGUSPermission(invocation.name) else {
+            return failure(invocation, "La persona desactivó este permiso de GUS en Ajustes.", started: Date())
+        }
         if simpleToolsEnabled, SimpleWorkspaceToolExecutor.toolNames.contains(invocation.name) {
             return await simple.execute(invocation, approval: approval)
         }

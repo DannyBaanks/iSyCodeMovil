@@ -74,6 +74,7 @@ public protocol Workspace: Sendable {
     func listDirectory(at path: String) async throws -> [FileInfo]
     func readFile(at path: String) async throws -> Data
     func writeFile(at path: String, data: Data) async throws
+    func replaceText(at path: String, oldText: String, with newText: String) async throws -> Int
     func createDirectory(at path: String) async throws
     func moveFile(from: String, to: String) async throws
     func deleteFile(at path: String) async throws
@@ -264,6 +265,36 @@ public actor IOSWorkspace: Workspace {
             try data.write(to: coordinatedTarget, options: .atomic)
         }
     }
+
+    /// Replaces one unique UTF-8 snippet while holding the Files-provider write
+    /// coordination, so an external edit cannot be silently overwritten between
+    /// the agent's read and write steps.
+    public func replaceText(at path: String, oldText: String, with newText: String) async throws -> Int {
+        guard !oldText.isEmpty else { throw WorkspaceError.invalidPath("old_text must not be empty") }
+        let url = try resolveAndValidate(path)
+        return try coordinateWrite(at: url, options: .forReplacing) { coordinatedURL in
+            guard fileManager.fileExists(atPath: coordinatedURL.path) else { throw WorkspaceError.notFound(path) }
+            guard fileManager.isReadableFile(atPath: coordinatedURL.path) else { throw WorkspaceError.permissionDenied(path) }
+            let originalData = try Data(contentsOf: coordinatedURL)
+            guard originalData.count <= 10_000_000,
+                  let original = String(data: originalData, encoding: .utf8) else {
+                throw WorkspaceError.invalidPath("edit_file accepts UTF-8 text files up to 10MB")
+            }
+            guard let match = original.range(of: oldText) else {
+                throw WorkspaceError.invalidPath("old_text was not found; read the file again before editing")
+            }
+            guard original.range(of: oldText, range: match.upperBound..<original.endIndex) == nil else {
+                throw WorkspaceError.invalidPath("old_text occurs more than once; provide a longer exact snippet so only one occurrence matches")
+            }
+            let edited = original.replacingCharacters(in: match, with: newText)
+            let data = Data(edited.utf8)
+            guard data.count <= 10_000_000 else {
+                throw WorkspaceError.invalidPath("Edited file would exceed 10MB")
+            }
+            try data.write(to: coordinatedURL, options: .atomic)
+            return data.count
+        }
+    }
     
     public func createDirectory(at path: String) async throws {
         let url = try resolveAndValidate(path)
@@ -276,6 +307,9 @@ public actor IOSWorkspace: Workspace {
     public func moveFile(from: String, to: String) async throws {
         let fromURL = try resolveAndValidate(from)
         let toURL = try resolveAndValidate(to)
+        guard fromURL.standardizedFileURL.path != rootURL.standardizedFileURL.path else {
+            throw WorkspaceError.invalidPath("The workspace root cannot be moved")
+        }
         guard fileManager.fileExists(atPath: fromURL.path) else { throw WorkspaceError.notFound(from) }
         if fileManager.fileExists(atPath: toURL.path) { throw WorkspaceError.alreadyExists(to) }
         try coordinateWrite(at: rootURL, options: .forMerging) { coordinatedRoot in
@@ -304,6 +338,9 @@ public actor IOSWorkspace: Workspace {
     
     public func deleteFile(at path: String) async throws {
         let url = try resolveAndValidate(path)
+        guard url.standardizedFileURL.path != rootURL.standardizedFileURL.path else {
+            throw WorkspaceError.invalidPath("The workspace root cannot be deleted")
+        }
         try coordinateWrite(at: url, options: .forDeleting) { coordinatedURL in
             guard fileManager.fileExists(atPath: coordinatedURL.path) else { throw WorkspaceError.notFound(path) }
             try fileManager.removeItem(at: coordinatedURL)

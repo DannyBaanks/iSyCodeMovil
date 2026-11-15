@@ -274,7 +274,6 @@ public actor FileSystemToolExecutor: @preconcurrency ToolExecutor {
         guard !path.isEmpty else {
             throw WorkspaceError.invalidPath("path is required")
         }
-        
         let data = try await workspace.readFile(at: path)
         
         // Check size limit (10MB)
@@ -483,6 +482,9 @@ public actor FileSystemToolExecutor: @preconcurrency ToolExecutor {
         guard !path.isEmpty else {
             throw WorkspaceError.invalidPath("path is required")
         }
+        guard !isWorkspaceRootPath(path) else {
+            throw WorkspaceError.invalidPath("The workspace root cannot be deleted")
+        }
         
         if recursive {
             // Truly recursive delete: delete all contents first (depth-first)
@@ -529,6 +531,12 @@ public actor FileSystemToolExecutor: @preconcurrency ToolExecutor {
             error: nil,
             duration: Date().timeIntervalSince(startTime)
         )
+    }
+
+    private func isWorkspaceRootPath(_ path: String) -> Bool {
+        path.replacingOccurrences(of: "\\", with: "/")
+            .split(separator: "/")
+            .allSatisfy { $0 == "." }
     }
     
     // MARK: - Glob matching (delegado a GlobMatcher público para testabilidad)

@@ -215,6 +215,54 @@ final class NativeCapabilityBrokerTests: XCTestCase {
         XCTAssertEqual(result.first?.implementationSurface, .systemUI)
     }
 
+    func testGUSLocalPermissionTogglesGateSimpleTools() async throws {
+        let suite = "GUSPermissionTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let workspace = try IOSWorkspace(rootName: "gus_permissions_\(UUID().uuidString)")
+        let workspaceRoot = await workspace.rootURL
+        defer { try? FileManager.default.removeItem(at: workspaceRoot) }
+        try await workspace.writeFile(at: "hello.txt", data: Data("hola gus".utf8))
+
+        let executor = NativeCapabilityToolExecutor(workspace: workspace, defaults: defaults)
+        await executor.configureSharedMemory(localOnly: true, conversationID: "gus-perm")
+        await executor.setGUSPermissionMode(true)
+        let messages = [ModelMessage(role: .user, content: "Lee y edita hello.txt")]
+
+        let initialNames = Set(await executor.tools(relevantTo: messages).map(\.name))
+        for gated in ["list", "read", "find", "edit", "write", "undo"] {
+            XCTAssertFalse(initialNames.contains(gated), "\(gated) should stay hidden while disabled")
+        }
+        let blockedRead = await executor.execute(ToolInvocation(name: "read", arguments: ["path": "hello.txt"]))
+        XCTAssertNotNil(blockedRead.error)
+        let blockedWrite = await executor.execute(ToolInvocation(name: "write", arguments: ["path": "out.txt", "content": "x"]), approval: .allowOnce)
+        XCTAssertNotNil(blockedWrite.error)
+
+        GUSToolPermissionCatalog.setEnabled(true, for: "read_file", defaults: defaults)
+        let readOnlyNames = Set(await executor.tools(relevantTo: messages).map(\.name))
+        XCTAssertTrue(readOnlyNames.contains("read"))
+        XCTAssertFalse(readOnlyNames.contains("write"))
+        XCTAssertFalse(readOnlyNames.contains("edit"))
+        XCTAssertFalse(readOnlyNames.contains("undo"))
+
+        let allowedRead = await executor.execute(ToolInvocation(name: "read", arguments: ["path": "hello.txt"]))
+        XCTAssertNil(allowedRead.error)
+        XCTAssertTrue(allowedRead.output.contains("hola gus"))
+
+        let stillBlockedWrite = await executor.execute(ToolInvocation(name: "write", arguments: ["path": "out.txt", "content": "x"]), approval: .allowOnce)
+        XCTAssertNotNil(stillBlockedWrite.error)
+
+        GUSToolPermissionCatalog.setEnabled(true, for: "write_file", defaults: defaults)
+        let writeNames = Set(await executor.tools(relevantTo: messages).map(\.name))
+        XCTAssertTrue(writeNames.contains("write"))
+        XCTAssertTrue(writeNames.contains("undo"))
+        XCTAssertFalse(writeNames.contains("edit"))
+
+        let allowedWrite = await executor.execute(ToolInvocation(name: "write", arguments: ["path": "out.txt", "content": "listo"]), approval: .allowOnce)
+        XCTAssertNil(allowedWrite.error)
+    }
+
     private func capability(authorization: NativeAuthorizationState = .authorized,
                             effect: NativeEffectClass = .read) -> NativeCapabilityDescriptor {
         .init(id: "test.capability", title: "Test", detail: "Test", availability: .available,
