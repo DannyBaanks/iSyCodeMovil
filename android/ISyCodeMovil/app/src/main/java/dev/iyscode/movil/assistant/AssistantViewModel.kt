@@ -323,6 +323,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun confirmPending() {
+        if (_ui.value.running) return
         val action = _ui.value.pending ?: return
         _ui.update { it.copy(running = true) }
         viewModelScope.launch {
