@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -88,6 +89,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -141,6 +143,7 @@ import dev.iyscode.movil.assistant.ToolMode
 import dev.iyscode.movil.assistant.TreeFolder
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
@@ -199,12 +202,23 @@ fun AssistantRoot(vm: AssistantViewModel, onSignIn: (String) -> Unit, onAppearan
             confirmButton = {
                 Button(onClick = vm::confirmPending, enabled = !ui.running) {
                     if (ui.running) CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Iys.onAccent)
-                    else Text("Confirmar")
+                    else Text(confirmLabel(action.toolId))
                 }
             },
             dismissButton = { TextButton(onClick = vm::cancelPending, enabled = !ui.running) { Text("Cancelar") } },
         )
     }
+}
+
+private fun confirmLabel(toolId: String): String = when {
+    toolId.contains("gmail.write") -> "Enviar correo"
+    toolId.contains("calendar.write") -> "Crear evento"
+    toolId.contains("tasks.write") -> "Agregar pendiente"
+    toolId.contains("save.context") -> "Guardar nota"
+    toolId.contains("docs.write") -> "Crear documento"
+    toolId.contains("sheets.write") -> "Agregar fila"
+    toolId.contains("classroom.write") -> "Publicar anuncio"
+    else -> "Confirmar y ejecutar"
 }
 
 private fun openMaps(context: Context, query: String) {
@@ -361,7 +375,7 @@ private fun HomeSection(vm: AssistantViewModel, ui: AssistantUi, memoryCount: In
         items(AssistantCatalog.quickActions.chunked(2)) { pair ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 pair.forEach { action ->
-                    QuickActionCard(action, ui.developerMode, Modifier.weight(1f)) { vm.runQuickAction(action)?.let(onMaps) }
+                    QuickActionCard(action, ui, Modifier.weight(1f)) { vm.runQuickAction(action)?.let(onMaps) }
                 }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
@@ -412,7 +426,7 @@ private fun CapabilityCard(title: String, detail: String, icon: ImageVector, mod
 }
 
 @Composable
-private fun QuickActionCard(action: QuickAction, developer: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun QuickActionCard(action: QuickAction, ui: AssistantUi, modifier: Modifier, onClick: () -> Unit) {
     val icon = when (action.kind) {
         QuickActionKind.OPEN_MAPS -> Icons.Filled.Place
         QuickActionKind.SAVE_MEMORY -> Icons.Filled.Psychology
@@ -427,7 +441,8 @@ private fun QuickActionCard(action: QuickAction, developer: Boolean, modifier: M
             Icon(icon, null, tint = Iys.accent, modifier = Modifier.size(18.dp))
         }
         Text(action.title, style = MaterialTheme.typography.labelLarge)
-        Muted(if (developer) action.toolId else action.subtitle)
+        val blocked = action.service != null && (!ui.signedIn || !ui.granted(action.service))
+        Muted(if (blocked) "Bloqueada: conecta Google" else action.subtitle, if (blocked) Iys.orange else Iys.textSecondary)
     }
 }
 
@@ -438,6 +453,8 @@ private const val HISTORY_KEY = "memorySearchHistory"
 @Composable
 private fun MemorySection(vm: AssistantViewModel, ui: AssistantUi, nodes: List<ContextNode>) {
     val context = LocalContext.current
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("assistant", Context.MODE_PRIVATE) }
     var query by rememberSaveable { mutableStateOf("") }
     var graphView by rememberSaveable { mutableStateOf(false) }
@@ -453,7 +470,7 @@ private fun MemorySection(vm: AssistantViewModel, ui: AssistantUi, nodes: List<C
     val matches = SemanticContext.fuzzyFilter(nodes, query)
     val visible = matches.map { it.node }
 
-    LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(state = listState, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Card {
                 Text("Memoria de GUS", style = MaterialTheme.typography.titleMedium)
@@ -481,7 +498,13 @@ private fun MemorySection(vm: AssistantViewModel, ui: AssistantUi, nodes: List<C
             }
         }
         if (nodes.isEmpty()) {
-            item { Card { Muted("Todavía no hay notas. Guarda la primera abajo, o toca \"Guardar en memoria\" bajo una respuesta de GUS.") } }
+            item {
+                Card {
+                    Text("Tu memoria está vacía", style = MaterialTheme.typography.titleMedium)
+                    Muted("Guarda una primera nota para que GUS pueda usarla en tus próximas preguntas.")
+                    Button(onClick = { scope.launch { listState.animateScrollToItem(2) } }) { Text("Guardar primera nota") }
+                }
+            }
         } else if (graphView) {
             item { SemanticGraphCard(visible, focusedNodeId = focusedGraphNodeId, onFocusConsumed = { focusedGraphNodeId = null }) }
         } else {
