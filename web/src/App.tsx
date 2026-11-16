@@ -102,9 +102,9 @@ export default function App() {
 
   return (
     <div data-design-system="isycode-local-first" className="min-h-screen bg-[var(--background)] text-[var(--text-primary)] transition-colors">
-      <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md sticky top-0 z-30">
-          <a href="#assistant" onClick={(e) => { e.preventDefault(); setSection('assistant'); }} className="text-lg font-bold tracking-tight whitespace-nowrap shrink-0">iSyCode Móvil</a>
-        <nav aria-label="Navegación principal" className="flex items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-400 overflow-x-auto">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:gap-8 sm:px-6 sm:py-4 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md sticky top-0 z-30">
+        <a href="#assistant" onClick={(e) => { e.preventDefault(); setSection('assistant'); }} className="text-lg font-bold tracking-tight whitespace-nowrap shrink-0">iSyCode Móvil</a>
+        <nav aria-label="Navegación principal" className="hidden sm:flex items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-400 overflow-x-auto">
           {visibleTabs.map((tab) => (
             <a key={tab.id} href={`#${tab.id}`} onClick={(e) => { e.preventDefault(); setSection(tab.id); }} aria-current={section === tab.id ? 'page' : undefined}
               className={`hover:text-slate-900 dark:hover:text-slate-100 transition-colors whitespace-nowrap shrink-0 ${section === tab.id ? 'text-blue-600 dark:text-blue-400 underline underline-offset-8' : ''}`}>
@@ -115,6 +115,10 @@ export default function App() {
         <div className="flex items-center shrink-0">
           <GoogleSignInButton google={status?.google} busy={loginBusy} onLogin={() => void login()} onLogout={() => void logout()} />
         </div>
+        <label className="sr-only" htmlFor="mobile-section">Sección actual</label>
+        <select id="mobile-section" value={section} onChange={(e) => setSection(e.target.value as Section)} className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm font-medium text-[var(--text-primary)] sm:hidden" aria-label="Navegación móvil">
+          {visibleTabs.map((tab) => <option key={tab.id} value={tab.id}>{developerMode && tab.devLabel ? tab.devLabel : tab.label}</option>)}
+        </select>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
