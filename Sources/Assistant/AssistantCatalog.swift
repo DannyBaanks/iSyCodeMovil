@@ -113,7 +113,7 @@ public enum AssistantSection: String, CaseIterable, Identifiable, Sendable {
 
     public var title: String {
         switch self {
-        case .home: return "Inicio"
+        case .home: return "Resumen"
         case .memory: return "Memoria"
         case .google: return "Google"
         case .log: return "Registro"
