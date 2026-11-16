@@ -58,11 +58,13 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TaskAlt
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -310,12 +312,13 @@ private fun HomeSection(vm: AssistantViewModel, ui: AssistantUi, memoryCount: In
                     .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text(if (ui.email != null) "Hola, ${ui.email.substringBefore('@')}" else "Hola", style = MaterialTheme.typography.headlineSmall)
-                Muted("Tu correo, agenda, pendientes y lo que pasa en tu PC, en un solo lugar. Nada se envía ni se cambia sin que lo confirmes.")
+                Text(if (ui.email != null) "Hola, ${ui.email.substringBefore('@')}" else "Tu asistente local", style = MaterialTheme.typography.headlineSmall)
+                Muted("Google, memoria y tareas en un solo lugar. Revisa el estado de cada capacidad; nada se envía ni se cambia sin que lo confirmes.")
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    StatusChip(if (ui.signedIn) "Google conectado" else "Google sin conectar", if (ui.signedIn) Iys.green else Iys.textFaint)
-                    StatusChip("PC: ${ui.monitorStatus}", if (ui.monitorStatus.startsWith("Conectado")) Iys.green else Iys.textFaint)
-                    StatusChip("$memoryCount en memoria", Iys.violet)
+                    StatusChip(when { ui.clientId.isBlank() -> "Google: no configurado"; ui.signedIn -> "Google: conectado"; else -> "Google: sin conectar" }, if (ui.signedIn) Iys.green else Iys.yellow)
+                    StatusChip("Asistente: disponible", Iys.green)
+                    StatusChip("Memoria: local · $memoryCount", Iys.violet)
+                    StatusChip("Equipo: ${if (ui.monitorStatus == "Apagado") "estado no verificado" else ui.monitorStatus}", Iys.textFaint)
                 }
             }
         }
@@ -339,6 +342,19 @@ private fun HomeSection(vm: AssistantViewModel, ui: AssistantUi, memoryCount: In
                         onClick = { vm.setPriorityContext(!ui.priorityContext) }, icon = Icons.Filled.AutoAwesome)
                 }
                 if (ui.priorityContext) Muted("Lo que envíes se propondrá para tu memoria con prioridad crítica, y GUS lo tendrá más en cuenta.")
+            }
+        }
+        item {
+            SectionTitle("Qué puedes hacer", "Trabaja contigo, no a tus espaldas")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CapabilityCard("Preguntar", "Resumir y buscar con contexto", Icons.Filled.AutoAwesome, Modifier.weight(1f))
+                CapabilityCard("Leer", "Google sin cambiar datos", Icons.Filled.Visibility, Modifier.weight(1f))
+                CapabilityCard("Actuar", "Siempre con confirmación", Icons.Filled.Lock, Modifier.weight(1f))
+            }
+            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.TaskAlt, "Seguridad activa", tint = Iys.green, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Muted("Proponer → confirmar → ejecutar", Iys.textSecondary)
             }
         }
         item { SectionTitle("Acciones rápidas", "Un toque y listo") }
@@ -380,6 +396,18 @@ private fun StatusChip(text: String, color: Color) {
         Box(Modifier.size(7.dp).background(color, CircleShape))
         Spacer(Modifier.width(6.dp))
         Text(text, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun CapabilityCard(title: String, detail: String, icon: ImageVector, modifier: Modifier = Modifier) {
+    Column(
+        modifier.background(Iys.surface, RoundedCornerShape(14.dp)).border(1.dp, Iys.border, RoundedCornerShape(14.dp)).padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Icon(icon, contentDescription = title, tint = Iys.accent, modifier = Modifier.size(17.dp))
+        Text(title, style = MaterialTheme.typography.labelLarge)
+        Muted(detail, Iys.textSecondary)
     }
 }
 

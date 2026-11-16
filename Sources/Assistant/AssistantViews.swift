@@ -259,6 +259,15 @@ private struct HomeSection: View {
                         Muted("Lo que envíes se propondrá para tu memoria con prioridad crítica, y GUS lo tendrá más en cuenta.")
                     }
                 }
+                sectionHeader("Qué puedes hacer", "Trabaja contigo, no a tus espaldas")
+                HStack(spacing: 8) {
+                    CapabilityCard(title: "Preguntar", detail: "Resumir y buscar con contexto", symbol: "sparkles")
+                    CapabilityCard(title: "Leer", detail: "Google sin cambiar datos", symbol: "eye")
+                    CapabilityCard(title: "Actuar", detail: "Siempre con confirmación", symbol: "lock")
+                }
+                Label("Proponer → confirmar → ejecutar", systemImage: "checkmark.seal.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(OCColor.success)
                 sectionHeader("Acciones rápidas", "Un toque y listo")
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                     ForEach(AssistantCatalog.quickActions) { action in
@@ -299,9 +308,10 @@ private struct HomeSection: View {
             Muted("Tu correo, agenda, pendientes y lo que pasa en tu PC, en un solo lugar. Nada se envía ni se cambia sin que lo confirmes.")
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    StatusChip(text: store.signedIn ? "Google conectado" : "Google sin conectar", color: store.signedIn ? OCColor.success : OCColor.textFaint)
-                    StatusChip(text: "PC: \(store.monitorStatus)", color: store.monitorStatus.hasPrefix("Conectado") ? OCColor.success : OCColor.textFaint)
-                    StatusChip(text: "\(store.memory.count) en memoria", color: violet)
+                    StatusChip(text: store.signedIn ? "Google: conectado" : "Google: sin conectar", color: store.signedIn ? OCColor.success : OCColor.warning)
+                    StatusChip(text: "Asistente: local", color: OCColor.success)
+                    StatusChip(text: "Memoria: local · \(store.memory.count)", color: violet)
+                    StatusChip(text: store.monitorStatus.hasPrefix("Conectado") ? "Equipo: conectado" : "Equipo: estado no verificado", color: store.monitorStatus.hasPrefix("Conectado") ? OCColor.success : OCColor.textFaint)
                 }
             }
         }
@@ -334,6 +344,26 @@ private struct StatusChip: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
         .background(Capsule().fill(OCColor.bgBase.opacity(0.7)))
+    }
+}
+
+private struct CapabilityCard: View {
+    let title: String
+    let detail: String
+    let symbol: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(OCColor.agentBuild)
+            Text(title).font(.system(size: 13, weight: .semibold)).foregroundColor(OCColor.textPrimary)
+            Text(detail).font(.system(size: 11)).foregroundColor(OCColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .ocCard(radius: 14)
     }
 }
 

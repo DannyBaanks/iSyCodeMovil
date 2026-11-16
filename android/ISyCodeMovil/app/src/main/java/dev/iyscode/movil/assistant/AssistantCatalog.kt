@@ -51,7 +51,7 @@ data class QuickAction(
 )
 
 enum class AssistantSection(val title: String, val developerOnly: Boolean = false) {
-    HOME("Inicio"), MEMORY("Memoria"), GOOGLE("Google"), LOG("Registro", developerOnly = true), OPTIONS("Opciones")
+    HOME("Resumen"), MEMORY("Memoria"), GOOGLE("Google"), LOG("Registro", developerOnly = true), OPTIONS("Opciones")
 }
 
 object AssistantCatalog {
