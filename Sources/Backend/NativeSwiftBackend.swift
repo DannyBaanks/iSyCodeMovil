@@ -321,7 +321,14 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         failPendingPermissions()
         runningTask?.cancel()
         runningTask = nil
-        let activeExecutor: any ToolExecutor = sandboxExecutor ?? exec
+        // With a sandbox linked the agent also gets the iPhone's companion tools (Google, notifications, Shortcuts):
+        // before, it used only the sandbox's and could not read the person's mail.
+        let activeExecutor: any ToolExecutor
+        if let sandboxExecutor {
+            activeExecutor = CompositeToolExecutor(primary: sandboxExecutor, secondary: exec)
+        } else {
+            activeExecutor = exec
+        }
         let loop = AgentLoop(context: AgentContext(
             conversationId: sessionID,
             workspace: ws,
@@ -370,7 +377,8 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     }
     
     private func systemPromptText() -> String {
-        sandboxExecutor?.systemPrompt ?? GUSMobileRole.mobile.systemPrompt
+        guard let sandboxExecutor else { return GUSMobileRole.mobile.systemPrompt }
+        return sandboxExecutor.systemPrompt + "\n" + CompositeToolExecutor.layersNote
     }
     
     public func listProjects() async throws -> [Project] {
