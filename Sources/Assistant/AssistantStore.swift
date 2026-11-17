@@ -205,14 +205,17 @@ public final class AssistantStore: ObservableObject {
         #if canImport(AuthenticationServices) && canImport(UIKit)
         guard let redirect = GoogleOAuth.redirectURI(clientId: clientId),
               let scheme = GoogleOAuth.redirectScheme(clientId: clientId) else {
-            say("Pega primero tu ID de cliente de iOS (termina en .apps.googleusercontent.com). La guía está en Opciones.")
+            say("El ID de cliente no tiene el formato esperado. Pega solo el ID OAuth de tipo iOS que termina en .apps.googleusercontent.com, sin http:// ni una URL.")
             return
         }
         let verifier = GoogleOAuth.newVerifier()
         let state = UUID().uuidString
         let services = enabledServices
         guard let url = GoogleOAuth.authURL(clientId: clientId, redirectURI: redirect, scopes: GoogleOAuth.scopes(services),
-                                            challenge: GoogleOAuth.challenge(verifier), state: state) else { return }
+                                            challenge: GoogleOAuth.challenge(verifier), state: state) else {
+            say("No pude preparar el inicio de sesión. Revisa el ID de cliente de Google y vuelve a intentar.")
+            return
+        }
         log(.info, "google.oauth", "Abriendo Google para pedir: \(services.map(\.title).joined(separator: ", ")).")
         // authSession is cleared in finishSignIn, which breaks this retain cycle.
         let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { callback, error in
@@ -221,7 +224,10 @@ public final class AssistantStore: ObservableObject {
         session.presentationContextProvider = anchor
         session.prefersEphemeralWebBrowserSession = false
         authSession = session
-        if !session.start() { say("No pude abrir la página de Google.") }
+        if !session.start() {
+            authSession = nil
+            say("No pude abrir la página de Google. Cierra cualquier intento anterior y vuelve a probar.")
+        }
         #else
         say("El inicio de sesión con Google necesita iOS.")
         #endif

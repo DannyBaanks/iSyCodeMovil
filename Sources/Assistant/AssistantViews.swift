@@ -1282,7 +1282,10 @@ private struct GoogleSection: View {
                         Muted("Inicias sesión en la página de Google, con tu propio proyecto. El token se queda en el llavero de este iPhone y puedes desconectarlo cuando quieras.")
                         PrimaryButton(title: "Iniciar sesión con Google") { store.signIn() }
                         if !GoogleOAuth.isPlausibleClientId(store.clientId) {
-                            Muted("Antes, pega tu ID de cliente en Opciones › Google.", color: Color.iys(dark: "FB923C", light: "C2410C"))
+                            Muted(store.clientId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? "Pega tu ID de cliente de tipo iOS en Opciones › Google."
+                                : "El ID no tiene el formato esperado. Pega solo el ID que termina en .apps.googleusercontent.com, sin http:// ni una URL.",
+                                  color: Color.iys(dark: "FB923C", light: "C2410C"))
                         }
                     }
                 }
@@ -1553,6 +1556,11 @@ private struct OptionsSection: View {
                     Muted("1. En console.cloud.google.com crea un ID de cliente OAuth de tipo iOS con el bundle dev.iyscode.movil.\n2. Habilita las APIs que quieras usar (Gmail, Calendar, Tasks…).\n3. Pega aquí el ID de cliente. La guía completa está en docs/GOOGLE_ASSISTANT.md.")
                     InputField(label: "ID de cliente (….apps.googleusercontent.com)", text: $clientDraft)
                         .textInputAutocapitalization(.never)
+                    if !clientDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        && !GoogleOAuth.isPlausibleClientId(clientDraft) {
+                        Muted("Formato no válido. Usa solo el ID OAuth de tipo iOS, sin http://, espacios ni una URL completa.",
+                              color: Color.iys(dark: "FB923C", light: "C2410C"))
+                    }
                     if clientDraft != store.clientId { PrimaryButton(title: "Guardar") { store.clientId = clientDraft.trimmingCharacters(in: .whitespaces) } }
                     Text("Servicios que pediremos").font(.system(size: 13, weight: .semibold)).foregroundColor(OCColor.textPrimary)
                     ForEach(GoogleService.allCases) { service in
