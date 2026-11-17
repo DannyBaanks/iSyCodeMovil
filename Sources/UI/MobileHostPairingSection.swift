@@ -64,7 +64,7 @@ public struct MobileHostPairingSection: View {
 
     private var pairingForm: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Pega la dirección y el PIN de seis dígitos. El teléfono queda emparejado; las conversaciones llegan con el escritorio.")
+            Text("Para el servidor de conversaciones de tu PC, pega la dirección y el PIN de 6 dígitos. Si quieres enlazar un sandbox de código en tu computadora, usa el enlace isysandbox:// en Inicio → Conectar.")
                 .font(.system(size: 12))
                 .foregroundColor(OCColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

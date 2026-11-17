@@ -156,6 +156,7 @@ public struct SendStopButton: View {
         .opacity(isProcessing || canSend ? 1 : 0.4)
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
+        .accessibilityLabel(isProcessing ? "Detener" : "Enviar mensaje")
         .animation(.easeInOut(duration: 0.15), value: isProcessing)
         .animation(.easeInOut(duration: 0.15), value: canSend)
     }
@@ -221,6 +222,7 @@ public struct ComposerControlRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Adjuntar archivo")
 
             if let limitedLabel {
                 Label(limitedLabel, systemImage: "terminal")

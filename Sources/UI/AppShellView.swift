@@ -201,22 +201,28 @@ public struct ConversationsTabView: View {
     }
 }
 
-/// Projects tab preserving ProjectListContent -> SessionListView -> ActiveSessionView navigation.
+/// Projects tab: always starts at the project list so it stays distinct from Conversations,
+/// and drills into a project's sessions on tap.
 public struct ProjectsTabView: View {
     @EnvironmentObject private var store: WorkbenchStore
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var router: AppShellRouter
+    @State private var browsingProject: Project?
 
     public init() {}
 
     public var body: some View {
         Group {
-            if sessionState.currentProject == nil {
-                ProjectListContent()
-            } else if sessionState.currentSession == nil {
-                SessionListView(project: sessionState.currentProject!)
+            if let project = browsingProject {
+                SessionListView(
+                    project: project,
+                    onBack: { browsingProject = nil },
+                    onOpenSession: { router.selectedTab = .conversations }
+                )
             } else {
-                ActiveSessionView()
+                ProjectListContent(onSelectProject: { project in
+                    browsingProject = project
+                })
             }
         }
     }

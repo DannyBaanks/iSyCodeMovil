@@ -994,7 +994,7 @@ public final class WorkbenchStore: ObservableObject {
             if sessionID == currentSessionID {
                 sessionState.isProcessing = false
                 isProcessingRemote = false
-                addSuccessEvent("Done")
+                addSuccessEvent("Listo")
             }
             
         case .sessionError(let message):

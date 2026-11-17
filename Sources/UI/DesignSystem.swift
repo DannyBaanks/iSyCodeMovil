@@ -356,7 +356,15 @@ public enum AgentMode: String, CaseIterable, Identifiable, Sendable {
     case review  = "review"
     case custom  = "custom"
 
-    public var displayName: String { rawValue }
+    public var displayName: String {
+        switch self {
+        case .build: return "Construir"
+        case .plan: return "Plan"
+        case .explore: return "Explorar"
+        case .review: return "Revisar"
+        case .custom: return "Personalizado"
+        }
+    }
 
     public var id: String { rawValue }
 

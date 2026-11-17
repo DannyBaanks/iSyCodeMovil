@@ -276,7 +276,7 @@ public enum RemoteBackendError: Error, LocalizedError, Sendable {
     
     public var errorDescription: String? {
         switch self {
-        case .invalidPairingLink: return "Invalid pairing link"
+        case .invalidPairingLink: return "Enlace de emparejamiento no válido"
         case .invalidResponse: return "Invalid response from remote server"
         case .http(let status, let body): return "Remote server HTTP \(status): \(body)"
         case .missingSession: return "No session is selected"

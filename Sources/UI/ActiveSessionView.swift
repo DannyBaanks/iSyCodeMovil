@@ -175,6 +175,7 @@ public struct ActiveSessionView: View {
                             Image(systemName: "square.grid.2x2")
                                 .font(.system(size: 16, weight: .medium))
                         }
+                        .accessibilityLabel("Cambiar vista")
                     }
 
                     if sessionState.activeSurface == .files && !isCodexRemote && !isGrokRemote {
@@ -182,6 +183,7 @@ public struct ActiveSessionView: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 17))
                         }
+                        .accessibilityLabel("Actualizar archivos")
                     }
                     
                     if sessionState.activeSurface == .review {
@@ -189,12 +191,14 @@ public struct ActiveSessionView: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 17))
                         }
+                        .accessibilityLabel("Actualizar cambios")
                     }
                     
                     Button { showDisconnectConfirm = true } label: {
                         Image(systemName: "rectangle.portrait.and.arrow.right")
                             .font(.system(size: 17))
                     }
+                    .accessibilityLabel("Desconectar")
                 }
             }
         }
@@ -1367,6 +1371,6 @@ private struct CodexCapabilityNotice: View {
                 .overlay(Capsule().stroke(OCColor.warning.opacity(0.18), lineWidth: 1))
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Experimental Codex connection. Chat and approvals only.")
+        .accessibilityLabel("Conexión experimental de Codex. Solo chat y aprobaciones.")
     }
 }

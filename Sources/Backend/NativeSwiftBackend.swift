@@ -451,10 +451,26 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         }
         
         await PermissionNotifier.shared.prepare()
+        if let ps = persistence, var conv = try? await ps.loadConversation(id: sessionID) {
+            let trimmedTitle = conv.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedTitle.isEmpty || trimmedTitle == "Nueva conversación" {
+                let candidate = text
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: "\n", with: " ")
+                if !candidate.isEmpty {
+                    conv.title = String(candidate.prefix(44))
+                    try? await ps.saveConversation(conv)
+                    eventContinuation?.yield(.sessionsChanged)
+                }
+            }
+        }
         let sessionAtStart = sessionID
         BackgroundRunKeeper.shared.begin()
         runningTask = Task { [weak self] in
-            defer { BackgroundRunKeeper.shared.end() }
+            defer {
+                BackgroundRunKeeper.shared.end()
+                self?.eventContinuation?.yield(.sessionsChanged)
+            }
             guard let self else { return }
             do {
                 _ = try await loop.run(userInput: text)
