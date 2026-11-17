@@ -97,8 +97,10 @@ public final class AssistantStore: ObservableObject {
     @Published public private(set) var monitorStatus = "Apagado"
     @Published public var pending: PendingAction?
     @Published public private(set) var running = false
+    @Published public var pendingError: String?
     @Published public var message: String?
     @Published public private(set) var notificationsAllowed = false
+    @Published public private(set) var googleSessionExpired = false
 
     private let google = GoogleClient()
     private var retries: [String: @MainActor () async -> Void] = [:]
@@ -115,6 +117,7 @@ public final class AssistantStore: ObservableObject {
             if !showingSample, let token = await GoogleSession.shared.token() {
                 email = token.email
                 grantedScopes = token.scopes
+                googleSessionExpired = !token.isFresh(at: Date()) && (token.refreshToken ?? "").isEmpty
             }
             await refreshNotificationState()
             restartMonitor()
@@ -123,6 +126,24 @@ public final class AssistantStore: ObservableObject {
 
     public var signedIn: Bool { email != nil || !grantedScopes.isEmpty }
     public func granted(_ service: GoogleService) -> Bool { service.isGranted(grantedScopes) }
+
+    public var googleConnectionState: GoogleConnectionState {
+        ConnectionStatusEvaluator.evaluateGoogle(
+            signedIn: signedIn,
+            email: email,
+            grantedScopes: grantedScopes,
+            clientId: clientId,
+            sessionExpired: googleSessionExpired
+        )
+    }
+
+    /// Ensures a service is enabled and launches Google OAuth to grant its missing permissions.
+    public func authorizeService(_ service: GoogleService) {
+        if !enabledServices.contains(service) {
+            setService(service, enabled: true)
+        }
+        signIn()
+    }
 
     public var enabledServices: [GoogleService] {
         let raw = Set(servicesRaw.split(separator: ",").map(String.init))
@@ -205,14 +226,17 @@ public final class AssistantStore: ObservableObject {
         #if canImport(AuthenticationServices) && canImport(UIKit)
         guard let redirect = GoogleOAuth.redirectURI(clientId: clientId),
               let scheme = GoogleOAuth.redirectScheme(clientId: clientId) else {
-            say("Pega primero tu ID de cliente de iOS (termina en .apps.googleusercontent.com). La guía está en Opciones.")
+            say("El ID de cliente no tiene el formato esperado. Pega solo el ID OAuth de tipo iOS que termina en .apps.googleusercontent.com, sin http:// ni una URL.")
             return
         }
         let verifier = GoogleOAuth.newVerifier()
         let state = UUID().uuidString
         let services = enabledServices
         guard let url = GoogleOAuth.authURL(clientId: clientId, redirectURI: redirect, scopes: GoogleOAuth.scopes(services),
-                                            challenge: GoogleOAuth.challenge(verifier), state: state) else { return }
+                                            challenge: GoogleOAuth.challenge(verifier), state: state) else {
+            say("No pude preparar el inicio de sesión. Revisa el ID de cliente de Google y vuelve a intentar.")
+            return
+        }
         log(.info, "google.oauth", "Abriendo Google para pedir: \(services.map(\.title).joined(separator: ", ")).")
         // authSession is cleared in finishSignIn, which breaks this retain cycle.
         let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { callback, error in
@@ -221,7 +245,10 @@ public final class AssistantStore: ObservableObject {
         session.presentationContextProvider = anchor
         session.prefersEphemeralWebBrowserSession = false
         authSession = session
-        if !session.start() { say("No pude abrir la página de Google.") }
+        if !session.start() {
+            authSession = nil
+            say("No pude abrir la página de Google. Cierra cualquier intento anterior y vuelve a probar.")
+        }
         #else
         say("El inicio de sesión con Google necesita iOS.")
         #endif
@@ -251,6 +278,7 @@ public final class AssistantStore: ObservableObject {
                 await GoogleSession.shared.store(token)
                 email = token.email
                 grantedScopes = token.scopes
+                googleSessionExpired = false
                 let granted = GoogleService.allCases.filter { $0.isGranted(token.scopes) }.map(\.title).joined(separator: ", ")
                 log(.success, "google.oauth", "Cuenta conectada\(token.email.map { " (\($0))" } ?? ""). Permisos: \(granted).")
                 say("Listo, Google está conectado.")
@@ -271,6 +299,7 @@ public final class AssistantStore: ObservableObject {
         }
         email = nil
         grantedScopes = []
+        googleSessionExpired = false
         mail = []; events = []; tasks = []; files = []; contacts = []; courses = []; sheet = nil
         log(.info, "google.oauth", "Cuenta de Google desconectada en este iPhone.")
     }
@@ -316,6 +345,12 @@ public final class AssistantStore: ObservableObject {
                 }
                 log(.success, tool, "\(service.title): \(count) \(count == 1 ? "elemento" : "elementos").")
             } catch {
+                if let apiError = error as? GoogleAPIError, apiError.status == 401 || apiError.status == 400 {
+                    let msg = apiError.message.lowercased()
+                    if msg.contains("invalid_grant") || msg.contains("caduc") || msg.contains("revoked") || msg.contains("conecta tu cuenta") {
+                        googleSessionExpired = true
+                    }
+                }
                 log(.error, tool, error.localizedDescription) { [weak self] in self?.refresh(service) }
             }
         }
@@ -324,27 +359,39 @@ public final class AssistantStore: ObservableObject {
     // MARK: Writes: always through a confirmation
 
     private func propose(_ action: PendingAction) {
+        pendingError = nil
         log(.info, action.toolId, "Esperando tu confirmación: \(action.title)")
         pending = action
     }
 
     public func cancelPending() {
         if let action = pending { log(.info, action.toolId, "Cancelado por ti: \(action.title)") }
+        pendingError = nil
         pending = nil
     }
 
     public func confirmPending() {
-        guard let action = pending else { return }
+        guard !running, let action = pending else { return }
+        pendingError = nil
         running = true
         Task {
-            defer { running = false; pending = nil }
+            defer { running = false }
             do {
                 let result = try await action.run()
+                pending = nil
+                pendingError = nil
                 log(.success, action.toolId, result)
                 addFeed(action.title, result, source: action.toolId)
                 notify(id: action.toolId + "\(Date().timeIntervalSince1970)", title: "Hecho: \(action.title)", body: result)
                 say(result)
             } catch {
+                if let apiError = error as? GoogleAPIError, apiError.status == 401 || apiError.status == 400 {
+                    let msg = apiError.message.lowercased()
+                    if msg.contains("invalid_grant") || msg.contains("caduc") || msg.contains("revoked") || msg.contains("conecta tu cuenta") {
+                        googleSessionExpired = true
+                    }
+                }
+                pendingError = error.localizedDescription
                 log(.error, action.toolId, error.localizedDescription) { [weak self] in self?.pending = action }
                 say(error.localizedDescription)
             }

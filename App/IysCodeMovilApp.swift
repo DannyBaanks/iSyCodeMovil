@@ -40,6 +40,7 @@ public struct IysCodeMovilApp: App {
     @StateObject private var store = WorkbenchStore()
     @StateObject private var hostStore = MobileHostStore()
     @StateObject private var assistant = AssistantStore()
+    @StateObject private var router = AppShellRouter()
     @AppStorage(IysAppearance.storageKey) private var appearance = IysAppearance.automatic.rawValue
 
     public init() {
@@ -56,6 +57,7 @@ public struct IysCodeMovilApp: App {
                 .environmentObject(hostStore)
                 .environmentObject(store.sessionState)
                 .environmentObject(assistant)
+                .environmentObject(router)
                 .preferredColorScheme(IysAppearance(rawValue: appearance)?.colorScheme)
                 .tint(IysThemePreferences.active.accent)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -71,39 +73,46 @@ struct RootView: View {
     @EnvironmentObject private var hostStore: MobileHostStore
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var assistant: AssistantStore
-    @Environment(\.horizontalSizeClass) private var sizeClass
+    @EnvironmentObject private var router: AppShellRouter
     @Environment(\.scenePhase) private var scenePhase
     @State private var enteredBackground = false
-    @State private var showAssistant = false
+    @State private var forceOnboardingPreview = false
 
     var body: some View {
-        Group {
-            if store.backendMode == .unconfigured {
-                // The onboarding art is drawn for a dark background.
-                ConnectionView()
-                    .environment(\.colorScheme, .dark)
-            } else if sizeClass == .regular {
-                // iPad / ancho regular: sidebar de proyectos + detalle.
-                splitLayout
-            } else {
-                stackLayout
-            }
-        }
+        rootContent
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(OCColor.bgDeep.ignoresSafeArea())
         .task {
             #if targetEnvironment(simulator)
             if let screenshotArgument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--readme-screenshot=") }) {
                 let scene = String(screenshotArgument.dropFirst("--readme-screenshot=".count))
-                if scene.hasPrefix("assistant") {
-                    assistant.prepareReadmeScreenshot(scene)
-                    showAssistant = true
-                } else {
+                switch scene {
+                case "connect":
+                    forceOnboardingPreview = true
+                case "projects":
+                    store.prepareReadmeScreenshot("projects")
+                    store.hasCompletedOnboarding = true
+                    router.openProjects()
+                case "chat":
+                    store.prepareReadmeScreenshot("chat")
+                    store.hasCompletedOnboarding = true
+                    router.openConversations()
+                case "assistant":
+                    assistant.prepareReadmeScreenshot("assistant")
+                    store.hasCompletedOnboarding = true
+                    router.openHome()
+                case "assistant-memory":
+                    assistant.prepareReadmeScreenshot("assistant-memory")
+                    store.hasCompletedOnboarding = true
+                    router.openGoogle(subtab: .memory)
+                default:
                     store.prepareReadmeScreenshot(scene)
+                    store.hasCompletedOnboarding = true
                 }
                 return
             }
             #endif
+            await store.restorePersistedExperience()
             await hostStore.restore()
             await hostStore.setAppActive(scenePhase == .active)
             consumePendingAppIntent()
@@ -111,18 +120,17 @@ struct RootView: View {
         .onOpenURL { url in
             guard url.scheme == "iyscodemovil" else { return }
             if url.host == "native", url.path == "/sandbox" {
+                store.hasCompletedOnboarding = true
+                router.openHome()
                 Task { await store.useNativeRuntime() }
             } else {
                 store.offeredPairingLink = url.absoluteString
             }
         }
-        .fullScreenCover(isPresented: $showAssistant) {
-            AssistantRootView()
-                .environmentObject(assistant)
-        }
         .onReceive(NotificationCenter.default.publisher(for: AssistantLaunch.openNotification)) { _ in
             UserDefaults.standard.removeObject(forKey: AssistantLaunch.openKey)
-            showAssistant = true
+            store.hasCompletedOnboarding = true
+            router.openHome()
         }
         .sheet(isPresented: Binding(
             get: { store.offeredPairingLink != nil },
@@ -138,7 +146,8 @@ struct RootView: View {
                 consumePendingAppIntent()
                 if UserDefaults.standard.bool(forKey: AssistantLaunch.openKey) {
                     UserDefaults.standard.removeObject(forKey: AssistantLaunch.openKey)
-                    showAssistant = true
+                    store.hasCompletedOnboarding = true
+                    router.openHome()
                 }
             }
             if phase == .background {
@@ -151,58 +160,32 @@ struct RootView: View {
         }
     }
 
+    @ViewBuilder
+    private var rootContent: some View {
+        if forceOnboardingPreview || (!store.hasCompletedOnboarding && store.backendMode == .unconfigured && !store.isRestoringRuntime) {
+            // The onboarding art is drawn for a dark background.
+            ConnectionView()
+                .environment(\.colorScheme, .dark)
+        } else if store.isRestoringRuntime && !store.hasCompletedOnboarding {
+            VStack(spacing: OCSpacing.lg) {
+                ProgressView()
+                    .tint(IysThemePreferences.active.accent)
+                Text("Restaurando tu espacio de trabajo…")
+                    .font(OCTypography.meta)
+                    .foregroundColor(OCColor.textSecondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(OCColor.bgDeep.ignoresSafeArea())
+        } else {
+            AppShellView()
+        }
+    }
+
     private func consumePendingAppIntent() {
         guard UserDefaults.standard.bool(forKey: "native.openSandboxOnLaunch") else { return }
         UserDefaults.standard.removeObject(forKey: "native.openSandboxOnLaunch")
+        store.hasCompletedOnboarding = true
+        router.openHome()
         Task { await store.useNativeRuntime() }
-    }
-
-    // Flujo iPhone: navegacion por estado dentro de un NavigationStack.
-    private var stackLayout: some View {
-        NavigationStack {
-            if sessionState.currentProject == nil {
-                ProjectListContent()
-            } else if sessionState.currentSession == nil {
-                SessionListView(project: sessionState.currentProject!)
-            } else {
-                ActiveSessionView()
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    // Ancho regular: el sidebar persiste y el detalle cambia por estado,
-    // reutilizando exactamente las mismas vistas del flujo compacto.
-    private var splitLayout: some View {
-        NavigationSplitView {
-            ProjectListContent()
-        } detail: {
-            if let project = sessionState.currentProject {
-                if sessionState.currentSession != nil {
-                    ActiveSessionView()
-                } else {
-                    SessionListView(project: project)
-                }
-            } else {
-                SplitPlaceholderView()
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-// Placeholder del detalle del split cuando aun no hay proyecto elegido.
-struct SplitPlaceholderView: View {
-    var body: some View {
-        VStack(spacing: OCSpacing.base) {
-            Image(systemName: "sidebar.left")
-                .font(.system(size: 40, weight: .light))
-                .foregroundColor(OCColor.iconMuted)
-            Text("Elige un proyecto")
-                .font(OCTypography.bodyStrong)
-                .foregroundColor(OCColor.textSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(OCColor.bgDeep.ignoresSafeArea())
     }
 }

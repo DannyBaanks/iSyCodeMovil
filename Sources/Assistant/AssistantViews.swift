@@ -200,33 +200,123 @@ private let violet = Color.iys(dark: "9B5DE5", light: "7A3FC7")
 
 // MARK: - Confirm sheet
 
-private struct ConfirmActionSheet: View {
+public struct AssistantConfirmActionSheet: View {
     @EnvironmentObject private var store: AssistantStore
+    @State private var showTechnicalDetails = false
     let action: PendingAction
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(action.title).font(.system(size: 20, weight: .bold)).foregroundColor(OCColor.textPrimary)
-            Muted(action.message)
-            ForEach(Array(action.details.enumerated()), id: \.offset) { _, item in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.0.uppercased()).font(OCTypography.metaMono).foregroundColor(OCColor.textFaint)
-                    Text(item.1).font(.system(size: 15)).foregroundColor(OCColor.textPrimary).lineLimit(8)
+    public init(action: PendingAction) {
+        self.action = action
+    }
+
+    public var body: some View {
+        let formatted = HumanConfirmationFormatter.format(action: action)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "hand.raised.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(OCColor.warning)
+                        Text("Confirmar acción")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(OCColor.warning)
+                    }
+
+                    Text(formatted.headline)
+                        .font(.system(size: 21, weight: .bold))
+                        .foregroundColor(OCColor.textPrimary)
+                        .accessibilityIdentifier("confirm-action-headline")
+
+                    Muted(formatted.explanation)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(Array(formatted.readableDetails.enumerated()), id: \.offset) { _, item in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.0.uppercased())
+                                    .font(OCTypography.metaMono)
+                                    .foregroundColor(OCColor.textFaint)
+                                Text(item.1)
+                                    .font(.system(size: 15))
+                                    .foregroundColor(OCColor.textPrimary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(OCColor.bgLayer1))
+
+                    if let error = store.pendingError {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(OCColor.danger)
+                            Text(error)
+                                .font(.system(size: 13))
+                                .foregroundColor(OCColor.danger)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(OCColor.danger.opacity(0.10)))
+                        .accessibilityIdentifier("confirm-action-error")
+                    }
+
+                    DisclosureGroup("Detalles técnicos", isExpanded: $showTechnicalDetails) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(formatted.technicalDetails.enumerated()), id: \.offset) { _, item in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.0)
+                                        .font(OCTypography.metaMono)
+                                        .foregroundColor(OCColor.textFaint)
+                                    Text(item.1)
+                                        .font(OCTypography.codeSmall)
+                                        .foregroundColor(OCColor.textSecondary)
+                                        .textSelection(.enabled)
+                                }
+                            }
+                        }
+                        .padding(.top, 6)
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(OCColor.textSecondary)
                 }
+                .padding(20)
             }
-            if store.developerMode { Muted("Tool: \(action.toolId)", color: OCColor.textFaint) }
-            Spacer()
-            HStack {
-                Button("Cancelar") { store.cancelPending() }.disabled(store.running)
-                Spacer()
-                if store.running { ProgressView() } else { PrimaryButton(title: "Confirmar") { store.confirmPending() } }
+            .background(OCColor.bgBase.ignoresSafeArea())
+            .safeAreaInset(edge: .bottom) {
+                HStack(spacing: 12) {
+                    Button("Cancelar") { store.cancelPending() }
+                        .disabled(store.running)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("confirm-action-cancel")
+                    Spacer()
+                    if store.running {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Ejecutando…")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(OCColor.textSecondary)
+                        }
+                    } else {
+                        PrimaryButton(title: store.pendingError == nil ? "Confirmar" : "Reintentar") {
+                            store.confirmPending()
+                        }
+                        .accessibilityIdentifier("confirm-action-submit")
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(OCColor.bgBase)
             }
+            .navigationBarTitleDisplayMode(.inline)
         }
-        .padding(20)
-        .background(OCColor.bgBase.ignoresSafeArea())
         .interactiveDismissDisabled(store.running)
+        .onAppear { showTechnicalDetails = store.developerMode }
     }
 }
+
+private typealias ConfirmActionSheet = AssistantConfirmActionSheet
 
 // MARK: - Inicio
 
@@ -393,16 +483,18 @@ private struct QuickActionTile: View {
 
 // MARK: - Memoria
 
-private struct MemorySection: View {
+public struct AssistantMemorySectionView: View {
     @EnvironmentObject private var store: AssistantStore
     @AppStorage("assistant.memorySearchHistory") private var historyRaw = ""
     @State private var query = ""
     @State private var graphView = false
     @State private var focusedGraphNodeId: String?
 
+    public init() {}
+
     private var history: [String] { historyRaw.split(separator: "\n").map(String.init) }
 
-    var body: some View {
+    public var body: some View {
         let matches = SemanticContext.fuzzyFilter(store.memory, query: query).map(\.node)
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -464,6 +556,8 @@ private struct MemorySection: View {
         historyRaw = ([clean] + history.filter { $0 != clean }).prefix(8).joined(separator: "\n")
     }
 }
+
+private typealias MemorySection = AssistantMemorySectionView
 
 private struct FolderRow: View {
     @EnvironmentObject private var store: AssistantStore
@@ -1262,15 +1356,33 @@ private struct SemanticGraphCard: View {
 
 // MARK: - Google
 
-private struct GoogleSection: View {
+public struct AssistantGoogleSectionView: View {
     @EnvironmentObject private var store: AssistantStore
+    var onOpenOAuthSetup: (() -> Void)? = nil
 
-    var body: some View {
+    public init(onOpenOAuthSetup: (() -> Void)? = nil) {
+        self.onOpenOAuthSetup = onOpenOAuthSetup
+    }
+
+    public var body: some View {
+        let googleState = store.googleConnectionState
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 CardBox {
+                    HStack(spacing: 8) {
+                        Image(systemName: googleState.symbol)
+                            .foregroundColor(googleState.tone.semanticColor)
+                        Text(googleState.badgeText)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(googleState.tone.semanticColor)
+                        Spacer()
+                    }
                     TitleText(store.signedIn ? "Cuenta de Google" : "Conecta tu cuenta de Google")
-                    if store.signedIn {
+                    if case .expired = googleState {
+                        Muted("Tu sesión de Google caducó o fue revocada. Vuelve a iniciar sesión para restaurar las herramientas.", color: OCColor.warning)
+                        PrimaryButton(title: "Volver a conectar") { store.signIn() }
+                            .accessibilityIdentifier("google-reconnect-button")
+                    } else if store.signedIn {
                         Muted(store.email ?? "Conectada")
                         Muted("Permisos: " + (GoogleService.allCases.filter(store.granted).map(\.title).joined(separator: ", ").nilIfEmpty ?? "ninguno"))
                         HStack(spacing: 12) {
@@ -1280,11 +1392,24 @@ private struct GoogleSection: View {
                         }
                     } else {
                         Muted("Inicias sesión en la página de Google, con tu propio proyecto. El token se queda en el llavero de este iPhone y puedes desconectarlo cuando quieras.")
-                        PrimaryButton(title: "Iniciar sesión con Google") { store.signIn() }
-                        if !GoogleOAuth.isPlausibleClientId(store.clientId) {
-                            Muted("Antes, pega tu ID de cliente en Opciones › Google.", color: Color.iys(dark: "FB923C", light: "C2410C"))
+                        if GoogleOAuth.isPlausibleClientId(store.clientId) {
+                            PrimaryButton(title: "Iniciar sesión con Google") { store.signIn() }
+                                .accessibilityIdentifier("google-connect-button")
+                        } else {
+                            Muted(store.clientId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? "Antes de conectar, pega tu ID de cliente OAuth de tipo iOS."
+                                : "El ID no tiene el formato esperado. Pega solo el ID que termina en .apps.googleusercontent.com, sin http:// ni una URL.",
+                                  color: Color.iys(dark: "FB923C", light: "C2410C"))
+                            if let onOpenOAuthSetup {
+                                PrimaryButton(title: "Configurar ID de cliente OAuth") { onOpenOAuthSetup() }
+                                    .accessibilityIdentifier("google-oauth-setup-button")
+                            } else {
+                                PrimaryButton(title: "Configurar en Opciones › Google") { store.section = .options }
+                                    .accessibilityIdentifier("google-oauth-setup-button")
+                            }
                         }
                     }
+                    Muted("Nota: esta conexión OAuth da acceso a Google Workspace (Gmail, Calendar, Tasks, Drive). Para usar modelos de Gemini, configura una API key en Motor de IA.", color: OCColor.textFaint)
                 }
                 if store.signedIn {
                     ForEach(store.enabledServices) { ServiceCard(service: $0) }
@@ -1294,6 +1419,8 @@ private struct GoogleSection: View {
         }
     }
 }
+
+private typealias GoogleSection = AssistantGoogleSectionView
 
 private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
@@ -1327,7 +1454,13 @@ private struct ServiceCard: View {
                 }
             }
             if !store.granted(service) {
-                Muted("Sin permiso todavía. Toca \"Cambiar permisos\" arriba.", color: Color.iys(dark: "FB923C", light: "C2410C"))
+                VStack(alignment: .leading, spacing: 8) {
+                    Muted("Falta autorización para \(service.title).", color: Color.iys(dark: "FB923C", light: "C2410C"))
+                    PrimaryButton(title: "Autorizar \(service.title)") {
+                        store.authorizeService(service)
+                    }
+                    .accessibilityIdentifier("google-authorize-\(service.rawValue.lowercased())")
+                }
             } else {
                 content
             }
@@ -1432,11 +1565,13 @@ private struct ServiceCard: View {
 
 // MARK: - Registro (developer)
 
-private struct LogSection: View {
+public struct AssistantLogSectionView: View {
     @EnvironmentObject private var store: AssistantStore
     @State private var filter: AssistantLogLevel?
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         let entries = store.logs.filter { filter == nil || $0.level == filter }
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
@@ -1456,6 +1591,8 @@ private struct LogSection: View {
         }
     }
 }
+
+private typealias LogSection = AssistantLogSectionView
 
 private struct LogRow: View {
     @EnvironmentObject private var store: AssistantStore
@@ -1501,13 +1638,19 @@ private struct LogRow: View {
 
 // MARK: - Opciones
 
-private struct OptionsSection: View {
+public struct AssistantOptionsSectionView: View {
     @EnvironmentObject private var store: AssistantStore
+    @Environment(\.openURL) private var openURL
     @AppStorage(IysAppearance.storageKey) private var appearance = IysAppearance.automatic.rawValue
     @State private var monitorDraft = ""
     @State private var clientDraft = ""
+    @State private var copiedBundleIdentifier = false
 
-    var body: some View {
+    public init() {}
+
+    private var appBundleIdentifier: String { Bundle.main.bundleIdentifier ?? "dev.iyscode.movil" }
+
+    public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 CardBox {
@@ -1550,9 +1693,52 @@ private struct OptionsSection: View {
                 .tint(OCColor.agentBuild)
                 CardBox {
                     TitleText("Google")
-                    Muted("1. En console.cloud.google.com crea un ID de cliente OAuth de tipo iOS con el bundle dev.iyscode.movil.\n2. Habilita las APIs que quieras usar (Gmail, Calendar, Tasks…).\n3. Pega aquí el ID de cliente. La guía completa está en docs/GOOGLE_ASSISTANT.md.")
+                    Muted("Abre Google Cloud y crea un cliente OAuth de tipo iOS. Usa el ID de paquete de abajo; al terminar, pega aquí el ID de cliente que te dé Google.")
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Muted("ID del paquete iOS")
+                            Text(appBundleIdentifier)
+                                .font(.system(size: 14, design: .monospaced))
+                                .foregroundColor(OCColor.textPrimary)
+                                .textSelection(.enabled)
+                        }
+                        Spacer(minLength: 4)
+                        Button {
+                            #if canImport(UIKit)
+                            UIPasteboard.general.string = appBundleIdentifier
+                            copiedBundleIdentifier = true
+                            #endif
+                        } label: {
+                            Label(copiedBundleIdentifier ? "Copiado" : "Copiar",
+                                  systemImage: copiedBundleIdentifier ? "checkmark" : "doc.on.doc")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(OCColor.agentBuild)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Capsule().fill(OCColor.agentBuildSoft))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(copiedBundleIdentifier ? "Identificador de paquete copiado" : "Copiar identificador de paquete")
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(OCColor.bgLayer1))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(OCColor.borderMuted, lineWidth: 1))
+                    PrimaryButton(title: "Abrir Google Cloud Console") {
+                        guard let url = URL(string: "https://console.cloud.google.com/auth/clients") else { return }
+                        openURL(url) { accepted in
+                            store.message = accepted
+                                ? "Google Cloud se abrió. Crea un cliente OAuth de tipo iOS y pega aquí el ID que te dé."
+                                : "No pude abrir Google Cloud Console. Comprueba tu conexión e inténtalo otra vez."
+                        }
+                    }
+                    Muted("Después, habilita las APIs de los servicios que quieras usar y toca Iniciar sesión con Google. Guía: docs/GOOGLE_ASSISTANT.md.")
                     InputField(label: "ID de cliente (….apps.googleusercontent.com)", text: $clientDraft)
                         .textInputAutocapitalization(.never)
+                    if !clientDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        && !GoogleOAuth.isPlausibleClientId(clientDraft) {
+                        Muted("Formato no válido. Usa solo el ID OAuth de tipo iOS, sin http://, espacios ni una URL completa.",
+                              color: Color.iys(dark: "FB923C", light: "C2410C"))
+                    }
                     if clientDraft != store.clientId { PrimaryButton(title: "Guardar") { store.clientId = clientDraft.trimmingCharacters(in: .whitespaces) } }
                     Text("Servicios que pediremos").font(.system(size: 13, weight: .semibold)).foregroundColor(OCColor.textPrimary)
                     ForEach(GoogleService.allCases) { service in
@@ -1598,3 +1784,5 @@ private struct OptionsSection: View {
         }
     }
 }
+
+private typealias OptionsSection = AssistantOptionsSectionView

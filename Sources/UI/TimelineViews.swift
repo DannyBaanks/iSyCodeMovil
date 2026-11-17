@@ -194,7 +194,8 @@ private struct MarkdownText: View {
     let emphasisColor: Color
 
     private var renderedText: AttributedString {
-        var value = (try? AttributedString(markdown: content)) ?? AttributedString(content)
+        let markdown = ChatMarkdownLayout.preserveLineBreaks(in: content)
+        var value = (try? AttributedString(markdown: markdown)) ?? AttributedString(content)
         let emphasizedRanges = value.runs.compactMap { run -> Range<AttributedString.Index>? in
             guard run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true else { return nil }
             return run.range
@@ -207,6 +208,38 @@ private struct MarkdownText: View {
 
     var body: some View {
         Text(renderedText)
+            .lineSpacing(3)
+    }
+}
+
+/// SwiftUI's Markdown text keeps inline styling but can visually flatten soft
+/// line breaks. Promote prose line breaks to Markdown hard breaks while
+/// leaving fenced code and table rows untouched.
+private enum ChatMarkdownLayout {
+    static func preserveLineBreaks(in markdown: String) -> String {
+        let normalized = markdown
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let lines = normalized.components(separatedBy: "\n")
+        var insideCodeFence = false
+
+        return lines.enumerated().map { index, line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") {
+                insideCodeFence.toggle()
+                return line
+            }
+
+            let isTableRow = trimmed.hasPrefix("|") && trimmed.hasSuffix("|")
+            guard index < lines.count - 1,
+                  !insideCodeFence,
+                  !line.isEmpty,
+                  !line.hasSuffix("  "),
+                  !isTableRow else {
+                return line
+            }
+            return line + "  "
+        }.joined(separator: "\n")
     }
 }
 
@@ -885,6 +918,7 @@ public struct PermissionView: View {
     let onPersistent: () -> Void
     let onCodexCancel: (() -> Void)?
     @EnvironmentObject private var store: WorkbenchStore
+    @State private var showTechnicalDetails = false
 
     private var storeUsesFreshApproval: Bool { store.backendMode == .native }
 
@@ -900,6 +934,7 @@ public struct PermissionView: View {
         let isCodex = event.permissionTool?.hasPrefix("Codex") == true
         let isGrok = event.permissionTool?.hasPrefix("Grok") == true
         let isLimitedRemote = isCodex || isGrok
+        let formatted = HumanConfirmationFormatter.format(permission: event)
         VStack(alignment: .leading, spacing: OCSpacing.lg) {
             // Header
             HStack(spacing: OCSpacing.base) {
@@ -907,42 +942,61 @@ public struct PermissionView: View {
                     .font(.system(size: 18, weight: .medium))
                     .foregroundColor(OCColor.warning)
 
-                Text("Permiso requerido")
-                    .font(OCTypography.permissionTitle)
-                    .foregroundColor(OCColor.textPrimary)
-            }
-
-            // Tool/Command
-            if let tool = event.permissionTool, let command = event.permissionCommand {
-                VStack(alignment: .leading, spacing: OCSpacing.xs) {
-                    Text(tool)
-                        .font(OCTypography.controlMono)
-                        .foregroundColor(OCColor.agentBuild)
-
-                    Text(command)
-                        .font(OCTypography.codeSmall)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Confirmar acción")
+                        .font(OCTypography.meta)
+                        .foregroundColor(OCColor.warning)
+                    Text(formatted.headline)
+                        .font(OCTypography.permissionTitle)
                         .foregroundColor(OCColor.textPrimary)
-                        .padding(OCSpacing.base)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(OCColor.bgDeep)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
                 }
             }
 
             // Explanation
-            if let explanation = event.permissionExplanation {
-                Text(explanation)
-                    .font(OCTypography.permissionBody)
-                    .foregroundColor(OCColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            Text(formatted.explanation)
+                .font(OCTypography.permissionBody)
+                .foregroundColor(OCColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !formatted.readableDetails.isEmpty {
+                VStack(alignment: .leading, spacing: OCSpacing.sm) {
+                    ForEach(Array(formatted.readableDetails.enumerated()), id: \.offset) { _, item in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.0.uppercased())
+                                .font(OCTypography.metaMono)
+                                .foregroundColor(OCColor.textFaint)
+                            Text(item.1)
+                                .font(OCTypography.permissionBody)
+                                .foregroundColor(OCColor.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(OCSpacing.base)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(OCColor.bgDeep)
+                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
             }
 
-            // Scope
-            if let scope = event.permissionScope {
-                Text("Alcance: \(scope)")
-                    .font(OCTypography.metaMono)
-                    .foregroundColor(OCColor.textFaint)
+            DisclosureGroup("Detalles técnicos", isExpanded: $showTechnicalDetails) {
+                VStack(alignment: .leading, spacing: OCSpacing.xs) {
+                    ForEach(Array(formatted.technicalDetails.enumerated()), id: \.offset) { _, item in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.0.uppercased())
+                                .font(OCTypography.metaMono)
+                                .foregroundColor(OCColor.textFaint)
+                            Text(item.1)
+                                .font(OCTypography.codeSmall)
+                                .foregroundColor(OCColor.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+                .padding(.top, OCSpacing.xs)
             }
+            .font(OCTypography.control)
+            .foregroundColor(OCColor.textSecondary)
 
             // Actions
             VStack(spacing: OCSpacing.base) {

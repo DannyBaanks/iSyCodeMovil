@@ -44,7 +44,10 @@ public enum GoogleOAuth {
 
     public static func isPlausibleClientId(_ value: String) -> Bool {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.hasSuffix(clientSuffix) && trimmed.count > clientSuffix.count && !trimmed.contains(" ")
+        guard trimmed.hasSuffix(clientSuffix), trimmed.count > clientSuffix.count else { return false }
+        let clientPart = trimmed.dropLast(clientSuffix.count)
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.")
+        return clientPart.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
     /// iOS clients redirect to the reversed client ID; that scheme must be in Info.plist.

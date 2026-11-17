@@ -5,6 +5,7 @@ public struct ConnectionView: View {
     @State private var pairingLink = ""
     @State private var showReconnectSheet = false
     @State private var showSandboxSheet = false
+    @State private var sandboxInitialTrack: RuntimeSetupTrack = .local
     @State private var showDesktopLink = false
     @FocusState private var fieldFocused: Bool
     
@@ -147,12 +148,42 @@ public struct ConnectionView: View {
 
                 door(
                     icon: "iphone",
-                    title: "Hablar con GUS aquí",
-                    subtitle: "Sin internet. El modelo vive en este iPhone."
+                    title: "Hablar con GUS en este iPhone",
+                    subtitle: "Sin internet. El modelo vive localmente en tu dispositivo."
                 ) {
+                    sandboxInitialTrack = .local
                     showSandboxSheet = true
                 }
                 .padding(.top, 12)
+
+                door(
+                    icon: "cloud",
+                    title: "Conectar proveedor en la nube",
+                    subtitle: "Usa NVIDIA NIM, xAI, OpenAI, Gemini o OpenRouter con tu API key."
+                ) {
+                    sandboxInitialTrack = .connected
+                    showSandboxSheet = true
+                }
+                .padding(.top, 12)
+
+                Button {
+                    store.hasCompletedOnboarding = true
+                } label: {
+                    HStack {
+                        Text("Ir al Centro de trabajo")
+                            .font(.system(size: 14.5, weight: .semibold))
+                        Spacer()
+                        Image(systemName: "arrow.right")
+                    }
+                    .foregroundColor(OCColor.textPrimary)
+                    .padding(14)
+                    .background(OCColor.bgLayer1)
+                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 12)
+                .accessibilityIdentifier("onboarding-enter-home")
 
                 Text("El PIN del host de iSyCode ya funciona. Las conversaciones llegan con el escritorio.")
                     .font(.system(size: 13))
@@ -190,7 +221,11 @@ public struct ConnectionView: View {
             ReconnectSheet(isPresented: $showReconnectSheet)
         }
         .sheet(isPresented: $showSandboxSheet) {
-            SandboxKeySheet(initialProviderID: "gus-local")
+            RuntimeSetupSheet(
+                initialTrack: sandboxInitialTrack,
+                initialProviderID: sandboxInitialTrack == .local ? "gus-local" : "nvidia"
+            )
+            .environmentObject(store)
         }
     }
     

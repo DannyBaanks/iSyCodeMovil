@@ -602,18 +602,40 @@ struct FilesBreadcrumbView: View {
 struct FilesSurfaceView: View {
     @EnvironmentObject private var store: WorkbenchStore
     @State private var selectedFile: WorkbenchFileNode?
-    @State private var fileContent: WorkbenchFileContent?
     @State private var filesLoaded = false
+    @State private var filesLoading = false
+    @State private var filesLoadError: String?
+    @State private var filesLoadPath = ""
     
     var body: some View {
         VStack(spacing: 0) {
             if !store.filesPath.isEmpty {
                 FilesBreadcrumbView(path: store.filesPath) { newPath in
-                    Task { await store.loadFiles(path: newPath) }
+                    Task { await loadDirectory(path: newPath) }
                 }
             }
             
-            if store.fileTree.isEmpty && filesLoaded {
+            if filesLoading {
+                ProgressView("Cargando carpeta…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let filesLoadError {
+                VStack(spacing: OCSpacing.base) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 30, weight: .light))
+                        .foregroundColor(OCColor.warning)
+                    Text(filesLoadError)
+                        .font(OCTypography.meta)
+                        .foregroundColor(OCColor.textSecondary)
+                        .multilineTextAlignment(.center)
+                    Button("Reintentar") {
+                        Task { await loadDirectory(path: filesLoadPath) }
+                    }
+                    .font(OCTypography.control)
+                    .foregroundColor(OCColor.agentBuild)
+                }
+                .padding(OCSpacing.huge)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if store.fileTree.isEmpty && filesLoaded {
                 EmptyFilesView()
             } else {
                 List {
@@ -622,13 +644,10 @@ struct FilesSurfaceView: View {
                             item: item,
                             selectedFile: $selectedFile,
                             onTap: { file in
-                                if !file.isDirectory {
+                                if file.isDirectory {
+                                    Task { await loadDirectory(path: file.path) }
+                                } else {
                                     selectedFile = file
-                                    Task {
-                                        if let content = await store.loadFileContent(path: file.path) {
-                                            fileContent = content
-                                        }
-                                    }
                                 }
                             }
                         )
@@ -638,19 +657,33 @@ struct FilesSurfaceView: View {
                 .scrollContentBackground(.hidden)
                 .background(OCColor.bgDeep)
                 .sheet(item: $selectedFile) { file in
-                    FileViewerView(file: file, content: fileContent?.content ?? "")
-                }
-                .onAppear {
-                    if !filesLoaded {
-                        Task {
-                            if store.fileTree.isEmpty {
-                                await store.loadFiles()
-                            }
-                            filesLoaded = true
-                        }
-                    }
+                    FileViewerView(file: file)
                 }
             }
+        }
+        .onAppear {
+            guard !filesLoaded else { return }
+            if store.fileTree.isEmpty {
+                Task { await loadDirectory(path: store.filesPath) }
+            } else {
+                filesLoaded = true
+            }
+        }
+    }
+
+    @MainActor
+    private func loadDirectory(path: String) async {
+        filesLoadPath = path
+        filesLoadError = nil
+        filesLoading = true
+        defer {
+            filesLoading = false
+            filesLoaded = true
+        }
+
+        let loaded = await store.loadFiles(path: path)
+        if !loaded {
+            filesLoadError = "No se pudo abrir esta carpeta. Comprueba el workspace e inténtalo de nuevo."
         }
     }
 }
@@ -675,7 +708,6 @@ struct EmptyFilesView: View {
 }
 
 struct FileTreeRowView: View {
-    @EnvironmentObject private var store: WorkbenchStore
     let item: WorkbenchFileNode
     @Binding var selectedFile: WorkbenchFileNode?
     let onTap: (WorkbenchFileNode) -> Void
@@ -687,50 +719,45 @@ struct FileTreeRowView: View {
     }
     
     var body: some View {
-        HStack(spacing: OCSpacing.xs) {
-            // Las carpetas navegan (drill-down + breadcrumb); el Set de
-            // expansion y el indent eran estado muerto: el arbol se reemplaza entero.
-            if item.isDirectory {
-                Button {
-                    Task { await store.loadFiles(path: item.path) }
-                } label: {
+        Button {
+            onTap(item)
+        } label: {
+            HStack(spacing: OCSpacing.xs) {
+                if item.isDirectory {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(OCColor.iconMuted)
                         .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
+                } else {
+                    Color.clear.frame(width: 32, height: 32)
                 }
-                .buttonStyle(.plain)
-            } else {
-                Spacer().frame(width: 32)
+
+                Image(systemName: item.isDirectory ? "folder.fill" : "doc.text")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(item.isDirectory ? OCColor.agentBuild : OCColor.iconPrimary)
+
+                Text(item.name)
+                    .font(OCTypography.fileRow)
+                    .foregroundColor(OCColor.textPrimary)
+                    .lineLimit(1)
+
+                if let status = item.status, status == "ignored" {
+                    Image(systemName: "eye.slash")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(OCColor.textFaint)
+                }
+
+                Spacer(minLength: 0)
             }
-            
-            Image(systemName: item.isDirectory ? "folder.fill" : "doc.text")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(item.isDirectory ? OCColor.agentBuild : OCColor.iconPrimary)
-            
-            Text(item.name)
-                .font(OCTypography.fileRow)
-                .foregroundColor(OCColor.textPrimary)
-                .lineLimit(1)
-            
-            if let status = item.status, status == "ignored" {
-                Image(systemName: "eye.slash")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(OCColor.textFaint)
-            }
-            
-            Spacer()
+            .padding(.horizontal, OCSpacing.contentMargin)
+            .frame(height: 40)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(selectedFile?.id == item.id ? OCColor.bgLayer1.opacity(0.5) : Color.clear)
         }
-        .padding(.horizontal, OCSpacing.contentMargin)
-        .frame(height: 40)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onTap(item)
-        }
-        .background(
-            selectedFile?.id == item.id ? OCColor.bgLayer1.opacity(0.5) : Color.clear
-        )
+        .buttonStyle(.plain)
+        .accessibilityLabel(item.isDirectory ? "Abrir carpeta \(item.name)" : "Abrir archivo \(item.name)")
+        .accessibilityHint(item.isDirectory ? "Muestra el contenido de la carpeta" : "Abre una vista previa del archivo")
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         .overlay(
@@ -742,19 +769,28 @@ struct FileTreeRowView: View {
     }
 }
 
+private enum FileViewerLoadState {
+    case loading
+    case loaded(String)
+    case failed
+}
+
 struct FileViewerView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: WorkbenchStore
+    @State private var loadState: FileViewerLoadState = .loading
     let file: WorkbenchFileNode
-    let content: String
-    
+
+    private var loadedContent: String? {
+        if case .loaded(let content) = loadState { return content }
+        return nil
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                Text(content.isEmpty ? "Loading…" : content)
-                    .font(OCTypography.code)
-                    .foregroundColor(OCColor.textPrimary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                previewContent
+                    .frame(maxWidth: .infinity, minHeight: 180, alignment: .topLeading)
                     .padding(OCSpacing.lg)
             }
             .background(OCColor.bgDeep)
@@ -771,11 +807,12 @@ struct FileViewerView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: OCSpacing.base) {
                         Button {
-                            UIPasteboard.general.string = content
+                            UIPasteboard.general.string = loadedContent ?? ""
                         } label: {
                             Image(systemName: "doc.on.doc")
                                 .font(.system(size: 17))
                         }
+                        .disabled(loadedContent == nil)
                         Button("Done") { dismiss() }
                     }
                 }
@@ -784,6 +821,58 @@ struct FileViewerView: View {
             .toolbarBackground(OCColor.bgDeep, for: .navigationBar)
             .toolbarColorScheme(nil, for: .navigationBar)
         }
+        .task(id: file.path) { await loadContent() }
+    }
+
+    @ViewBuilder
+    private var previewContent: some View {
+        switch loadState {
+        case .loading:
+            VStack(spacing: OCSpacing.base) {
+                ProgressView()
+                Text("Cargando archivo…")
+                    .font(OCTypography.meta)
+                    .foregroundColor(OCColor.textFaint)
+            }
+            .frame(maxWidth: .infinity, minHeight: 180)
+        case .loaded(let content) where content.isEmpty:
+            Text("Este archivo está vacío.")
+                .font(OCTypography.meta)
+                .foregroundColor(OCColor.textFaint)
+        case .loaded(let content):
+            Text(content)
+                .font(OCTypography.code)
+                .foregroundColor(OCColor.textPrimary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case .failed:
+            VStack(spacing: OCSpacing.base) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundColor(OCColor.warning)
+                Text("No se pudo abrir el archivo.")
+                    .font(OCTypography.meta)
+                    .foregroundColor(OCColor.textSecondary)
+                Button("Reintentar") {
+                    Task { await loadContent() }
+                }
+                .font(OCTypography.control)
+                .foregroundColor(OCColor.agentBuild)
+            }
+            .frame(maxWidth: .infinity, minHeight: 180)
+        }
+    }
+
+    @MainActor
+    private func loadContent() async {
+        loadState = .loading
+        guard let result = await store.loadFileContent(path: file.path) else {
+            guard !Task.isCancelled else { return }
+            loadState = .failed
+            return
+        }
+        guard !Task.isCancelled else { return }
+        loadState = .loaded(result.content)
     }
 }
 
