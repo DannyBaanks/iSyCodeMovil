@@ -754,6 +754,7 @@ public final class WorkbenchStore: ObservableObject {
     }
     
     public func respondToPermission(requestId: String, decision: PermissionResponse.Decision) {
+        PermissionNotifier.shared.clear(requestID: requestId)
         guard let backend = currentBackend else {
             addErrorEvent("No backend available for permission")
             return
@@ -981,6 +982,12 @@ public final class WorkbenchStore: ObservableObject {
                     scope: tool.hasPrefix("Codex") ? "Codex · para esta sesión" : (backendMode == .remote ? "remote workspace" : "sandbox"),
                     agentMode: sessionState.agentMode
                 )
+                PermissionNotifier.shared.onDecision = { [weak self] requestID, decision in
+                    // Only the request still on screen can be answered from a notification.
+                    guard self?.sessionState.pendingPermission?.permissionRequestId == requestID else { return }
+                    self?.respondToPermission(requestId: requestID, decision: decision)
+                }
+                PermissionNotifier.shared.notify(requestID: requestID, tool: tool, command: command, explanation: explanation)
             }
             
         case .sessionIdle(let sessionID):
