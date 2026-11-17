@@ -39,6 +39,8 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
     private var currentConversationID: String?
     /// Set for on-device GUS: tools the person switched off in Ajustes are never offered or run.
     private var enforceGUSPermissionToggles = false
+    private let localIphone = LocalIphoneController(wda: WdaClientDriver(client: WdaClient()), elementReader: WdaElementReader())
+    private static let localIphoneTools = IphoneControlCatalog.tools(allowed: Array(LocalIphoneController.supportedToolNames))
 
     public init(workspace: any Workspace, persistence: (any Persistence)? = nil, defaults: UserDefaults = .standard) {
         self.fileSystem = MiniAgentFileSystemToolExecutor(workspace: workspace)
@@ -99,7 +101,7 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
         try await simple.undoLastChange()
     }
 
-    public var availableTools: [AgentTool] { Self.nativeTools }
+    public var availableTools: [AgentTool] { Self.nativeTools + Self.localIphoneTools }
 
     public func setGUSPermissionMode(_ enabled: Bool) {
         enforceGUSPermissionToggles = enabled
@@ -132,6 +134,7 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
         let projectedIDs = NativeCapabilityToolProjection.relevantCapabilityIDs(for: messages)
         let projectedNative = Self.nativeTools.filter { projectedIDs.contains($0.name) }
         var tools = projectedNative
+        tools.append(contentsOf: Self.localIphoneTools)
         tools.append(contentsOf: await assistant.tools(relevantTo: messages))
         if sharedMemoryAllowed {
             tools.append(Self.updateSharedContextTool)
@@ -196,6 +199,19 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
         }
         if AssistantToolExecutor.handles(invocation.name) {
             return await assistant.execute(invocation, approval: approval)
+        }
+        if LocalIphoneController.supportedToolNames.contains(invocation.name) {
+            do {
+                let parsed = try IphoneControlCatalog.arguments(for: invocation.name, from: invocation.arguments)
+                let output = try await localIphone.call(tool: invocation.name, arguments: parsed)
+                return ToolExecutionResult(
+                    toolCallId: invocation.id,
+                    output: output,
+                    duration: Date().timeIntervalSince(started)
+                )
+            } catch {
+                return failure(invocation, error.localizedDescription, started: started)
+            }
         }
         guard approval == .allowOnce || approval == .allowAlways else {
             return failure(invocation, "This native capability requires a fresh user approval.", started: started)

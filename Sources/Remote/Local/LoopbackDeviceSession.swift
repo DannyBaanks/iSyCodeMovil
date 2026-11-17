@@ -47,6 +47,11 @@ public final class LoopbackDeviceSession: ObservableObject {
                 errorMessage = "El archivo está vacío."
                 return
             }
+            if let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+               plist["public_key"] == nil || plist["private_key"] == nil {
+                errorMessage = "Este .plist no es de RemotePairing (falta public_key/private_key). No uses el de /var/lib/lockdown; genéralo con: idevice-tools rppairing pair iSyCodeMovil pairingFile.plist"
+                return
+            }
             let dir = pairingFileURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try data.write(to: pairingFileURL, options: .atomic)
