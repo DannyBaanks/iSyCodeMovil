@@ -28,6 +28,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     private var runningTask: Task<Void, Never>?
     private var permissionWaiters: [String: CheckedContinuation<PermissionResponse.Decision, Never>] = [:]
     public var flowMode = false
+    private var mayHaveLeftAppInTurn = false
     private var connectionStatusStorage = "native runtime"
     private var currentSessionIDStorage: String?
     private var eventContinuation: AsyncStream<WorkbenchEvent>.Continuation?
@@ -475,6 +476,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             }
         }
         let sessionAtStart = sessionID
+        mayHaveLeftAppInTurn = false
         BackgroundRunKeeper.shared.begin()
         runningTask = Task { [weak self] in
             defer {
@@ -484,6 +486,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             guard let self else { return }
             do {
                 _ = try await loop.run(userInput: text)
+                await self.returnToAppIfNeeded()
             } catch is CancellationError {
                 return
             } catch {
@@ -623,6 +626,26 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         eventContinuation?.yield(event)
     }
     
+    private static func toolMayLeaveApp(_ name: String) -> Bool {
+        name == "iphone_launch_app" || name == "iphone_press_button" || name == "iphone_open_url" || name == "shortcuts.run"
+    }
+
+    private func returnToAppIfNeeded() async {
+        guard mayHaveLeftAppInTurn else { return }
+        mayHaveLeftAppInTurn = false
+        guard let bundleID = Bundle.main.bundleIdentifier, !bundleID.isEmpty else { return }
+        let executor: (any ToolExecutor)? = sandboxExecutor ?? toolExecutor
+        if let executor,
+           executor.availableTools.contains(where: { $0.name == "iphone_launch_app" }) {
+            _ = await executor.execute(
+                ToolInvocation(id: "return-\(UUID().uuidString)", name: "iphone_launch_app", arguments: ["app": bundleID]),
+                approval: .allowOnce
+            )
+        } else {
+            try? await WdaClient().launchApp(bundleID: bundleID)
+        }
+    }
+
     private func handleAgentEvent(_ event: AgentLoopEvent) async {
         switch event {
         case .turnStarted:
@@ -643,6 +666,9 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             liveAnswerID = nil
             if let calls = response.toolCalls, !calls.isEmpty {
                 for call in calls {
+                    if Self.toolMayLeaveApp(call.name) {
+                        mayHaveLeftAppInTurn = true
+                    }
                     eventContinuation?.yield(.partUpdated(partID: call.id, kind: "tool", text: nil, tool: call.name, callID: call.id, status: "running", input: call.arguments, output: nil, error: nil))
                 }
             }
