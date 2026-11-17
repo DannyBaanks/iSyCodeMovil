@@ -1506,9 +1506,13 @@ private struct LogRow: View {
 
 private struct OptionsSection: View {
     @EnvironmentObject private var store: AssistantStore
+    @Environment(\.openURL) private var openURL
     @AppStorage(IysAppearance.storageKey) private var appearance = IysAppearance.automatic.rawValue
     @State private var monitorDraft = ""
     @State private var clientDraft = ""
+    @State private var copiedBundleIdentifier = false
+
+    private var appBundleIdentifier: String { Bundle.main.bundleIdentifier ?? "dev.iyscode.movil" }
 
     var body: some View {
         ScrollView {
@@ -1553,7 +1557,45 @@ private struct OptionsSection: View {
                 .tint(OCColor.agentBuild)
                 CardBox {
                     TitleText("Google")
-                    Muted("1. En console.cloud.google.com crea un ID de cliente OAuth de tipo iOS con el bundle dev.iyscode.movil.\n2. Habilita las APIs que quieras usar (Gmail, Calendar, Tasks…).\n3. Pega aquí el ID de cliente. La guía completa está en docs/GOOGLE_ASSISTANT.md.")
+                    Muted("Abre Google Cloud y crea un cliente OAuth de tipo iOS. Usa el ID de paquete de abajo; al terminar, pega aquí el ID de cliente que te dé Google.")
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Muted("ID del paquete iOS")
+                            Text(appBundleIdentifier)
+                                .font(.system(size: 14, design: .monospaced))
+                                .foregroundColor(OCColor.textPrimary)
+                                .textSelection(.enabled)
+                        }
+                        Spacer(minLength: 4)
+                        Button {
+                            #if canImport(UIKit)
+                            UIPasteboard.general.string = appBundleIdentifier
+                            copiedBundleIdentifier = true
+                            #endif
+                        } label: {
+                            Label(copiedBundleIdentifier ? "Copiado" : "Copiar",
+                                  systemImage: copiedBundleIdentifier ? "checkmark" : "doc.on.doc")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(OCColor.agentBuild)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Capsule().fill(OCColor.agentBuildSoft))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(copiedBundleIdentifier ? "Identificador de paquete copiado" : "Copiar identificador de paquete")
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(OCColor.bgLayer1))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(OCColor.borderMuted, lineWidth: 1))
+                    PrimaryButton(title: "Abrir Google Cloud Console") {
+                        guard let url = URL(string: "https://console.cloud.google.com/auth/clients") else { return }
+                        openURL(url) { accepted in
+                            store.message = accepted
+                                ? "Google Cloud se abrió. Crea un cliente OAuth de tipo iOS y pega aquí el ID que te dé."
+                                : "No pude abrir Google Cloud Console. Comprueba tu conexión e inténtalo otra vez."
+                        }
+                    }
+                    Muted("Después, habilita las APIs de los servicios que quieras usar y toca Iniciar sesión con Google. Guía: docs/GOOGLE_ASSISTANT.md.")
                     InputField(label: "ID de cliente (….apps.googleusercontent.com)", text: $clientDraft)
                         .textInputAutocapitalization(.never)
                     if !clientDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
