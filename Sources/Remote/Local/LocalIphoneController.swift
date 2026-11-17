@@ -123,13 +123,13 @@ public actor LocalIphoneController {
             return try await finishAction(then: then)
 
         case "iphone_launch_app":
-            let bundleID = try string("app", in: arguments)
+            let bundleID = Self.resolveBundleID(try string("app", in: arguments))
             let then = try thenMode(in: arguments)
             try await wda.launchApp(bundleID: bundleID)
             return try await finishAction(then: then)
 
         case "iphone_terminate_app":
-            let bundleID = try string("app", in: arguments)
+            let bundleID = Self.resolveBundleID(try string("app", in: arguments))
             let then = try thenMode(in: arguments)
             try await wda.terminateApp(bundleID: bundleID)
             return try await finishAction(then: then)
@@ -181,6 +181,67 @@ public actor LocalIphoneController {
             }
             try await Task.sleep(nanoseconds: 250_000_000)
         }
+    }
+
+    private static let bundleAliases: [String: String] = [
+        "safari": "com.apple.mobilesafari",
+        "ajustes": "com.apple.Preferences",
+        "settings": "com.apple.Preferences",
+        "configuracion": "com.apple.Preferences",
+        "mensajes": "com.apple.MobileSMS",
+        "messages": "com.apple.MobileSMS",
+        "telefono": "com.apple.mobilephone",
+        "phone": "com.apple.mobilephone",
+        "camara": "com.apple.camera",
+        "camera": "com.apple.camera",
+        "fotos": "com.apple.mobileslideshow",
+        "photos": "com.apple.mobileslideshow",
+        "notas": "com.apple.mobilenotes",
+        "notes": "com.apple.mobilenotes",
+        "reloj": "com.apple.mobiletimer",
+        "clock": "com.apple.mobiletimer",
+        "calculadora": "com.apple.calculator",
+        "calculator": "com.apple.calculator",
+        "calendario": "com.apple.mobilecal",
+        "calendar": "com.apple.mobilecal",
+        "mapas": "com.apple.Maps",
+        "maps": "com.apple.Maps",
+        "app store": "com.apple.AppStore",
+        "appstore": "com.apple.AppStore",
+        "archivos": "com.apple.DocumentsApp",
+        "files": "com.apple.DocumentsApp",
+        "correo": "com.apple.mobilemail",
+        "mail": "com.apple.mobilemail",
+        "musica": "com.apple.Music",
+        "music": "com.apple.Music",
+        "atajos": "com.apple.shortcuts",
+        "shortcuts": "com.apple.shortcuts",
+        "recordatorios": "com.apple.reminders",
+        "reminders": "com.apple.reminders",
+        "whatsapp": "net.whatsapp.WhatsApp",
+        "youtube": "com.google.ios.youtube",
+        "spotify": "com.spotify.client",
+        "chrome": "com.google.chrome.ios",
+        "instagram": "com.burbn.instagram",
+        "telegram": "ph.telegra.Telegraph",
+        "twitter": "com.atebits.Tweetie2",
+        "x": "com.atebits.Tweetie2",
+        "tailscale": "io.tailscale.ipn.ios",
+        "localdevvpn": "com.stoss.LocalDevVPN"
+    ]
+
+    private static func resolveBundleID(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.contains(".") {
+            return trimmed
+        }
+        let normalized = trimmed
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+        if normalized.contains("isycode") || normalized.contains("iyscode") {
+            return Bundle.main.bundleIdentifier ?? "com.isyco.iyscodemovil"
+        }
+        return bundleAliases[normalized] ?? trimmed
     }
 
     private func finishAction(then: String) async throws -> String {

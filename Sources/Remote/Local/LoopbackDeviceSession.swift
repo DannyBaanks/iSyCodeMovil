@@ -84,9 +84,12 @@ public final class LoopbackDeviceSession: ObservableObject {
 
         do {
             let pairingPath = pairingFileURL.path
-            let launchedBundle = try await Task.detached(priority: .userInitiated) {
-                try Self.launchWDASync(pairingPath: pairingPath)
-            }.value
+            statusMessage = "Abriendo túnel RemotePairing en 10.7.0.1…"
+            let launchedBundle = try await withTimeout(seconds: 15, label: "El túnel RemotePairing tardó demasiado (>15s). Verifica que LocalDevVPN esté activa y el pairingFile.plist sea de este iPhone.") {
+                try await Task.detached(priority: .userInitiated) {
+                    try Self.launchWDASync(pairingPath: pairingPath)
+                }.value
+            }
             statusMessage = "Se lanzó \(launchedBundle). Comprobando WDA en 127.0.0.1:8100…"
             for _ in 0..<10 {
                 try? await Task.sleep(for: .seconds(1))
@@ -116,12 +119,36 @@ public final class LoopbackDeviceSession: ObservableObject {
 
         do {
             let pairingPath = pairingFileURL.path
-            let bytes = try await Task.detached(priority: .userInitiated) {
-                try Self.takeScreenshotSync(pairingPath: pairingPath)
-            }.value
+            statusMessage = "Abriendo túnel RemotePairing en 10.7.0.1…"
+            let bytes = try await withTimeout(seconds: 15, label: "La captura por túnel tardó demasiado (>15s). Verifica LocalDevVPN y pairingFile.plist.") {
+                try await Task.detached(priority: .userInitiated) {
+                    try Self.takeScreenshotSync(pairingPath: pairingPath)
+                }.value
+            }
             statusMessage = "Captura por túnel correcta (\(bytes.count / 1024) KB)."
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func withTimeout<T: Sendable>(
+        seconds: TimeInterval,
+        label: String,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                try await operation()
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(seconds))
+                throw LoopbackError.failed(label)
+            }
+            guard let first = try await group.next() else {
+                throw LoopbackError.failed(label)
+            }
+            group.cancelAll()
+            return first
         }
     }
 

@@ -41,6 +41,7 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
     private var enforceGUSPermissionToggles = false
     private let localIphone = LocalIphoneController(wda: WdaClientDriver(client: WdaClient()), elementReader: WdaElementReader())
     private static let localIphoneTools = IphoneControlCatalog.tools(allowed: Array(LocalIphoneController.supportedToolNames))
+    private let l1Registry = DynamicToolRegistry()
 
     public init(workspace: any Workspace, persistence: (any Persistence)? = nil, defaults: UserDefaults = .standard) {
         self.fileSystem = MiniAgentFileSystemToolExecutor(workspace: workspace)
@@ -101,7 +102,7 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
         try await simple.undoLastChange()
     }
 
-    public var availableTools: [AgentTool] { Self.nativeTools + Self.localIphoneTools }
+    public var availableTools: [AgentTool] { Self.nativeTools + [Self.httpRequestTool] + Self.localIphoneTools + DynamicToolRegistry.metaTools }
 
     public func setGUSPermissionMode(_ enabled: Bool) {
         enforceGUSPermissionToggles = enabled
@@ -134,7 +135,10 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
         let projectedIDs = NativeCapabilityToolProjection.relevantCapabilityIDs(for: messages)
         let projectedNative = Self.nativeTools.filter { projectedIDs.contains($0.name) }
         var tools = projectedNative
+        tools.append(Self.httpRequestTool)
         tools.append(contentsOf: Self.localIphoneTools)
+        tools.append(contentsOf: DynamicToolRegistry.metaTools)
+        tools.append(contentsOf: await l1Registry.allAgentTools())
         tools.append(contentsOf: await assistant.tools(relevantTo: messages))
         if sharedMemoryAllowed {
             tools.append(Self.updateSharedContextTool)
@@ -212,6 +216,15 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
             } catch {
                 return failure(invocation, error.localizedDescription, started: started)
             }
+        }
+        if invocation.name == "http_request" {
+            return await runHTTPRequest(invocation, started: started)
+        }
+        if DynamicToolRegistry.metaToolNames.contains(invocation.name) {
+            return await runL1MetaTool(invocation, started: started)
+        }
+        if let l1Def = await l1Registry.definition(named: invocation.name) {
+            return await runL1Definition(l1Def, invocation: invocation, approval: approval, started: started)
         }
         guard approval == .allowOnce || approval == .allowAlways else {
             return failure(invocation, "This native capability requires a fresh user approval.", started: started)
@@ -411,6 +424,107 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
     private func failure(_ invocation: ToolInvocation, _ message: String, started: Date) -> ToolExecutionResult {
         ToolExecutionResult(toolCallId: invocation.id, output: "", error: message, duration: Date().timeIntervalSince(started))
     }
+
+    private func runHTTPRequest(_ invocation: ToolInvocation, started: Date) async -> ToolExecutionResult {
+        guard let rawURL = invocation.arguments["url"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let url = URL(string: rawURL),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
+            return failure(invocation, "URL inválida (usa http:// o https://).", started: started)
+        }
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.httpMethod = (invocation.arguments["method"] ?? "GET").uppercased()
+        if let headersJSON = invocation.arguments["headers_json"]?.data(using: .utf8),
+           let headers = try? JSONSerialization.jsonObject(with: headersJSON) as? [String: String] {
+            for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
+        }
+        if let body = invocation.arguments["body"], !body.isEmpty {
+            request.httpBody = body.data(using: .utf8)
+            if request.value(forHTTPHeaderField: "Content-Type") == nil {
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            }
+        }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let text = String(data: data.prefix(12_000), encoding: .utf8) ?? "<\(data.count) bytes>"
+            return ToolExecutionResult(toolCallId: invocation.id, output: "HTTP \(status)\n\(text)", duration: Date().timeIntervalSince(started))
+        } catch {
+            return failure(invocation, error.localizedDescription, started: started)
+        }
+    }
+
+    private func runL1MetaTool(_ invocation: ToolInvocation, started: Date) async -> ToolExecutionResult {
+        do {
+            let output: String
+            switch invocation.name {
+            case "l1_create_tool":
+                output = try await l1Registry.createTool(arguments: invocation.arguments)
+            case "l1_list_tools":
+                output = await l1Registry.listToolsText()
+            case "l1_delete_tool":
+                let name = invocation.arguments["name"] ?? ""
+                output = try await l1Registry.deleteTool(named: name)
+            default:
+                output = "Tool L1 desconocida."
+            }
+            return ToolExecutionResult(toolCallId: invocation.id, output: output, duration: Date().timeIntervalSince(started))
+        } catch {
+            return failure(invocation, error.localizedDescription, started: started)
+        }
+    }
+
+    private func runL1Definition(
+        _ def: L1ToolDefinition,
+        invocation: ToolInvocation,
+        approval: PermissionResponse.Decision?,
+        started: Date
+    ) async -> ToolExecutionResult {
+        var prevOutput = ""
+        var trace: [String] = []
+        for (index, step) in def.steps.enumerated() {
+            if step.tool == def.name || DynamicToolRegistry.metaToolNames.contains(step.tool) {
+                return failure(invocation, "Paso \(index + 1) inválido en L1 '\(def.name)': solo se permiten primitivas L0.", started: started)
+            }
+            var resolvedArgs: [String: String] = [:]
+            for (k, template) in step.args {
+                var val = template.replacingOccurrences(of: "{{prev_output}}", with: prevOutput)
+                for (argKey, argVal) in invocation.arguments {
+                    val = val.replacingOccurrences(of: "{{\(argKey)}}", with: argVal)
+                }
+                resolvedArgs[k] = val
+            }
+            let subInvocation = ToolInvocation(
+                id: "\(invocation.id)-l1-\(index)",
+                name: step.tool,
+                arguments: resolvedArgs
+            )
+            let stepResult = await execute(subInvocation, approval: approval ?? .allowOnce)
+            if let err = stepResult.error, !err.isEmpty {
+                return failure(invocation, "Paso \(index + 1) (\(step.tool)) falló: \(err)", started: started)
+            }
+            prevOutput = stepResult.output
+            trace.append("[\(index + 1)] \(step.tool): \(String(stepResult.output.prefix(600)))")
+        }
+        return ToolExecutionResult(
+            toolCallId: invocation.id,
+            output: trace.joined(separator: "\n---\n"),
+            duration: Date().timeIntervalSince(started)
+        )
+    }
+
+    private static let httpRequestTool = AgentTool(
+        name: "http_request",
+        description: "Primitiva L0 de red: realiza una petición HTTP/HTTPS (GET, POST, PUT, DELETE) a APIs externas o endpoints locales (ej. http://127.0.0.1:8100/status).",
+        properties: [
+            "url": .init(type: "string", description: "URL completa http:// o https://"),
+            "method": .init(type: "string", description: "Método HTTP (GET, POST, PUT, DELETE). Por defecto GET."),
+            "headers_json": .init(type: "string", description: "JSON objeto opcional de cabeceras."),
+            "body": .init(type: "string", description: "Cuerpo opcional de la petición.")
+        ],
+        required: ["url"],
+        capabilities: .init(requiresNetwork: true)
+    )
 
     #if canImport(UIKit)
     @MainActor private static func openShortcutURL(_ url: URL) async -> Bool {
