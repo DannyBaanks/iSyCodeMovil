@@ -1,0 +1,319 @@
+import Foundation
+import Darwin
+#if canImport(idevice)
+import idevice
+#endif
+
+/// Detects whether a developer loopback VPN (e.g. LocalDevVPN on 10.7.0.1) or Tailscale is active,
+/// stores the user's `pairingFile.plist`, and talks to this iPhone's CoreDevice services via `jkcoxson/idevice` (MIT).
+@MainActor
+public final class LoopbackDeviceSession: ObservableObject {
+    public static let shared = LoopbackDeviceSession()
+
+    @Published public private(set) var hasPairingFile = false
+    @Published public private(set) var loopbackVPNActive = false
+    @Published public private(set) var tailscaleActive = false
+    @Published public private(set) var isBusy = false
+    @Published public private(set) var statusMessage: String?
+    @Published public private(set) var errorMessage: String?
+
+    private init() {
+        refreshState()
+    }
+
+    public var pairingFileURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("pairingFile.plist")
+    }
+
+    public func refreshState() {
+        hasPairingFile = FileManager.default.fileExists(atPath: pairingFileURL.path)
+        let interfaces = Self.activeTunnelIPv4Addresses()
+        loopbackVPNActive = interfaces.contains { $0.hasPrefix("10.7.") }
+        tailscaleActive = interfaces.contains { $0.hasPrefix("100.") }
+    }
+
+    public func importPairingFile(from url: URL) {
+        errorMessage = nil
+        statusMessage = nil
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { url.stopAccessingSecurityScopedResource() }
+        }
+        do {
+            let data = try Data(contentsOf: url)
+            guard !data.isEmpty else {
+                errorMessage = "El archivo está vacío."
+                return
+            }
+            let dir = pairingFileURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try data.write(to: pairingFileURL, options: .atomic)
+            refreshState()
+            statusMessage = "Archivo de emparejamiento guardado (\(data.count / 1024) KB)."
+        } catch {
+            errorMessage = "No se pudo importar: \(error.localizedDescription)"
+        }
+    }
+
+    public func removePairingFile() {
+        try? FileManager.default.removeItem(at: pairingFileURL)
+        refreshState()
+        statusMessage = "Archivo de emparejamiento eliminado."
+    }
+
+    /// Launches WebDriverAgent on this iPhone through CoreDevice's AppService over the loopback VPN,
+    /// then polls local WDA (`127.0.0.1:8100/status`) so the user can switch back to Tailscale if needed.
+    public func launchWDAOverLoopback() async {
+        refreshState()
+        errorMessage = nil
+        statusMessage = nil
+        guard hasPairingFile else {
+            errorMessage = "Primero importa tu pairingFile.plist."
+            return
+        }
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            let pairingData = try Data(contentsOf: pairingFileURL)
+            let launchedBundle = try await Task.detached(priority: .userInitiated) {
+                try Self.launchWDASync(pairingData: pairingData)
+            }.value
+            statusMessage = "Se lanzó \(launchedBundle). Comprobando WDA en 127.0.0.1:8100…"
+            for _ in 0..<10 {
+                try? await Task.sleep(for: .seconds(1))
+                if (try? await WdaClient().status().ready) == true {
+                    statusMessage = "WDA listo en este iPhone (\(launchedBundle)). Ya puedes volver a encender Tailscale si usas sandbox."
+                    return
+                }
+            }
+            statusMessage = "App lanzada (\(launchedBundle)), pero WDA aún no responde en :8100. Si sigue igual, arráncalo una vez desde la PC."
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Takes a direct CoreDevice/DVT screenshot over the loopback VPN without needing WDA.
+    public func testScreenshotOverLoopback() async {
+        refreshState()
+        errorMessage = nil
+        statusMessage = nil
+        guard hasPairingFile else {
+            errorMessage = "Primero importa tu pairingFile.plist."
+            return
+        }
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            let pairingData = try Data(contentsOf: pairingFileURL)
+            let bytes = try await Task.detached(priority: .userInitiated) {
+                try Self.takeScreenshotSync(pairingData: pairingData)
+            }.value
+            statusMessage = "Captura por túnel correcta (\(bytes.count / 1024) KB)."
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Network interface probe
+
+    private nonisolated static func activeTunnelIPv4Addresses() -> [String] {
+        var addrs: [String] = []
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return [] }
+        defer { freeifaddrs(first) }
+        var ptr: UnsafeMutablePointer<ifaddrs>? = first
+        while let current = ptr {
+            defer { ptr = current.pointee.ifa_next }
+            guard let addr = current.pointee.ifa_addr, addr.pointee.sa_family == UInt8(AF_INET) else { continue }
+            let name = String(cString: current.pointee.ifa_name)
+            guard name.hasPrefix("utun") else { continue }
+            var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            let result = getnameinfo(addr, socklen_t(addr.pointee.sa_len), &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST)
+            if result == 0 {
+                addrs.append(String(cString: hostname))
+            }
+        }
+        return addrs
+    }
+
+    // MARK: - idevice FFI bridge
+
+    private nonisolated static func launchWDASync(pairingData: Data) throws -> String {
+        #if canImport(idevice)
+        let conn = try openRSDConnection(pairingData: pairingData)
+        defer { conn.close() }
+
+        var appService: OpaquePointer?
+        try checkIdevice(app_service_connect_rsd(conn.adapter, conn.handshake, &appService))
+        guard let appService else { throw LoopbackError.failed("No se pudo abrir AppService.") }
+        defer { app_service_free(appService) }
+
+        var appsPtr: UnsafeMutablePointer<AppListEntryC>?
+        var count: UInt = 0
+        try checkIdevice(app_service_list_apps(appService, 0, 1, 1, 0, 0, &appsPtr, &count))
+        defer {
+            if let appsPtr { app_service_free_app_list(appsPtr, count) }
+        }
+
+        var wdaBundle: String?
+        if let appsPtr {
+            for i in 0..<Int(count) {
+                if let cBundle = appsPtr[i].bundle_identifier {
+                    let bundle = String(cString: cBundle)
+                    if bundle.localizedCaseInsensitiveContains("WebDriverAgentRunner") {
+                        wdaBundle = bundle
+                        break
+                    }
+                }
+            }
+        }
+        guard let targetBundle = wdaBundle else {
+            throw LoopbackError.failed("No se encontró WebDriverAgentRunner instalado en este iPhone.")
+        }
+
+        var response: UnsafeMutablePointer<LaunchResponseC>?
+        try targetBundle.withCString { cBundle in
+            try checkIdevice(app_service_launch_app(appService, cBundle, nil, 0, 0, 0, nil, &response))
+        }
+        if let response { app_service_free_launch_response(response) }
+        return targetBundle
+        #else
+        throw LoopbackError.failed("Esta compilación no incluye idevice.")
+        #endif
+    }
+
+    private nonisolated static func takeScreenshotSync(pairingData: Data) throws -> Data {
+        #if canImport(idevice)
+        let conn = try openRSDConnection(pairingData: pairingData)
+        defer { conn.close() }
+
+        var server: OpaquePointer?
+        try checkIdevice(remote_server_connect_rsd(conn.adapter, conn.handshake, &server))
+        guard let server else { throw LoopbackError.failed("No se pudo abrir RemoteServer.") }
+        defer { remote_server_free(server) }
+
+        var client: OpaquePointer?
+        try checkIdevice(screenshot_client_new(server, &client))
+        guard let client else { throw LoopbackError.failed("No se pudo abrir ScreenshotClient.") }
+        defer { screenshot_client_free(client) }
+
+        var rawPtr: UnsafeMutablePointer<UInt8>?
+        var rawLen: UInt = 0
+        try checkIdevice(screenshot_client_take_screenshot(client, &rawPtr, &rawLen))
+        guard let rawPtr, rawLen > 0 else {
+            throw LoopbackError.failed("Captura vacía.")
+        }
+        defer { idevice_data_free(rawPtr, rawLen) }
+        return Data(bytes: rawPtr, count: Int(rawLen))
+        #else
+        throw LoopbackError.failed("Esta compilación no incluye idevice.")
+        #endif
+    }
+
+    #if canImport(idevice)
+    private struct RSDConnection {
+        let provider: OpaquePointer
+        let proxy: OpaquePointer
+        let adapter: OpaquePointer
+        let stream: OpaquePointer
+        let handshake: OpaquePointer
+
+        func close() {
+            rsd_handshake_free(handshake)
+            adapter_close(stream)
+            adapter_free(adapter)
+            core_device_proxy_free(proxy)
+            idevice_provider_free(provider)
+        }
+    }
+
+    private nonisolated static func openRSDConnection(pairingData: Data) throws -> RSDConnection {
+        var pairing: OpaquePointer?
+        try pairingData.withUnsafeBytes { raw in
+            let base = raw.bindMemory(to: UInt8.self).baseAddress
+            try checkIdevice(idevice_pairing_file_from_bytes(base, UInt(pairingData.count), &pairing))
+        }
+        guard let pairing else { throw LoopbackError.failed("pairingFile.plist no válido.") }
+
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = CFSwapInt16HostToBig(62078)
+        inet_pton(AF_INET, "10.7.0.1", &addr.sin_addr)
+
+        var provider: OpaquePointer?
+        try withUnsafePointer(to: &addr) { addrPtr in
+            try addrPtr.withMemoryRebound(to: idevice_sockaddr.self, capacity: 1) { sockPtr in
+                try "iSyCodeMovil".withCString { labelPtr in
+                    try checkIdevice(idevice_tcp_provider_new(sockPtr, pairing, labelPtr, &provider))
+                }
+            }
+        }
+        guard let provider else {
+            idevice_pairing_file_free(pairing)
+            throw LoopbackError.failed("No se pudo conectar a 10.7.0.1. Verifica que LocalDevVPN esté encendido.")
+        }
+
+        var proxy: OpaquePointer?
+        try checkIdevice(core_device_proxy_connect(provider, &proxy))
+        guard let proxy else {
+            idevice_provider_free(provider)
+            throw LoopbackError.failed("No respondió CoreDeviceProxy.")
+        }
+
+        var rsdPort: UInt16 = 0
+        try checkIdevice(core_device_proxy_get_server_rsd_port(proxy, &rsdPort))
+
+        var adapter: OpaquePointer?
+        try checkIdevice(core_device_proxy_create_tcp_adapter(proxy, &adapter))
+        guard let adapter else {
+            core_device_proxy_free(proxy)
+            idevice_provider_free(provider)
+            throw LoopbackError.failed("No se pudo crear el adaptador TCP.")
+        }
+
+        var stream: OpaquePointer?
+        try checkIdevice(adapter_connect(adapter, rsdPort, &stream))
+        guard let stream else {
+            adapter_free(adapter)
+            core_device_proxy_free(proxy)
+            idevice_provider_free(provider)
+            throw LoopbackError.failed("No se pudo conectar al puerto RSD.")
+        }
+
+        var handshake: OpaquePointer?
+        try checkIdevice(rsd_handshake_new(stream, &handshake))
+        guard let handshake else {
+            adapter_close(stream)
+            adapter_free(adapter)
+            core_device_proxy_free(proxy)
+            idevice_provider_free(provider)
+            throw LoopbackError.failed("Falló el handshake RSD.")
+        }
+
+        return RSDConnection(provider: provider, proxy: proxy, adapter: adapter, stream: stream, handshake: handshake)
+    }
+
+    private nonisolated static func checkIdevice(_ err: UnsafeMutablePointer<IdeviceFfiError>?) throws {
+        guard let err else { return }
+        let msg = err.pointee.message.map { String(cString: $0) } ?? "Error idevice (\(err.pointee.code))"
+        idevice_error_free(err)
+        throw LoopbackError.failed(msg)
+    }
+    #endif
+}
+
+private enum LoopbackError: LocalizedError {
+    case failed(String)
+    var errorDescription: String? {
+        switch self {
+        case .failed(let msg): return msg
+        }
+    }
+}

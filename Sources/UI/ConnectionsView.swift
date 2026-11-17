@@ -1,12 +1,15 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Plain-language overview of the computer sandbox, iPhone control and assistant connection.
 public struct ConnectionsView: View {
     @EnvironmentObject private var store: WorkbenchStore
     @EnvironmentObject private var assistant: AssistantStore
     @EnvironmentObject private var router: AppShellRouter
+    @ObservedObject private var loopback = LoopbackDeviceSession.shared
     @State private var sandboxLinkInput = ""
     @State private var showSandboxPanel = false
+    @State private var showPairingImporter = false
 
     public init() {}
 
@@ -14,13 +17,23 @@ public struct ConnectionsView: View {
         Form {
             assistantSection
             computerSandboxSection
+            loopbackSection
             mobileHostSection
         }
         .navigationTitle("Conexiones")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { loopback.refreshState() }
         .sheet(isPresented: $showSandboxPanel) {
             SandboxPanelView()
                 .environmentObject(store)
+        }
+        .fileImporter(
+            isPresented: $showPairingImporter,
+            allowedContentTypes: [.propertyList, .xml, .data]
+        ) { result in
+            if case .success(let url) = result {
+                loopback.importPairingFile(from: url)
+            }
         }
     }
 
@@ -83,6 +96,67 @@ public struct ConnectionsView: View {
             Text("Computadora (Sandbox)")
         } footer: {
             Text("Conecta una carpeta de tu computadora para que el asistente edite y ejecute pruebas en un espacio aislado.")
+        }
+    }
+
+    private var loopbackSection: some View {
+        Section {
+            LabeledContent("Archivo de emparejamiento", value: loopback.hasPairingFile ? "Cargado" : "Falta importar")
+            LabeledContent("VPN loopback (10.7.0.1)", value: loopback.loopbackVPNActive ? "Activa" : "Inactiva")
+            if loopback.tailscaleActive && !loopback.loopbackVPNActive {
+                Label("Tailscale está usando la VPN de iOS. Apágalo un momento mientras usas LocalDevVPN.", systemImage: "exclamationmark.triangle")
+                    .font(OCTypography.meta)
+                    .foregroundColor(OCColor.warning)
+            }
+
+            Button(loopback.hasPairingFile ? "Reemplazar pairingFile.plist" : "Importar pairingFile.plist") {
+                showPairingImporter = true
+            }
+
+            if loopback.hasPairingFile {
+                Button {
+                    Task { await loopback.launchWDAOverLoopback() }
+                } label: {
+                    if loopback.isBusy {
+                        ProgressView()
+                    } else {
+                        Label("Arrancar WDA desde este iPhone", systemImage: "play.circle")
+                    }
+                }
+                .disabled(loopback.isBusy)
+
+                Button {
+                    Task { await loopback.testScreenshotOverLoopback() }
+                } label: {
+                    Label("Probar captura por túnel", systemImage: "camera")
+                }
+                .disabled(loopback.isBusy)
+
+                Button("Eliminar pairingFile.plist", role: .destructive) {
+                    loopback.removePairingFile()
+                }
+            }
+
+            if let msg = loopback.statusMessage {
+                Text(msg)
+                    .font(OCTypography.meta)
+                    .foregroundColor(OCColor.success)
+            }
+            if let err = loopback.errorMessage {
+                Label(err, systemImage: "exclamationmark.circle")
+                    .font(OCTypography.meta)
+                    .foregroundColor(OCColor.danger)
+            }
+
+            if let url = URL(string: "https://apps.apple.com/app/localdevvpn/id6755608044") {
+                Link(destination: url) {
+                    Label("Descargar LocalDevVPN", systemImage: "arrow.up.right.square")
+                }
+            }
+        } header: {
+            Text("Sin computadora (VPN loopback)")
+        } footer: {
+            Text("Permite hablar con este iPhone usando idevice + LocalDevVPN y un pairingFile.plist generado una sola vez en tu PC. Una vez que WDA arranque, puedes apagar LocalDevVPN y volver a encender Tailscale.")
         }
     }
 
