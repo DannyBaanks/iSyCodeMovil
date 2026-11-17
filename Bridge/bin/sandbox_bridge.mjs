@@ -19,6 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { isTailscaleIPv4 } from "./grok_bridge.mjs";
+import { IphoneGateError, createIphoneGate, spawnMcp } from "./iphone_gate.mjs";
 import { createApi } from "../sandbox/server/api.mjs";
 import { createCredentialStore } from "../sandbox/server/credentials.mjs";
 import { OrchestratorError, createOrchestrator } from "../sandbox/server/orchestrator.mjs";
@@ -97,6 +98,19 @@ function sendJSON(res, code, payload) {
     res.end(body);
 }
 
+const MAX_IPHONE_BODY = 64 * 1024;
+
+async function readSmallJSON(req) {
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of req) {
+        size += chunk.length;
+        if (size > MAX_IPHONE_BODY) throw new IphoneGateError("request too large", "refused");
+        chunks.push(chunk);
+    }
+    try { return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); } catch { throw new IphoneGateError("invalid JSON", "refused"); }
+}
+
 /**
  * The only thing between the network and the orchestrator.
  *
@@ -107,7 +121,7 @@ function sendJSON(res, code, payload) {
  *   accept any directory, which is fine on loopback and would be a way to read the whole
  *   disk for whoever holds the token.
  */
-export function createSandboxGateway({ token, api, orchestrator, credentials, directory, project }) {
+export function createSandboxGateway({ token, api, orchestrator, credentials, directory, project, iphone = null }) {
     const expected = tokenDigest(token);
     return http.createServer(async (req, res) => {
         const url = new URL(req.url ?? "/", "http://localhost");
@@ -127,6 +141,22 @@ export function createSandboxGateway({ token, api, orchestrator, credentials, di
                     github: credentials.usable("github").ok,
                 });
             }
+            if (parts[1] === "iphone") {
+                // Off unless the link was started with --iphone: then the gate, not the caller, decides what runs.
+                if (!iphone) { req.resume(); return sendJSON(res, 404, { error: "not found" }); }
+                if (parts.length === 2 && req.method === "GET") {
+                    req.resume();
+                    const tools = await iphone.tools();
+                    return sendJSON(res, 200, { mode: iphone.mode, tools: tools.map((tool) => tool.name) });
+                }
+                if (parts.length === 3 && parts[2] === "call" && req.method === "POST") {
+                    const body = await readSmallJSON(req);
+                    if (typeof body?.tool !== "string") return sendJSON(res, 400, { error: "tool is required" });
+                    return sendJSON(res, 200, await iphone.call(body.tool, body.arguments));
+                }
+                req.resume();
+                return sendJSON(res, 405, { error: "method not allowed" });
+            }
             if (parts[1] === "sandboxes" && parts[3] === "folder" && parts.length === 4) {
                 req.resume(); // any `directory` the caller sent is ignored on purpose
                 if (req.method === "GET") return sendJSON(res, 200, await orchestrator.previewFolder(directory));
@@ -134,6 +164,10 @@ export function createSandboxGateway({ token, api, orchestrator, credentials, di
                 return sendJSON(res, 405, { error: "method not allowed" });
             }
         } catch (error) {
+            if (error instanceof IphoneGateError) {
+                const status = error.kind === "refused" ? 403 : error.kind === "unavailable" ? 503 : 502;
+                return sendJSON(res, status, { error: error.message, kind: error.kind });
+            }
             const refused = error instanceof OrchestratorError;
             return sendJSON(res, refused ? 409 : 500, { error: error.message, kind: refused ? "refused" : "internal" });
         }
@@ -207,7 +241,7 @@ function ensureDocker() {
     if (build.status !== 0) throw new Error("Could not build the sandbox image.");
 }
 
-export async function startSandboxLink({ host, port, directory, env = process.env }) {
+export async function startSandboxLink({ host, port, directory, iphone, env = process.env }) {
     ensureDocker();
 
     const token = randomBytes(32).toString("base64url");
@@ -228,6 +262,14 @@ export async function startSandboxLink({ host, port, directory, env = process.en
         }
     }
 
+    // Off unless asked for. The gate runs on this computer, outside the sandbox container.
+    const iphoneGate = iphone
+        ? createIphoneGate({
+            mode: iphone,
+            connect: () => spawnMcp({ command: env.ISYCODE_IPHONE_CONTROL ?? "iphone-control", args: ["mcp"], env }),
+        })
+        : null;
+
     const gateway = createSandboxGateway({
         token,
         api,
@@ -235,6 +277,7 @@ export async function startSandboxLink({ host, port, directory, env = process.en
         credentials,
         directory,
         project: () => describeProject(directory),
+        iphone: iphoneGate,
     });
     await new Promise((resolve, reject) => {
         gateway.once("error", reject);
@@ -248,6 +291,7 @@ export async function startSandboxLink({ host, port, directory, env = process.en
     console.log("runtime   Sandbox (Docker, on this computer)");
     console.log(`project   ${directory}${project.repo ? `  (${project.repo})` : ""}`);
     console.log(`server    http://${host}:${port}${isLoopback(host) ? "  (loopback only)" : "  (via Tailscale)"}`);
+    if (iphoneGate) console.log(`iphone    ${iphoneGate.mode} (iphone-control on this computer)`);
     console.log(github
         ? `github    using the token from ${github.source}; it stays on this computer`
         : `github    ${githubProblem ?? "no token found"}: public repositories only, and no pull requests`);
