@@ -272,7 +272,7 @@ public struct ChatLandingView: View {
     public var body: some View {
         let runtime = store.runtimeSnapshot
         return VStack(spacing: 0) {
-            Spacer(minLength: OCSpacing.xl)
+            Spacer(minLength: OCSpacing.lg)
 
             VStack(spacing: OCSpacing.md) {
                 Text("¿En qué te ayudo?")
@@ -300,12 +300,16 @@ public struct ChatLandingView: View {
             }
             .padding(.horizontal, OCSpacing.contentMargin)
 
-            Spacer(minLength: OCSpacing.xl)
+            Spacer(minLength: OCSpacing.lg)
+
+            suggestedPromptsSection
+                .padding(.horizontal, OCSpacing.contentMargin)
+                .padding(.bottom, OCSpacing.md)
 
             composerBar
         }
         .background(OCColor.bgDeep.ignoresSafeArea())
-        .navigationTitle("Chat")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -318,6 +322,57 @@ public struct ChatLandingView: View {
                 }
                 .accessibilityLabel("Abrir barra lateral")
                 .accessibilityIdentifier("chat-open-sidebar")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    router.openSettings()
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(OCColor.iconPrimary)
+                        .frame(width: 40, height: 40)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Ajustes")
+            }
+        }
+    }
+
+    private var suggestedPrompts: [(icon: String, tint: Color, text: String)] {
+        [
+            ("envelope.fill", OCColor.info, "Revisa mis últimos correos de Gmail"),
+            ("calendar", OCColor.warning, "¿Qué eventos tengo hoy en mi agenda?"),
+            store.sandboxLink != nil
+                ? ("folder.fill", OCColor.agentBuild, "Explora el proyecto del sandbox y dime qué hace")
+                : ("iphone", OCColor.success, "Revisa el estado de mi iPhone y qué hay en pantalla")
+        ]
+    }
+
+    private var suggestedPromptsSection: some View {
+        VStack(alignment: .leading, spacing: OCSpacing.sm) {
+            ForEach(suggestedPrompts, id: \.text) { item in
+                Button {
+                    sendPrompt(item.text)
+                } label: {
+                    HStack(spacing: OCSpacing.md) {
+                        Image(systemName: item.icon)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(item.tint)
+                            .frame(width: 24)
+                        Text(item.text)
+                            .font(.system(size: 14.5))
+                            .foregroundColor(OCColor.textSecondary)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, OCSpacing.md)
+                    .padding(.vertical, 10)
+                    .background(OCColor.bgBase.opacity(0.65))
+                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(sending)
             }
         }
     }
@@ -359,45 +414,41 @@ public struct ChatLandingView: View {
 
     private var composerBar: some View {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        return VStack(spacing: 0) {
-            Divider().overlay(OCColor.borderMuted)
-            HStack(alignment: .bottom, spacing: OCSpacing.sm) {
-                TextField("Escribe un mensaje…", text: $draft, axis: .vertical)
-                    .focused($isInputFocused)
-                    .lineLimit(1...6)
-                    .font(.system(size: 15.5))
-                    .foregroundColor(OCColor.textPrimary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(OCColor.bgLayer1)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
-                    .submitLabel(.send)
-                    .onSubmit { send() }
-                    .accessibilityIdentifier("chat-landing-input")
+        return HStack(alignment: .bottom, spacing: OCSpacing.xs) {
+            TextField("Pregunta lo que quieras…", text: $draft, axis: .vertical)
+                .focused($isInputFocused)
+                .lineLimit(1...6)
+                .font(.system(size: 15.5))
+                .foregroundColor(OCColor.textPrimary)
+                .padding(.leading, 14)
+                .padding(.vertical, 10)
+                .submitLabel(.send)
+                .onSubmit { send() }
+                .accessibilityIdentifier("chat-landing-input")
 
-                Button(action: send) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(OCColor.onAccent)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(IysThemePreferences.active.accent))
-                }
-                .buttonStyle(.plain)
-                .disabled(trimmed.isEmpty || sending)
-                .opacity(trimmed.isEmpty || sending ? 0.4 : 1)
-                .frame(width: 44, height: 44)
-                .accessibilityLabel("Enviar mensaje")
-                .accessibilityIdentifier("chat-landing-send")
+            Button(action: send) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(OCColor.onAccent)
+                    .frame(width: 34, height: 34)
+                    .background(Circle().fill(IysThemePreferences.active.accent))
             }
-            .padding(.horizontal, OCSpacing.contentMargin)
-            .padding(.vertical, OCSpacing.sm)
-            .background(OCColor.bgBase)
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Listo") { isInputFocused = false }
-                }
+            .buttonStyle(.plain)
+            .disabled(trimmed.isEmpty || sending)
+            .opacity(trimmed.isEmpty || sending ? 0.35 : 1)
+            .padding(4)
+            .accessibilityLabel("Enviar mensaje")
+            .accessibilityIdentifier("chat-landing-send")
+        }
+        .background(OCColor.bgBase)
+        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r24))
+        .overlay(RoundedRectangle(cornerRadius: OCRadius.r24).stroke(OCColor.borderBase, lineWidth: 1))
+        .padding(.horizontal, OCSpacing.contentMargin)
+        .padding(.bottom, OCSpacing.sm)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Listo") { isInputFocused = false }
             }
         }
     }
@@ -405,10 +456,16 @@ public struct ChatLandingView: View {
     private func send() {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !sending else { return }
-        sending = true
         draft = ""
+        sendPrompt(trimmed)
+    }
+
+    private func sendPrompt(_ prompt: String) {
+        guard !sending else { return }
+        sending = true
+        isInputFocused = false
         Task {
-            _ = await store.openOrCreateConversation(preferNew: true, initialPrompt: trimmed)
+            _ = await store.openOrCreateConversation(preferNew: true, initialPrompt: prompt)
             sending = false
         }
     }

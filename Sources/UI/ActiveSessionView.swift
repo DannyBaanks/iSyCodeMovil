@@ -385,9 +385,15 @@ struct ChatSurfaceView: View {
                         if sessionState.timelineEvents.isEmpty {
                             EmptyChatView(sessionTitle: sessionState.currentSession?.title)
                         }
-                        ForEach(sessionState.timelineEvents) { event in
-                            TimelineEventContainer(event: event)
-                                .id(event.id)
+                        ForEach(groupedTimelineItems) { item in
+                            switch item {
+                            case .single(let event):
+                                TimelineEventContainer(event: event)
+                                    .id(event.id)
+                            case .toolCarousel(let steps):
+                                ToolStepsCarouselView(steps: steps, agentColor: sessionState.agentMode.color)
+                                    .id(item.id)
+                            }
                         }
                     }
                     .padding(.horizontal, OCSpacing.contentMargin)
@@ -412,10 +418,46 @@ struct ChatSurfaceView: View {
     
     private func scrollToBottom() {
         guard let proxy = scrollProxy,
-              let lastEvent = sessionState.timelineEvents.last else { return }
+              let lastItem = groupedTimelineItems.last else { return }
         withAnimation(.easeOut(duration: 0.2)) {
-            proxy.scrollTo(lastEvent.id, anchor: .bottom)
+            proxy.scrollTo(lastItem.id, anchor: .bottom)
         }
+    }
+
+    private enum TimelineRenderItem: Identifiable {
+        case single(TimelineEvent)
+        case toolCarousel([TimelineEvent])
+
+        var id: String {
+            switch self {
+            case .single(let event): return event.id
+            case .toolCarousel(let steps): return "steps-\(steps.first?.id ?? "")"
+            }
+        }
+    }
+
+    private var groupedTimelineItems: [TimelineRenderItem] {
+        var items: [TimelineRenderItem] = []
+        var toolRun: [TimelineEvent] = []
+        func flushRun() {
+            guard !toolRun.isEmpty else { return }
+            if toolRun.count >= 2 {
+                items.append(.toolCarousel(toolRun))
+            } else {
+                items.append(.single(toolRun[0]))
+            }
+            toolRun.removeAll()
+        }
+        for event in sessionState.timelineEvents {
+            if event.kind == .toolCall {
+                toolRun.append(event)
+            } else {
+                flushRun()
+                items.append(.single(event))
+            }
+        }
+        flushRun()
+        return items
     }
 }
 

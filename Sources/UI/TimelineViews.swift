@@ -449,8 +449,8 @@ public struct ToolCallCollapsedView: View {
         return rawName?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Herramienta"
     }
 
-    private var toolDetail: String? {
-        guard let arguments = event.toolArguments, !arguments.isEmpty else { return nil }
+    static func displayDetail(for arguments: [String: String]?) -> String? {
+        guard let arguments, !arguments.isEmpty else { return nil }
         let preferredKeys = [
             "path", "file", "file_path", "filepath", "pattern", "command", "url",
             "text", "filter", "element", "app", "bundle_id", "button", "direction", "query"
@@ -460,16 +460,19 @@ public struct ToolCallCollapsedView: View {
         }).first(where: { !$0.isEmpty }) {
             return preferred
         }
-        let nonBooleanFallback = arguments.keys.sorted().compactMap { key -> String? in
+        return arguments.keys.sorted().compactMap { key -> String? in
             guard let value = arguments[key], !value.isEmpty else { return nil }
             let lower = value.lowercased()
             if lower == "true" || lower == "false" { return nil }
             return value
         }.first
-        return nonBooleanFallback
     }
 
-    private func toolIcon(for name: String?) -> String {
+    private var toolDetail: String? {
+        Self.displayDetail(for: event.toolArguments)
+    }
+
+    static func iconName(for name: String?) -> String {
         guard let name = name?.lowercased() else { return "wrench" }
         if name.hasPrefix("iphone_") { return "iphone" }
         if name.hasPrefix("gmail.") { return "envelope" }
@@ -484,6 +487,10 @@ public struct ToolCallCollapsedView: View {
         if name.contains("list") { return "list.bullet" }
         if name.contains("patch") || name.contains("diff") { return "arrow.left.arrow.right" }
         return "wrench"
+    }
+
+    private func toolIcon(for name: String?) -> String {
+        Self.iconName(for: name)
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -1264,5 +1271,98 @@ public struct SystemMessageView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, OCSpacing.xs)
         }
+    }
+}
+
+// MARK: - Tool Steps Carousel
+
+/// Groups consecutive tool calls into a compact horizontal step strip (inspired by iphone-use-app),
+/// with tap-to-inspect output below.
+public struct ToolStepsCarouselView: View {
+    let steps: [TimelineEvent]
+    let agentColor: Color
+    @State private var selectedStepID: String?
+
+    public init(steps: [TimelineEvent], agentColor: Color) {
+        self.steps = steps
+        self.agentColor = agentColor
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: OCSpacing.sm) {
+            HStack(spacing: OCSpacing.xs) {
+                Text("Pasos")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(OCColor.textSecondary)
+                Text("· \(steps.count)")
+                    .font(OCTypography.metaMono)
+                    .foregroundColor(OCColor.textFaint)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: OCSpacing.sm) {
+                    ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
+                        stepCard(step, index: index + 1)
+                    }
+                }
+            }
+
+            if let selected = steps.first(where: { $0.id == selectedStepID }) {
+                ToolCallExpandedView(event: selected, agentColor: agentColor)
+            }
+        }
+        .padding(.vertical, OCSpacing.xs)
+    }
+
+    private func stepCard(_ step: TimelineEvent, index: Int) -> some View {
+        let isSelected = selectedStepID == step.id
+        let stateColor = step.toolState?.color ?? OCColor.textFaint
+        return Button {
+            withAnimation(.easeInOut(duration: 0.16)) {
+                selectedStepID = isSelected ? nil : step.id
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: OCSpacing.xs) {
+                HStack(spacing: 6) {
+                    Text("\(index).")
+                        .font(OCTypography.metaMono)
+                        .foregroundColor(OCColor.textFaint)
+                    Image(systemName: ToolCallCollapsedView.iconName(for: step.toolName))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(stateColor)
+                    Spacer(minLength: 4)
+                    Circle()
+                        .fill(stateColor)
+                        .frame(width: 6, height: 6)
+                }
+
+                Text(ToolCallCollapsedView.displayTitle(for: step.toolName))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(OCColor.textPrimary)
+                    .lineLimit(1)
+
+                if let detail = ToolCallCollapsedView.displayDetail(for: step.toolArguments) {
+                    Text(detail)
+                        .font(OCTypography.metaMono)
+                        .foregroundColor(OCColor.textSecondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                } else {
+                    Text(step.toolState?.title ?? "Paso")
+                        .font(OCTypography.meta)
+                        .foregroundColor(stateColor)
+                }
+            }
+            .padding(OCSpacing.md)
+            .frame(width: 168, alignment: .leading)
+            .background(isSelected ? stateColor.opacity(0.10) : OCColor.bgBase)
+            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+            .overlay(
+                RoundedRectangle(cornerRadius: OCRadius.r12)
+                    .stroke(isSelected ? stateColor.opacity(0.55) : OCColor.borderBase, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
