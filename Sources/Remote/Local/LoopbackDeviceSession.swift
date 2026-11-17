@@ -78,9 +78,9 @@ public final class LoopbackDeviceSession: ObservableObject {
         defer { isBusy = false }
 
         do {
-            let pairingData = try Data(contentsOf: pairingFileURL)
+            let pairingPath = pairingFileURL.path
             let launchedBundle = try await Task.detached(priority: .userInitiated) {
-                try Self.launchWDASync(pairingData: pairingData)
+                try Self.launchWDASync(pairingPath: pairingPath)
             }.value
             statusMessage = "Se lanzó \(launchedBundle). Comprobando WDA en 127.0.0.1:8100…"
             for _ in 0..<10 {
@@ -110,9 +110,9 @@ public final class LoopbackDeviceSession: ObservableObject {
         defer { isBusy = false }
 
         do {
-            let pairingData = try Data(contentsOf: pairingFileURL)
+            let pairingPath = pairingFileURL.path
             let bytes = try await Task.detached(priority: .userInitiated) {
-                try Self.takeScreenshotSync(pairingData: pairingData)
+                try Self.takeScreenshotSync(pairingPath: pairingPath)
             }.value
             statusMessage = "Captura por túnel correcta (\(bytes.count / 1024) KB)."
         } catch {
@@ -144,9 +144,9 @@ public final class LoopbackDeviceSession: ObservableObject {
 
     // MARK: - idevice FFI bridge
 
-    private nonisolated static func launchWDASync(pairingData: Data) throws -> String {
+    private nonisolated static func launchWDASync(pairingPath: String) throws -> String {
         #if canImport(idevice)
-        let conn = try openRSDConnection(pairingData: pairingData)
+        let conn = try openRSDConnection(pairingPath: pairingPath)
         defer { conn.close() }
 
         var appService: OpaquePointer?
@@ -188,9 +188,9 @@ public final class LoopbackDeviceSession: ObservableObject {
         #endif
     }
 
-    private nonisolated static func takeScreenshotSync(pairingData: Data) throws -> Data {
+    private nonisolated static func takeScreenshotSync(pairingPath: String) throws -> Data {
         #if canImport(idevice)
-        let conn = try openRSDConnection(pairingData: pairingData)
+        let conn = try openRSDConnection(pairingPath: pairingPath)
         defer { conn.close() }
 
         var server: OpaquePointer?
@@ -218,86 +218,54 @@ public final class LoopbackDeviceSession: ObservableObject {
 
     #if canImport(idevice)
     private struct RSDConnection {
-        let provider: OpaquePointer
-        let proxy: OpaquePointer
         let adapter: OpaquePointer
-        let stream: OpaquePointer
         let handshake: OpaquePointer
 
         func close() {
             rsd_handshake_free(handshake)
-            adapter_close(stream)
             adapter_free(adapter)
-            core_device_proxy_free(proxy)
-            idevice_provider_free(provider)
         }
     }
 
-    private nonisolated static func openRSDConnection(pairingData: Data) throws -> RSDConnection {
+    private nonisolated static func openRSDConnection(pairingPath: String) throws -> RSDConnection {
         var pairing: OpaquePointer?
-        try pairingData.withUnsafeBytes { raw in
-            let base = raw.bindMemory(to: UInt8.self).baseAddress
-            try checkIdevice(idevice_pairing_file_from_bytes(base, UInt(pairingData.count), &pairing))
+        try pairingPath.withCString { cPath in
+            try checkIdevice(rp_pairing_file_read(cPath, &pairing))
         }
-        guard let pairing else { throw LoopbackError.failed("pairingFile.plist no válido.") }
+        guard let pairing else { throw LoopbackError.failed("pairingFile.plist no válido (debe ser formato RemotePairing).") }
+        defer { rp_pairing_file_free(pairing) }
 
+        let port = RemotePairingBonjourResolver.resolvePort(timeout: 3)
         var addr = sockaddr_in()
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = CFSwapInt16HostToBig(62078)
+        addr.sin_port = CFSwapInt16HostToBig(port)
         inet_pton(AF_INET, "10.7.0.1", &addr.sin_addr)
 
-        var provider: OpaquePointer?
-        try withUnsafePointer(to: &addr) { addrPtr in
-            try addrPtr.withMemoryRebound(to: idevice_sockaddr.self, capacity: 1) { sockPtr in
-                try "iSyCodeMovil".withCString { labelPtr in
-                    try checkIdevice(idevice_tcp_provider_new(sockPtr, pairing, labelPtr, &provider))
+        var adapter: OpaquePointer?
+        var handshake: OpaquePointer?
+        try "iSyCodeMovil".withCString { hostPtr in
+            try withUnsafePointer(to: &addr) { addrPtr in
+                try addrPtr.withMemoryRebound(to: idevice_sockaddr.self, capacity: 1) { sockPtr in
+                    try checkIdevice(tunnel_create_rppairing(
+                        sockPtr,
+                        idevice_socklen_t(MemoryLayout<sockaddr_in>.stride),
+                        hostPtr,
+                        pairing,
+                        nil,
+                        nil,
+                        &adapter,
+                        &handshake
+                    ))
                 }
             }
         }
-        guard let provider else {
-            idevice_pairing_file_free(pairing)
-            throw LoopbackError.failed("No se pudo conectar a 10.7.0.1. Verifica que LocalDevVPN esté encendido.")
+        guard let adapter, let handshake else {
+            if let handshake { rsd_handshake_free(handshake) }
+            if let adapter { adapter_free(adapter) }
+            throw LoopbackError.failed("No se pudo abrir el túnel RemotePairing en 10.7.0.1:\(port).")
         }
-
-        var proxy: OpaquePointer?
-        try checkIdevice(core_device_proxy_connect(provider, &proxy))
-        guard let proxy else {
-            idevice_provider_free(provider)
-            throw LoopbackError.failed("No respondió CoreDeviceProxy.")
-        }
-
-        var rsdPort: UInt16 = 0
-        try checkIdevice(core_device_proxy_get_server_rsd_port(proxy, &rsdPort))
-
-        var adapter: OpaquePointer?
-        try checkIdevice(core_device_proxy_create_tcp_adapter(proxy, &adapter))
-        guard let adapter else {
-            core_device_proxy_free(proxy)
-            idevice_provider_free(provider)
-            throw LoopbackError.failed("No se pudo crear el adaptador TCP.")
-        }
-
-        var stream: OpaquePointer?
-        try checkIdevice(adapter_connect(adapter, rsdPort, &stream))
-        guard let stream else {
-            adapter_free(adapter)
-            core_device_proxy_free(proxy)
-            idevice_provider_free(provider)
-            throw LoopbackError.failed("No se pudo conectar al puerto RSD.")
-        }
-
-        var handshake: OpaquePointer?
-        try checkIdevice(rsd_handshake_new(stream, &handshake))
-        guard let handshake else {
-            adapter_close(stream)
-            adapter_free(adapter)
-            core_device_proxy_free(proxy)
-            idevice_provider_free(provider)
-            throw LoopbackError.failed("Falló el handshake RSD.")
-        }
-
-        return RSDConnection(provider: provider, proxy: proxy, adapter: adapter, stream: stream, handshake: handshake)
+        return RSDConnection(adapter: adapter, handshake: handshake)
     }
 
     private nonisolated static func checkIdevice(_ err: UnsafeMutablePointer<IdeviceFfiError>?) throws {
@@ -307,6 +275,47 @@ public final class LoopbackDeviceSession: ObservableObject {
         throw LoopbackError.failed(msg)
     }
     #endif
+}
+
+private final class RemotePairingBonjourResolver: NSObject, NetServiceBrowserDelegate, NetServiceDelegate, @unchecked Sendable {
+    private let browser = NetServiceBrowser()
+    private var services: [NetService] = []
+    private var resolvedPort: UInt16?
+
+    static func resolvePort(timeout: TimeInterval = 3) -> UInt16 {
+        let resolver = RemotePairingBonjourResolver()
+        let sem = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            resolver.search(timeout: timeout)
+            sem.signal()
+        }
+        _ = sem.wait(timeout: .now() + timeout + 0.5)
+        return resolver.resolvedPort ?? 49152
+    }
+
+    private func search(timeout: TimeInterval) {
+        browser.delegate = self
+        browser.schedule(in: .current, forMode: .default)
+        browser.searchForServices(ofType: "_remotepairing._tcp.", inDomain: "local.")
+        let deadline = Date().addingTimeInterval(timeout)
+        while resolvedPort == nil && Date() < deadline {
+            _ = RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.1))
+        }
+        browser.stop()
+        services.forEach { $0.stop() }
+    }
+
+    func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
+        services.append(service)
+        service.delegate = self
+        service.resolve(withTimeout: 2.5)
+    }
+
+    func netServiceDidResolveAddress(_ sender: NetService) {
+        if (1...65535).contains(sender.port), resolvedPort == nil {
+            resolvedPort = UInt16(sender.port)
+        }
+    }
 }
 
 private enum LoopbackError: LocalizedError {
