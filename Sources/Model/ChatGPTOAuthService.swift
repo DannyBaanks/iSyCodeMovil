@@ -215,7 +215,6 @@ public final class ChatGPTOAuthStore: ObservableObject {
         let deadline = Date().addingTimeInterval(15 * 60)
         while Date() < deadline {
             try Task.checkCancellation()
-            try await Task.sleep(for: .seconds(intervalSeconds))
 
             var req = URLRequest(url: deviceTokenEndpoint, timeoutInterval: 15)
             req.httpMethod = "POST"
@@ -224,7 +223,25 @@ public final class ChatGPTOAuthStore: ObservableObject {
                 "device_auth_id": deviceAuthID,
                 "user_code": userCode
             ])
-            let (data, resp) = try await URLSession.shared.data(for: req)
+
+            let data: Data
+            let resp: URLResponse
+            do {
+                (data, resp) = try await URLSession.shared.data(for: req)
+            } catch let urlErr as URLError where !Task.isCancelled && (
+                urlErr.code == .cancelled ||
+                urlErr.code == .networkConnectionLost ||
+                urlErr.code == .notConnectedToInternet ||
+                urlErr.code == .timedOut
+            ) {
+                // iOS cancels in-flight URLSession sockets when backgrounded in Safari; keep polling on resume.
+                try await Task.sleep(for: .seconds(1))
+                continue
+            } catch let nsErr as NSError where !Task.isCancelled && nsErr.domain == NSURLErrorDomain && nsErr.code == NSURLErrorCancelled {
+                try await Task.sleep(for: .seconds(1))
+                continue
+            }
+
             let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
             if status == 200,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -233,15 +250,18 @@ public final class ChatGPTOAuthStore: ObservableObject {
                 return try await exchangeCode(authCode: authCode, codeVerifier: codeVerifier)
             }
             if status == 403 || status == 404 || status == 429 {
+                try await Task.sleep(for: .seconds(intervalSeconds))
                 continue
             }
             if status >= 400 {
                 let body = String(data: data, encoding: .utf8) ?? ""
                 if body.contains("authorization_pending") || body.contains("slow_down") {
+                    try await Task.sleep(for: .seconds(intervalSeconds))
                     continue
                 }
                 throw ChatGPTOAuthError.serverError("OpenAI OAuth (\(status)): \(body)")
             }
+            try await Task.sleep(for: .seconds(intervalSeconds))
         }
         throw ChatGPTOAuthError.timedOut
     }
