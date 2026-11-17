@@ -232,6 +232,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             do {
                 try await installRemoteProvider(id: provider.id, display: provider.name, key: key,
                     baseURL: provider.baseURL, preferred: provider.preferredModels, fallback: provider.fallbackModel,
+                    curatedOnly: provider.curatedOnly,
                     savedModelName: providerID == preference ? configuration?.defaultModelName : nil)
             } catch ModelProviderError.authenticationFailed where providerID != preference {
                 continue
@@ -289,12 +290,13 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         baseURL: String,
         preferred: [String],
         fallback: String,
+        curatedOnly: Bool = false,
         savedModelName: String? = nil
     ) async throws {
         let remote = RemoteModelProvider(id: id, name: display)
         try await remote.configure(ModelConfiguration(apiKey: key, baseURL: baseURL))
         let listed = await remote.availableModels
-        let models = SandboxModelCatalog.orderedModelIDs(available: listed, preferred: preferred, fallback: fallback)
+        let models = SandboxModelCatalog.orderedModelIDs(available: listed, preferred: preferred, fallback: fallback, curatedOnly: curatedOnly)
         modelProvider = remote
         if let savedModelName, models.contains(savedModelName) {
             activeModelName = savedModelName
