@@ -18,7 +18,7 @@ public protocol WdaDriving: Sendable {
 /// of the concrete WDA client and XML parser.
 public protocol WdaElementReading: Sendable {
     func parse(xml: String) -> [LocalElement]
-    func format(_ elements: [LocalElement]) -> String
+    func format(_ elements: [LocalElement], limit: Int) -> String
     func resolveTap(text: String, index: Int, in elements: [LocalElement]) throws -> (x: Double, y: Double)
 }
 
@@ -150,13 +150,17 @@ public actor LocalIphoneController {
         if filter.isEmpty {
             matching = elements
         } else {
+            let needle = filter.lowercased()
             matching = elements.filter {
-                elementReader.format([$0]).localizedCaseInsensitiveContains(filter)
+                $0.searchableText.lowercased().contains(needle)
             }
         }
         let limit = try integer("limit", in: arguments, default: 150)
         guard limit >= 0 else { throw LocalIphoneError.invalid("limit debe ser cero o mayor.") }
-        return elementReader.format(Array(matching.prefix(limit)))
+        if matching.isEmpty, !filter.isEmpty, !elements.isEmpty {
+            return "No element containing \"\(filter)\" (\(elements.count) other elements with text on screen; leave out filter to list them all)"
+        }
+        return elementReader.format(matching, limit: limit)
     }
 
     private func waitFor(arguments: [String: Any]) async throws -> String {
@@ -165,8 +169,11 @@ public actor LocalIphoneController {
         guard timeout >= 0 else { throw LocalIphoneError.invalid("timeout debe ser cero o mayor.") }
         let deadline = Date().addingTimeInterval(timeout)
         while true {
-            let rendered = elementReader.format(try await readElements())
-            if rendered.localizedCaseInsensitiveContains(text) {
+            let elements = try await readElements()
+            if elements.contains(where: { $0.waitSearchTexts.contains(text) })
+                || elements.contains(where: { element in
+                    element.waitSearchTexts.contains { $0.lowercased().contains(text.lowercased()) }
+                }) {
                 return "Encontrado: \(text)"
             }
             guard Date() < deadline else {

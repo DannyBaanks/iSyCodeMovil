@@ -137,7 +137,9 @@ private actor RecordingWda: WdaDriving {
 }
 
 private struct StubElementReader: WdaElementReading {
-    func parse(xml: String) -> [LocalElement] { [] }
-    func format(_ elements: [LocalElement]) -> String { "Continuar" }
+    func parse(xml: String) -> [LocalElement] {
+        [LocalElement(kind: "Button", label: "Continuar", name: "", value: "", centerX: 32, centerY: 48, width: 80, height: 40)]
+    }
+    func format(_ elements: [LocalElement], limit: Int) -> String { "Continuar" }
     func resolveTap(text: String, index: Int, in elements: [LocalElement]) throws -> (x: Double, y: Double) { (32 + Double(index), 48) }
 }
