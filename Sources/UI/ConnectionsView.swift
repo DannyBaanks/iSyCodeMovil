@@ -1,12 +1,17 @@
 import SwiftUI
 import UniformTypeIdentifiers
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Plain-language overview of the computer sandbox, iPhone control and assistant connection.
 public struct ConnectionsView: View {
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var store: WorkbenchStore
     @EnvironmentObject private var assistant: AssistantStore
     @EnvironmentObject private var router: AppShellRouter
     @ObservedObject private var loopback = LoopbackDeviceSession.shared
+    @ObservedObject private var chatgptOAuth = ChatGPTOAuthStore.shared
     @State private var sandboxLinkInput = ""
     @State private var showSandboxPanel = false
     @State private var showPairingImporter = false
@@ -16,6 +21,7 @@ public struct ConnectionsView: View {
     public var body: some View {
         Form {
             assistantSection
+            chatGPTOAuthSection
             computerSandboxSection
             loopbackSection
             mobileHostSection
@@ -52,6 +58,77 @@ public struct ConnectionsView: View {
             Text("Asistente")
         } footer: {
             Text("Puedes usar un proveedor conectado con tu clave o un modelo guardado en este iPhone.")
+        }
+    }
+
+    private var chatGPTOAuthSection: some View {
+        Section {
+            LabeledContent("Suscripción ChatGPT", value: chatgptOAuth.isSignedIn ? "Conectada" : "Sin conectar")
+            if let code = chatgptOAuth.userCode {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Código de autorización:")
+                        .font(OCTypography.meta)
+                        .foregroundStyle(OCColor.textFaint)
+                    Text(code)
+                        .font(.system(size: 22, weight: .bold, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                .padding(.vertical, 4)
+
+                Button {
+                    #if canImport(UIKit)
+                    UIPasteboard.general.string = code
+                    #endif
+                    openURL(ChatGPTOAuthStore.verificationURL)
+                } label: {
+                    Label("Copiar código y abrir OpenAI", systemImage: "safari")
+                }
+
+                Button("Cancelar", role: .cancel) {
+                    chatgptOAuth.cancelLogin()
+                }
+            } else if chatgptOAuth.isPolling {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Esperando confirmación…")
+                        .font(OCTypography.meta)
+                }
+                Button("Cancelar", role: .cancel) {
+                    chatgptOAuth.cancelLogin()
+                }
+            } else if chatgptOAuth.isSignedIn {
+                Button {
+                    Task {
+                        await store.startSandbox(providerID: "chatgpt-oauth", apiKey: nil)
+                    }
+                } label: {
+                    Label("Activar ChatGPT Plus/Pro (OAuth)", systemImage: "bolt.fill")
+                }
+                Button("Cerrar sesión ChatGPT", role: .destructive) {
+                    chatgptOAuth.signOut()
+                }
+            } else {
+                Button {
+                    chatgptOAuth.startDeviceLogin()
+                } label: {
+                    Label("Conectar ChatGPT Plus/Pro (OAuth)", systemImage: "person.badge.key")
+                }
+            }
+
+            if let msg = chatgptOAuth.statusMessage {
+                Text(msg)
+                    .font(OCTypography.meta)
+                    .foregroundStyle(OCColor.textSecondary)
+            }
+            if let err = chatgptOAuth.errorMessage {
+                Label(err, systemImage: "exclamationmark.circle")
+                    .font(OCTypography.meta)
+                    .foregroundStyle(OCColor.danger)
+            }
+        } header: {
+            Text("ChatGPT Plus/Pro (OAuth)")
+        } footer: {
+            Text("Inicia sesión con tu cuenta ChatGPT Plus o Pro usando el flujo de dispositivo de Codex para usar GPT-5.4 / Codex con tu suscripción semanal sin pagar API key.")
         }
     }
 

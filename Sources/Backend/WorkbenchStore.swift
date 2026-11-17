@@ -1609,8 +1609,12 @@ extension WorkbenchStore {
             configuredProviderID = configuration.defaultModelProvider
             configuredModelName = configuration.defaultModelName
             if let providerID = configuration.defaultModelProvider, providerID != "gus-local" {
-                let savedKey = (try? await persistence.loadAPIKey(provider: providerID)) ?? ""
-                hasSavedSelectedProviderKey = !savedKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                if providerID == "chatgpt-oauth" {
+                    hasSavedSelectedProviderKey = ChatGPTOAuthStore.hasStoredTokens()
+                } else {
+                    let savedKey = (try? await persistence.loadAPIKey(provider: providerID)) ?? ""
+                    hasSavedSelectedProviderKey = !savedKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }
             } else {
                 hasSavedSelectedProviderKey = false
             }

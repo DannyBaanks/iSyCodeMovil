@@ -227,8 +227,20 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         let fallbackOrder = SandboxModelProvider.all.map(\.id).filter { !order.contains($0) }
         order.append(contentsOf: fallbackOrder)
         for providerID in order {
-            guard let provider = SandboxModelProvider.provider(id: providerID),
-                  let key = try await ps.loadAPIKey(provider: provider.id), !key.isEmpty else { continue }
+            guard let provider = SandboxModelProvider.provider(id: providerID) else { continue }
+            if provider.id == "chatgpt-oauth" {
+                guard ChatGPTOAuthStore.hasStoredTokens() else { continue }
+                do {
+                    try await installChatGPTCodexProvider(savedModelName: providerID == preference ? configuration?.defaultModelName : nil)
+                } catch ModelProviderError.authenticationFailed where providerID != preference {
+                    continue
+                }
+                if providerID != preference, let wanted = SandboxModelProvider.provider(id: preference) {
+                    connectionStatusStorage += " · \(wanted.name) no disponible (sin clave); usando \(provider.name)"
+                }
+                return
+            }
+            guard let key = try await ps.loadAPIKey(provider: provider.id), !key.isEmpty else { continue }
             do {
                 try await installRemoteProvider(id: provider.id, display: provider.name, key: key,
                     baseURL: provider.baseURL, preferred: provider.preferredModels, fallback: provider.fallbackModel,
@@ -310,6 +322,25 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         agentLoop = nil
         boundSessionID = nil
         connectionStatusStorage = "sandbox · \(activeModelName ?? fallback)"
+    }
+
+    private func installChatGPTCodexProvider(savedModelName: String?) async throws {
+        let codex = ChatGPTCodexProvider()
+        try await codex.configure(ModelConfiguration())
+        let models = await codex.availableModels
+        modelProvider = codex
+        if let savedModelName, models.contains(savedModelName) {
+            activeModelName = savedModelName
+        } else {
+            activeModelName = models.first
+        }
+        providerID = codex.id
+        providerDisplay = codex.name
+        providerModelIDs = models
+        isDualSmolActive = false
+        agentLoop = nil
+        boundSessionID = nil
+        connectionStatusStorage = "sandbox · \(activeModelName ?? "ChatGPT OAuth")"
     }
 
     /// The loop persists under the session the UI opened. A backend-wide id
@@ -609,9 +640,24 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     
     public func availableProviders() async throws -> ProviderListResult {
         let models: [String: [String: Any]] = Dictionary(uniqueKeysWithValues: providerModelIDs.map { ($0, [String: Any]()) })
+        var allProviders = [ProviderInfo(id: providerID, name: providerDisplay, models: models)]
+        var connected = [providerID]
+        if providerID != "chatgpt-oauth", ChatGPTOAuthStore.hasStoredTokens() {
+            let codex = ChatGPTCodexProvider()
+            var discovered = ChatGPTOAuthStore.storedModelIDs()
+            if discovered.isEmpty {
+                try? await codex.configure(ModelConfiguration())
+                discovered = await codex.availableModels
+            }
+            if !discovered.isEmpty {
+                let codexModels: [String: [String: Any]] = Dictionary(uniqueKeysWithValues: discovered.map { ($0, [String: Any]()) })
+                allProviders.append(ProviderInfo(id: codex.id, name: codex.name, models: codexModels))
+                connected.append(codex.id)
+            }
+        }
         return ProviderListResult(
-            all: [ProviderInfo(id: providerID, name: providerDisplay, models: models)],
-            connected: [providerID],
+            all: allProviders,
+            connected: connected,
             defaultProvider: providerID
         )
     }
