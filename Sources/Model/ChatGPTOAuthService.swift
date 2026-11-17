@@ -1,5 +1,11 @@
 import Foundation
 import Security
+#if canImport(UIKit)
+import UIKit
+#endif
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
 
 public struct ChatGPTOAuthTokens: Codable, Sendable, Equatable {
     public var accessToken: String
@@ -85,11 +91,23 @@ public final class ChatGPTOAuthStore: ObservableObject {
         userCode = nil
 
         pollingTask = Task {
+            #if canImport(UIKit)
+            let bgTaskID = UIApplication.shared.beginBackgroundTask(withName: "ChatGPTOAuthPoll")
+            defer {
+                if bgTaskID != .invalid {
+                    UIApplication.shared.endBackgroundTask(bgTaskID)
+                }
+            }
+            #endif
             do {
                 let codeResp = try await Self.requestUserCode()
                 guard !Task.isCancelled else { return }
                 self.userCode = codeResp.userCode
-                self.statusMessage = "Copia el código \(codeResp.userCode) y autorízalo en Safari."
+                #if canImport(UIKit)
+                UIPasteboard.general.string = codeResp.userCode
+                #endif
+                await Self.notifyDeviceCode(codeResp.userCode)
+                self.statusMessage = "Código \(codeResp.userCode) copiado. Pégalo en Safari (auth.openai.com/codex/device)."
 
                 let tokens = try await Self.pollForTokens(
                     deviceAuthID: codeResp.deviceAuthID,
@@ -141,6 +159,23 @@ public final class ChatGPTOAuthStore: ObservableObject {
         let refreshed = try await refresh(tokens: tokens)
         try saveTokens(refreshed)
         return (refreshed.accessToken, refreshed.accountID)
+    }
+
+    private static func notifyDeviceCode(_ code: String) async {
+        #if canImport(UserNotifications)
+        let center = UNUserNotificationCenter.current()
+        _ = try? await center.requestAuthorization(options: [.alert, .sound])
+        let content = UNMutableNotificationContent()
+        content.title = "Código ChatGPT OAuth: \(code)"
+        content.body = "Ya se copió al portapapeles. Pégalo en Safari para autorizar tu cuenta."
+        content.sound = .default
+        let req = UNNotificationRequest(
+            identifier: "chatgpt-oauth-code-\(UUID().uuidString)",
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.2, repeats: false)
+        )
+        try? await center.add(req)
+        #endif
     }
 
     // MARK: - Network
