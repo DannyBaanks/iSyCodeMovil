@@ -41,6 +41,39 @@ public final class WorkbenchStore: ObservableObject {
     @Published public private(set) var filesPath: String = ""
     @Published public var diffFiles: [SessionDiffFile] = []
     @Published public var shellHistory: [(command: String, result: ShellResult?)] = []
+    @Published public private(set) var configuredProviderID: String?
+    @Published public private(set) var configuredModelName: String?
+    @Published public private(set) var hasSavedSelectedProviderKey = false
+    @Published public private(set) var hasInstalledLocalModel = false
+    @Published public private(set) var lastVerifiedAt: Date?
+    @Published public private(set) var isRestoringRuntime = false
+    @Published public private(set) var lastRuntimeError: String?
+    @Published public var hasCompletedOnboarding: Bool = UserDefaults.standard.bool(forKey: RuntimeIntentDefaults.onboardingCompletedKey) {
+        didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: RuntimeIntentDefaults.onboardingCompletedKey) }
+    }
+    @Published public private(set) var lastSessionTitle: String? = UserDefaults.standard.string(forKey: RuntimeIntentDefaults.lastSessionTitleKey)
+    @Published public private(set) var lastProjectName: String? = UserDefaults.standard.string(forKey: RuntimeIntentDefaults.lastProjectNameKey)
+
+    public var runtimeSnapshot: RuntimeSelectionSnapshot {
+        RuntimeSelectionEvaluator.evaluate(
+            backendMode: backendMode,
+            connectionHealth: connectionHealth,
+            connectionStatus: connectionStatus,
+            configuredProviderID: configuredProviderID,
+            configuredModelName: configuredModelName,
+            selectedModel: sessionState.selectedModel,
+            hasSavedAPIKey: hasSavedSelectedProviderKey,
+            hasInstalledLocalModel: hasInstalledLocalModel,
+            sandboxUsesLiveModel: sandboxUsesLiveModel,
+            isChecking: isRestoringRuntime || isConnecting,
+            lastError: lastRuntimeError ?? sandboxSetupError,
+            lastVerifiedAt: lastVerifiedAt
+        )
+    }
+
+    public var activeRemoteProviderDisplayName: String? {
+        activeRemoteBackendType?.displayName
+    }
 
     /// Codex and Grok adapters deliberately do not implement rename/delete.
     public var supportsSessionManagement: Bool {
@@ -200,6 +233,10 @@ public final class WorkbenchStore: ObservableObject {
             connectionStatus = await backend.connectionStatus
             isConnecting = false
             connectionHealth = .connected
+            lastVerifiedAt = Date()
+            lastRuntimeError = nil
+            hasCompletedOnboarding = true
+            UserDefaults.standard.set("remote", forKey: RuntimeIntentDefaults.lastRuntimeModeKey)
             addSystemEvent("\(backendType.displayName) connected")
 
             switch pairing {
@@ -300,12 +337,20 @@ public final class WorkbenchStore: ObservableObject {
 
         await useNativeRuntime()
         guard backendMode == .native, connectionHealth == .connected else {
-            sandboxSetupError = connectionStatus.isEmpty
+            let err = connectionStatus.isEmpty
                 ? "No pude iniciar el sandbox. Inténtalo de nuevo."
                 : connectionStatus
+            sandboxSetupError = err
+            lastRuntimeError = err
+            await refreshRuntimeIntent()
             return false
         }
         sandboxSetupError = nil
+        lastRuntimeError = nil
+        lastVerifiedAt = Date()
+        hasCompletedOnboarding = true
+        UserDefaults.standard.set("native", forKey: RuntimeIntentDefaults.lastRuntimeModeKey)
+        await refreshRuntimeIntent()
         return true
     }
     
@@ -316,6 +361,8 @@ public final class WorkbenchStore: ObservableObject {
     /// Starts the scripted demo in iSyCode's private app workspace. This path
     /// intentionally ignores a previously selected Files folder and provider keys.
     public func useNativeDemoRuntime() async {
+        hasCompletedOnboarding = true
+        UserDefaults.standard.set("demo", forKey: RuntimeIntentDefaults.lastRuntimeModeKey)
         await startNativeRuntime(forceOfflineDemo: true)
     }
 
@@ -357,7 +404,8 @@ public final class WorkbenchStore: ObservableObject {
             }
             
             projects = try await backend.listProjects()
-            if let project = projects.first {
+            let savedProjectID = UserDefaults.standard.string(forKey: RuntimeIntentDefaults.lastProjectIDKey)
+            if let project = projects.first(where: { $0.id == savedProjectID }) ?? projects.first {
                 currentProjectID = project.id
                 sessionState.currentProject = project
                 sessions = try await backend.listSessions(projectID: project.id)
@@ -369,26 +417,39 @@ public final class WorkbenchStore: ObservableObject {
             }
             connectionHealth = .connected
             sandboxSetupError = nil
+            lastRuntimeError = nil
+            lastVerifiedAt = Date()
+            hasCompletedOnboarding = true
             sandboxUsesLiveModel = backend.usesLiveModel
             sessionState.clearTimeline()
-            if let first = sessions.first {
-                await selectSession(first)
+            let savedSessionID = UserDefaults.standard.string(forKey: RuntimeIntentDefaults.lastSessionIDKey)
+            if let targetSession = sessions.first(where: { $0.id == savedSessionID }) ?? sessions.first {
+                await selectSession(targetSession)
             }
             if sessionState.timelineEvents.isEmpty {
                 addSystemEvent(connectionStatus)
             }
             
             await loadModelsAndAgents()
-            if backendMode == .native, let model = availableModels.first {
-                sessionState.selectedModel = model
+            if backendMode == .native {
+                let preferredModelID = backend.currentModelName
+                if let preferredModelID,
+                   let match = availableModels.first(where: { $0.apiModelId == preferredModelID || $0.name == preferredModelID }) {
+                    sessionState.selectedModel = match
+                } else if let model = availableModels.first {
+                    sessionState.selectedModel = model
+                }
             }
+            await refreshRuntimeIntent()
             await subscribeToBackendEvents(backend)
             
         } catch {
             backendMode = .unconfigured
             connectionHealth = .disconnected
             gusDualSmolActive = false
+            lastRuntimeError = error.localizedDescription
             connectionStatus = "error: \(error.localizedDescription)"
+            await refreshRuntimeIntent()
         }
     }
 
@@ -501,6 +562,9 @@ public final class WorkbenchStore: ObservableObject {
         guard backendMode != .unconfigured else { return }
         currentProjectID = project.id
         sessionState.currentProject = project
+        lastProjectName = project.name
+        UserDefaults.standard.set(project.id, forKey: RuntimeIntentDefaults.lastProjectIDKey)
+        UserDefaults.standard.set(project.name, forKey: RuntimeIntentDefaults.lastProjectNameKey)
         
         if let backend = currentBackend {
             do {
@@ -522,6 +586,14 @@ public final class WorkbenchStore: ObservableObject {
         guard backendMode != .unconfigured else { return }
         sessionState.currentSession = session
         currentSessionID = session.id
+        lastSessionTitle = session.title
+        UserDefaults.standard.set(session.id, forKey: RuntimeIntentDefaults.lastSessionIDKey)
+        UserDefaults.standard.set(session.title, forKey: RuntimeIntentDefaults.lastSessionTitleKey)
+        if let project = sessionState.currentProject {
+            lastProjectName = project.name
+            UserDefaults.standard.set(project.id, forKey: RuntimeIntentDefaults.lastProjectIDKey)
+            UserDefaults.standard.set(project.name, forKey: RuntimeIntentDefaults.lastProjectNameKey)
+        }
         streamPartKinds.removeAll()
         sessionState.clearTimeline()
         
@@ -555,6 +627,12 @@ public final class WorkbenchStore: ObservableObject {
             sessions.append(session)
             sessionState.currentSession = session
             currentSessionID = session.id
+            lastSessionTitle = session.title
+            lastProjectName = project.name
+            UserDefaults.standard.set(session.id, forKey: RuntimeIntentDefaults.lastSessionIDKey)
+            UserDefaults.standard.set(session.title, forKey: RuntimeIntentDefaults.lastSessionTitleKey)
+            UserDefaults.standard.set(project.id, forKey: RuntimeIntentDefaults.lastProjectIDKey)
+            UserDefaults.standard.set(project.name, forKey: RuntimeIntentDefaults.lastProjectNameKey)
             sessionState.clearTimeline()
             try? await backend.selectSession(session.id)
             return session
@@ -700,7 +778,21 @@ public final class WorkbenchStore: ObservableObject {
     
     public func setModel(_ model: ModelInfo) {
         sessionState.selectedModel = model
+        let modelIdentifier = model.apiModelId ?? model.name
+        configuredModelName = modelIdentifier
         addSystemEvent("Model: \(model.name)")
+        Task {
+            if let persistence = try? IOSPersistence() {
+                var configuration = (try? await persistence.loadConfiguration()) ?? Configuration()
+                configuration.defaultModelName = modelIdentifier
+                if let route = model.route, SandboxModelProvider.provider(id: route) != nil {
+                    configuration.defaultModelProvider = route
+                    configuredProviderID = route
+                }
+                try? await persistence.saveConfiguration(configuration)
+            }
+            await refreshRuntimeIntent()
+        }
     }
     
     public func setAgentMode(_ mode: AgentMode) {
@@ -1063,13 +1155,9 @@ public final class WorkbenchStore: ObservableObject {
     }
 
     public func saveAPIKeys(values: [String: String], selectedProviderID: String) async {
-        guard let backend = currentBackend as? NativeSwiftBackend else {
-            addErrorEvent("Start the sandbox before saving a key.")
-            return
-        }
         do {
-            guard let persistence = backend.persistence,
-                  SandboxModelProvider.provider(id: selectedProviderID) != nil else {
+            let persistence = try IOSPersistence()
+            guard SandboxModelProvider.provider(id: selectedProviderID) != nil else {
                 throw ModelProviderError.invalidRequest("Unknown sandbox provider")
             }
             for (providerID, value) in values {
@@ -1079,16 +1167,31 @@ public final class WorkbenchStore: ObservableObject {
             var configuration = try await persistence.loadConfiguration() ?? Configuration()
             configuration.defaultModelProvider = selectedProviderID
             try await persistence.saveConfiguration(configuration)
-            try await backend.reloadSandboxModel()
-            connectionStatus = await backend.connectionStatus
-            sandboxUsesLiveModel = backend.usesLiveModel
-            await loadModelsAndAgents()
-            if let model = availableModels.first {
-                sessionState.selectedModel = model
+            hasCompletedOnboarding = true
+            UserDefaults.standard.set("native", forKey: RuntimeIntentDefaults.lastRuntimeModeKey)
+            if let backend = currentBackend as? NativeSwiftBackend {
+                try await backend.reloadSandboxModel()
+                connectionStatus = await backend.connectionStatus
+                sandboxUsesLiveModel = backend.usesLiveModel
+                lastRuntimeError = nil
+                lastVerifiedAt = Date()
+                await loadModelsAndAgents()
+                let preferredModelID = backend.currentModelName
+                if let preferredModelID,
+                   let match = availableModels.first(where: { $0.apiModelId == preferredModelID || $0.name == preferredModelID }) {
+                    sessionState.selectedModel = match
+                } else if let model = availableModels.first {
+                    sessionState.selectedModel = model
+                }
+                addSystemEvent(connectionStatus)
+            } else {
+                await useNativeRuntime()
             }
-            addSystemEvent(connectionStatus)
+            await refreshRuntimeIntent()
         } catch {
+            lastRuntimeError = error.localizedDescription
             addErrorEvent("Could not save the API key: \(error.localizedDescription)")
+            await refreshRuntimeIntent()
         }
     }
 
@@ -1403,5 +1506,133 @@ extension WorkbenchStore {
         await backend.closeActivePhoneProject()
         phoneProjectMessage = nil
         await refreshPhoneProject()
+    }
+}
+
+// MARK: - Persisted Runtime & Session Restoration
+
+extension WorkbenchStore {
+    /// Refreshes the user's persisted runtime intent (configured provider, model, key & local model availability).
+    public func refreshRuntimeIntent() async {
+        await GUSModelDownloadManager.shared.refresh()
+        hasInstalledLocalModel = GUSModelDownloadManager.shared.selectedModelURL != nil
+        if let persistence = try? IOSPersistence(),
+           let configuration = try? await persistence.loadConfiguration() {
+            configuredProviderID = configuration.defaultModelProvider
+            configuredModelName = configuration.defaultModelName
+            if let providerID = configuration.defaultModelProvider, providerID != "gus-local" {
+                let savedKey = (try? await persistence.loadAPIKey(provider: providerID)) ?? ""
+                hasSavedSelectedProviderKey = !savedKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            } else {
+                hasSavedSelectedProviderKey = false
+            }
+        } else {
+            configuredProviderID = nil
+            configuredModelName = nil
+            hasSavedSelectedProviderKey = false
+        }
+    }
+
+    /// Restores the user's last runtime, model, project, and session at app launch so
+    /// returning users land directly in WorkspaceHomeView ready to continue.
+    public func restorePersistedExperience() async {
+        guard !isRestoringRuntime, backendMode == .unconfigured else {
+            await refreshRuntimeIntent()
+            return
+        }
+        isRestoringRuntime = true
+        defer { isRestoringRuntime = false }
+
+        await refreshRuntimeIntent()
+        let lastMode = UserDefaults.standard.string(forKey: RuntimeIntentDefaults.lastRuntimeModeKey)
+        let hasPairing = await hasStoredPairing()
+
+        if lastMode == "remote" && hasPairing {
+            await reconnectStoredPairing()
+            await refreshRuntimeIntent()
+            return
+        }
+
+        if let providerID = configuredProviderID {
+            hasCompletedOnboarding = true
+            let canStart = (providerID == "gus-local" && hasInstalledLocalModel)
+                || (providerID != "gus-local" && hasSavedSelectedProviderKey)
+            if canStart {
+                await useNativeRuntime()
+                return
+            }
+        }
+
+        if lastMode == "demo" {
+            hasCompletedOnboarding = true
+            await useNativeDemoRuntime()
+            await refreshRuntimeIntent()
+            return
+        }
+
+        if lastMode == "native" || hasCompletedOnboarding {
+            hasCompletedOnboarding = true
+            if hasInstalledLocalModel || hasSavedSelectedProviderKey {
+                await useNativeRuntime()
+            }
+            return
+        }
+
+        if hasPairing {
+            hasCompletedOnboarding = true
+        }
+    }
+
+    /// Ensures the native runtime is active and opens either the last active conversation or a new one.
+    @discardableResult
+    public func openOrCreateConversation(preferNew: Bool = false, initialPrompt: String? = nil) async -> Bool {
+        if backendMode == .unconfigured {
+            let canUseConfigured = (configuredProviderID == "gus-local" && hasInstalledLocalModel)
+                || (configuredProviderID != nil && configuredProviderID != "gus-local" && hasSavedSelectedProviderKey)
+            if canUseConfigured {
+                await useNativeRuntime()
+            } else {
+                await useNativeDemoRuntime()
+            }
+        }
+
+        guard backendMode != .unconfigured else { return false }
+
+        if sessionState.currentProject == nil, let firstProject = projects.first {
+            await selectProject(firstProject)
+        }
+        guard let project = sessionState.currentProject else { return false }
+
+        if preferNew || sessionState.currentSession == nil {
+            let title = initialPrompt.flatMap { prompt -> String? in
+                let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : String(trimmed.prefix(40))
+            } ?? "Nueva conversación"
+            guard await createNewSession(in: project, title: title) != nil else { return false }
+        }
+
+        sessionState.activeSurface = .chat
+        if let initialPrompt {
+            let trimmed = initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                sendPrompt(trimmed)
+            }
+        }
+        return true
+    }
+
+    public func retryRuntimeConnection() async {
+        lastRuntimeError = nil
+        sandboxSetupError = nil
+        switch backendMode {
+        case .remote:
+            await reconnectStoredPairing()
+        case .native, .unconfigured:
+            if configuredProviderID != nil {
+                await useNativeRuntime()
+            } else {
+                await restorePersistedExperience()
+            }
+        }
     }
 }

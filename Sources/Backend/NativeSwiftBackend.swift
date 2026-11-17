@@ -15,6 +15,8 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     private var providerModelIDs = ["scripted-1"]
     public private(set) var isDualSmolActive = false
     public var usesLiveModel: Bool { providerID != "scripted" }
+    public var activeProviderID: String { providerID }
+    public var currentModelName: String? { activeModelName }
     private var liveAnswerID: String?
     private var toolExecutor: NativeCapabilityToolExecutor?
     /// When set, the agent's tools run in a Docker sandbox on the user's computer
@@ -227,7 +229,8 @@ public final class NativeSwiftBackend: WorkbenchBackend {
                   let key = try await ps.loadAPIKey(provider: provider.id), !key.isEmpty else { continue }
             do {
                 try await installRemoteProvider(id: provider.id, display: provider.name, key: key,
-                    baseURL: provider.baseURL, preferred: provider.preferredModels, fallback: provider.fallbackModel)
+                    baseURL: provider.baseURL, preferred: provider.preferredModels, fallback: provider.fallbackModel,
+                    savedModelName: providerID == preference ? configuration?.defaultModelName : nil)
             } catch ModelProviderError.authenticationFailed where providerID != preference {
                 continue
             }
@@ -283,14 +286,19 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         key: String,
         baseURL: String,
         preferred: [String],
-        fallback: String
+        fallback: String,
+        savedModelName: String? = nil
     ) async throws {
         let remote = RemoteModelProvider(id: id, name: display)
         try await remote.configure(ModelConfiguration(apiKey: key, baseURL: baseURL))
         let listed = await remote.availableModels
         let models = SandboxModelCatalog.orderedModelIDs(available: listed, preferred: preferred, fallback: fallback)
         modelProvider = remote
-        activeModelName = models.contains(fallback) ? fallback : models[0]
+        if let savedModelName, models.contains(savedModelName) {
+            activeModelName = savedModelName
+        } else {
+            activeModelName = models.contains(fallback) ? fallback : models[0]
+        }
         providerID = id
         providerDisplay = display
         providerModelIDs = models
