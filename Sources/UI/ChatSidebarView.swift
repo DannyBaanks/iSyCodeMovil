@@ -262,6 +262,7 @@ public struct ChatLandingView: View {
     @EnvironmentObject private var router: AppShellRouter
     @State private var draft = ""
     @State private var sending = false
+    @FocusState private var isInputFocused: Bool
     let onOpenSidebar: () -> Void
 
     public init(onOpenSidebar: @escaping () -> Void) {
@@ -362,6 +363,7 @@ public struct ChatLandingView: View {
             Divider().overlay(OCColor.borderMuted)
             HStack(alignment: .bottom, spacing: OCSpacing.sm) {
                 TextField("Escribe un mensaje…", text: $draft, axis: .vertical)
+                    .focused($isInputFocused)
                     .lineLimit(1...6)
                     .font(.system(size: 15.5))
                     .foregroundColor(OCColor.textPrimary)
@@ -391,6 +393,12 @@ public struct ChatLandingView: View {
             .padding(.horizontal, OCSpacing.contentMargin)
             .padding(.vertical, OCSpacing.sm)
             .background(OCColor.bgBase)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Listo") { isInputFocused = false }
+                }
+            }
         }
     }
 

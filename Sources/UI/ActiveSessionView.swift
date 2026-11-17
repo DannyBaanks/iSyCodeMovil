@@ -394,6 +394,7 @@ struct ChatSurfaceView: View {
                     .padding(.top, OCSpacing.sm)
                     .padding(.bottom, OCSpacing.lg)
                 }
+                .scrollDismissesKeyboard(.interactively)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onAppear { scrollProxy = proxy }
                 .onChange(of: sessionState.timelineEvents.count) { _ in

@@ -367,6 +367,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
             throw ModelProviderError.notConfigured("Call configure() first")
         }
         
+        let reverseNames = Self.reverseToolNameMap(from: tools)
         let request = try buildRequest(messages: messages, tools: tools, options: options, stream: false)
         var attempt = 0
         while true {
@@ -379,7 +380,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
                 try await Self.sleep(delay)
                 continue
             }
-            return try parseResponse(data)
+            return try parseResponse(data, reverseNames: reverseNames)
         }
     }
     
@@ -396,6 +397,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
                         throw ModelProviderError.notConfigured("Call configure() first")
                     }
                     
+                    let reverseNames = Self.reverseToolNameMap(from: tools)
                     let request = try buildRequest(messages: messages, tools: tools, options: options, stream: true)
                     var attempt = 0
                     var opened: URLSession.AsyncBytes?
@@ -435,13 +437,13 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
                             let calls = choice.delta.toolCalls ?? []
                             continuation.yield(ModelStreamChunk(
                                 delta: choice.delta.content,
-                                toolCallDelta: calls.first.map(Self.toolCallDelta),
+                                toolCallDelta: calls.first.map { Self.toolCallDelta($0, reverseNames: reverseNames) },
                                 done: false,
                                 finishReason: choice.finishReason
                             ))
                             // Parallel tool calls can share a chunk; keep every one.
                             for extra in calls.dropFirst() {
-                                continuation.yield(ModelStreamChunk(delta: nil, toolCallDelta: Self.toolCallDelta(extra),
+                                continuation.yield(ModelStreamChunk(delta: nil, toolCallDelta: Self.toolCallDelta(extra, reverseNames: reverseNames),
                                                                     done: false, finishReason: nil))
                             }
                         } else if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -465,8 +467,25 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         }
     }
 
-    private static func toolCallDelta(_ call: StreamChunkResponse.StreamChoice.StreamToolCall) -> ModelStreamChunk.ToolCallDelta {
-        ModelStreamChunk.ToolCallDelta(index: call.index, id: call.id, name: call.function?.name, arguments: call.function?.arguments)
+    private static func toolCallDelta(_ call: StreamChunkResponse.StreamChoice.StreamToolCall, reverseNames: [String: String]) -> ModelStreamChunk.ToolCallDelta {
+        let resolvedName = call.function?.name.map { reverseNames[$0] ?? $0 }
+        return ModelStreamChunk.ToolCallDelta(index: call.index, id: call.id, name: resolvedName, arguments: call.function?.arguments)
+    }
+
+    static func openAIFunctionName(for toolName: String) -> String {
+        toolName.replacingOccurrences(of: ".", with: "__")
+    }
+
+    static func reverseToolNameMap(from tools: [ToolDefinition]?) -> [String: String] {
+        guard let tools else { return [:] }
+        var map: [String: String] = [:]
+        for tool in tools {
+            let sanitized = openAIFunctionName(for: tool.name)
+            if sanitized != tool.name {
+                map[sanitized] = tool.name
+            }
+        }
+        return map
     }
 
     /// OpenAI reasoning models (o-series, GPT-5) reject `max_tokens` and any
@@ -493,7 +512,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
             "model": model,
             "messages": messages.map { msg in
                 var m: [String: Any] = ["role": msg.role.rawValue, "content": msg.content]
-                if let name = msg.name { m["name"] = name }
+                if let name = msg.name { m["name"] = Self.openAIFunctionName(for: name) }
                 if let toolCallId = msg.toolCallId { m["tool_call_id"] = toolCallId }
                 // Echo assistant tool_calls back into history (OpenAI requires this for multi-turn tool use)
                 if msg.role == .assistant, let toolCalls = msg.toolCalls, !toolCalls.isEmpty {
@@ -502,7 +521,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
                             "id": tc.id,
                             "type": "function",
                             "function": [
-                                "name": tc.name,
+                                "name": Self.openAIFunctionName(for: tc.name),
                                 "arguments": (try? jsonString(from: tc.arguments)) ?? "{}"
                             ]
                         ] as [String: Any]
@@ -535,7 +554,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
                 [
                     "type": "function",
                     "function": [
-                        "name": tool.name,
+                        "name": Self.openAIFunctionName(for: tool.name),
                         "description": tool.description,
                         "parameters": [
                             "type": tool.parameters.type,
@@ -640,7 +659,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         return decoder
     }()
 
-    private func parseResponse(_ data: Data) throws -> ModelResponse {
+    private func parseResponse(_ data: Data, reverseNames: [String: String] = [:]) throws -> ModelResponse {
         let decoded = try Self.openAIDecoder.decode(ChatCompletionResponse.self, from: data)
         guard let choice = decoded.choices.first else {
             throw ModelProviderError.invalidRequest("No choices in response")
@@ -649,7 +668,8 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         let toolCalls = choice.message.toolCalls?.map { tc in
             // Function arguments arrive as a JSON string; decode to [String:String] for our contract.
             let args = decodeArguments(tc.function.arguments)
-            return ToolCall(id: tc.id, name: tc.function.name, arguments: args)
+            let resolvedName = reverseNames[tc.function.name] ?? tc.function.name
+            return ToolCall(id: tc.id, name: resolvedName, arguments: args)
         }
         
         let usage = decoded.usage.map { u in

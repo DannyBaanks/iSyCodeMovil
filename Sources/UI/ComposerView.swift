@@ -100,6 +100,12 @@ public struct ComposerView: View {
         .padding(.bottom, OCSpacing.compactMargin)
         .animation(.easeInOut(duration: 0.18), value: sessionState.composerAttachments.isEmpty)
         .animation(.easeInOut(duration: 0.18), value: sessionState.isProcessing)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Listo") { isFocused = false }
+            }
+        }
     }
 
     private func handleSend() {
@@ -279,7 +285,7 @@ public struct AgentPill: View {
                     .fill(mode.color)
                     .frame(width: 6, height: 6)
 
-                Text(mode.rawValue)
+                Text(mode.displayName)
                     .font(OCTypography.pillLabel)
                     .foregroundColor(OCColor.textPrimary)
             }
