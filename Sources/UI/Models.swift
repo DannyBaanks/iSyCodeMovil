@@ -341,6 +341,7 @@ public final class ActiveSessionState: ObservableObject {
     @Published public var showAgentPicker: Bool = false
     @Published public var showModelPicker: Bool = false
     @Published public var showAttachments: Bool = false
+    @Published public var flowMode: Bool = false
     @Published public var pendingPermission: TimelineEvent?
     @Published public var pendingQuestion: TimelineEvent?
 

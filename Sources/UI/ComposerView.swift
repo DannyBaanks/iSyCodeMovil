@@ -81,6 +81,7 @@ public struct ComposerView: View {
                 selectedModel: sessionState.selectedModel,
                 onModelTap: { sessionState.showModelPicker = true },
                 onAttachTap: { sessionState.showAttachments = true },
+                flowMode: $sessionState.flowMode,
                 codexMode: sessionState.selectedModel?.route == "codex",
                 limitedLabel: sessionState.selectedModel?.route == "grok" ? "Grok · en tu computadora" : nil
             )
@@ -192,6 +193,7 @@ public struct ComposerControlRow: View {
     let selectedModel: ModelInfo?
     let onModelTap: () -> Void
     let onAttachTap: () -> Void
+    @Binding var flowMode: Bool
     let codexMode: Bool
     let limitedLabel: String?
 
@@ -201,6 +203,7 @@ public struct ComposerControlRow: View {
         selectedModel: ModelInfo?,
         onModelTap: @escaping () -> Void,
         onAttachTap: @escaping () -> Void,
+        flowMode: Binding<Bool> = .constant(false),
         codexMode: Bool = false,
         limitedLabel: String? = nil
     ) {
@@ -209,6 +212,7 @@ public struct ComposerControlRow: View {
         self.selectedModel = selectedModel
         self.onModelTap = onModelTap
         self.onAttachTap = onAttachTap
+        self._flowMode = flowMode
         self.codexMode = codexMode
         self.limitedLabel = limitedLabel
     }
@@ -259,9 +263,51 @@ public struct ComposerControlRow: View {
             }
             }
 
+            FlowPill(isActive: $flowMode)
+
             Spacer()
         }
         .frame(minHeight: 44, alignment: .leading)
+    }
+}
+
+// MARK: - Flow Pill
+
+public struct FlowPill: View {
+    @Binding var isActive: Bool
+
+    public init(isActive: Binding<Bool>) {
+        self._isActive = isActive
+    }
+
+    public var body: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            isActive.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: isActive ? "bolt.fill" : "bolt")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(isActive ? OCColor.warning : OCColor.textFaint)
+                Text("Flow")
+                    .font(OCTypography.pillLabel)
+                    .foregroundColor(isActive ? OCColor.warning : OCColor.textSecondary)
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: OCRadius.r14)
+                    .fill(isActive ? OCColor.warning.opacity(0.14) : OCColor.bgLayer1.opacity(0.5))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: OCRadius.r14)
+                            .stroke(isActive ? OCColor.warning.opacity(0.55) : OCColor.borderMuted, lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .frame(height: 44)
+        .contentShape(Rectangle())
+        .accessibilityLabel(isActive ? "Modo Flow activado: sin pedir permisos" : "Activar modo Flow sin pedir permisos")
     }
 }
 

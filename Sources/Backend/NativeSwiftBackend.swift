@@ -27,6 +27,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     private var boundSessionID: String?
     private var runningTask: Task<Void, Never>?
     private var permissionWaiters: [String: CheckedContinuation<PermissionResponse.Decision, Never>] = [:]
+    public var flowMode = false
     private var connectionStatusStorage = "native runtime"
     private var currentSessionIDStorage: String?
     private var eventContinuation: AsyncStream<WorkbenchEvent>.Continuation?
@@ -341,6 +342,9 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             permissionHandler: { [weak self] request in
                 guard let self else {
                     return PermissionResponse(requestId: request.id, decision: .deny)
+                }
+                if await self.flowMode {
+                    return PermissionResponse(requestId: request.id, decision: .allowOnce)
                 }
                 let decision = await self.waitForPermission(request)
                 return PermissionResponse(requestId: request.id, decision: decision)

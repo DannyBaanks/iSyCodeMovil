@@ -701,6 +701,9 @@ public final class WorkbenchStore: ObservableObject {
             isProcessingRemote = true
         }
         sessionState.isProcessing = true
+        if let native = backend as? NativeSwiftBackend {
+            native.flowMode = sessionState.flowMode
+        }
         
         let agent = sessionState.agentMode.rawValue.lowercased()
         let model = sessionState.selectedModel
