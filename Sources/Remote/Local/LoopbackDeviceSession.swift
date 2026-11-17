@@ -83,22 +83,47 @@ public final class LoopbackDeviceSession: ObservableObject {
         defer { isBusy = false }
 
         do {
+            if (try? await WdaClient().status().ready) == true {
+                statusMessage = "WDA ya está activo y listo en este iPhone (127.0.0.1:8100)."
+                return
+            }
+
             let pairingPath = pairingFileURL.path
             statusMessage = "Abriendo túnel RemotePairing en 10.7.0.1…"
-            let launchedBundle = try await withTimeout(seconds: 15, label: "El túnel RemotePairing tardó demasiado (>15s). Verifica que LocalDevVPN esté activa y el pairingFile.plist sea de este iPhone.") {
-                try await Task.detached(priority: .userInitiated) {
-                    try Self.launchWDASync(pairingPath: pairingPath)
-                }.value
+
+            final class LaunchBox: @unchecked Sendable {
+                var bundle: String?
+                var error: Error?
             }
-            statusMessage = "Se lanzó \(launchedBundle). Comprobando WDA en 127.0.0.1:8100…"
-            for _ in 0..<10 {
-                try? await Task.sleep(for: .seconds(1))
-                if (try? await WdaClient().status().ready) == true {
-                    statusMessage = "WDA listo en este iPhone (\(launchedBundle)). Ya puedes volver a encender Tailscale si usas sandbox."
-                    return
+            let box = LaunchBox()
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    box.bundle = try Self.launchWDASync(pairingPath: pairingPath)
+                } catch {
+                    box.error = error
                 }
             }
-            statusMessage = "App lanzada (\(launchedBundle)), pero WDA aún no responde en :8100. Si sigue igual, arráncalo una vez desde la PC."
+
+            for step in 0..<30 {
+                if (try? await WdaClient().status().ready) == true {
+                    let target = box.bundle ?? "WebDriverAgentRunner"
+                    statusMessage = "WDA listo en este iPhone (\(target)). Ya puedes volver a encender Tailscale si usas sandbox."
+                    return
+                }
+                if let err = box.error {
+                    throw err
+                }
+                if step == 4 && box.bundle != nil {
+                    statusMessage = "Se lanzó \(box.bundle!). Esperando a WDA en 127.0.0.1:8100…"
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+
+            if let bundle = box.bundle {
+                statusMessage = "App lanzada (\(bundle)), pero WDA aún no responde en :8100."
+            } else {
+                errorMessage = "El túnel RemotePairing tardó demasiado (>15s). Verifica LocalDevVPN y pairingFile.plist."
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
