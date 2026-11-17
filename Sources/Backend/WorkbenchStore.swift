@@ -28,6 +28,13 @@ public final class WorkbenchStore: ObservableObject {
     /// The Docker sandbox on the user's computer that the agent's tools run in, if linked.
     @Published public private(set) var sandboxLink: SandboxLinkState?
     @Published public private(set) var sandboxLinkBusy = false
+    /// Who drives the iPhone for the agent: nil = automatic, `.computer` = through the computer's
+    /// bridge, `.thisPhone` = WebDriverAgent on this phone (127.0.0.1:8100). Persisted.
+    @Published public private(set) var iphoneControlPreference: IphoneControlMode? =
+        UserDefaults.standard.string(forKey: WorkbenchStore.iphoneControlPreferenceKey).flatMap(IphoneControlMode.init(rawValue:))
+    /// The mode actually in use after resolving the preference against what is reachable; nil = no control.
+    @Published public private(set) var iphoneControlActive: IphoneControlMode?
+    nonisolated static let iphoneControlPreferenceKey = "iphone.controlPreference"
     @Published public var sandboxLinkError: String?
     /// Repository cloned on this iPhone that the on-device tools are scoped to, if any.
     @Published public private(set) var phoneProject: String?
@@ -302,6 +309,7 @@ public final class WorkbenchStore: ObservableObject {
         sandboxClient = nil
         sandboxLink = nil
         sandboxLinkError = nil
+        iphoneControlActive = nil
     }
 
     @discardableResult
@@ -1276,7 +1284,7 @@ extension WorkbenchStore {
                   let backend = currentBackend as? NativeSwiftBackend else { return }
 
             backend.attachSandbox(
-                SandboxToolExecutor(client: client, sandboxID: prepared.status.id, info: info),
+                await makeSandboxExecutor(client: client, sandboxID: prepared.status.id, info: info),
                 projectName: info.projectName,
                 projectPath: pairing.directory
             )
@@ -1303,6 +1311,9 @@ extension WorkbenchStore {
             if !prepared.excluded.isEmpty {
                 addSystemEvent("Se quedaron en tu computadora \(prepared.excluded.count) archivos que parecen secretos.")
             }
+            if iphoneControlActive != nil {
+                addSystemEvent(iphoneControlEventText)
+            }
             if !sandboxUsesLiveModel {
                 addSystemEvent("Falta un modelo: elige un proveedor en Ajustes para que el agente pueda trabajar en el sandbox.")
             }
@@ -1315,6 +1326,71 @@ extension WorkbenchStore {
                 backendMode = .unconfigured
             }
             connectionStatus = "error: \(error.localizedDescription)"
+        }
+    }
+
+    /// Builds the sandbox executor with the iPhone control that applies right now: the person's
+    /// preference, resolved against what is reachable (the computer's bridge tools and WebDriverAgent
+    /// on this phone at 127.0.0.1:8100).
+    func makeSandboxExecutor(client: SandboxHostClient, sandboxID: String, info: SandboxBridgeInfo) async -> SandboxToolExecutor {
+        let localReachable = await Self.localWdaReachable()
+        let mode = IphoneControlMode.resolve(
+            preferred: iphoneControlPreference,
+            bridgeTools: info.iphoneTools,
+            localReachable: localReachable
+        )
+        iphoneControlActive = mode
+        let local: LocalIphoneController? = mode == .thisPhone
+            ? LocalIphoneController(wda: WdaClientDriver(client: WdaClient()), elementReader: WdaElementReader())
+            : nil
+        return SandboxToolExecutor(
+            client: client,
+            sandboxID: sandboxID,
+            info: info,
+            localIphone: local,
+            iphoneMode: mode ?? .computer
+        )
+    }
+
+    /// True when WebDriverAgent answers /status on this phone's loopback. Read-only.
+    nonisolated static func localWdaReachable() async -> Bool {
+        do {
+            return try await WdaClient().status().ready
+        } catch {
+            return false
+        }
+    }
+
+    /// Saves who drives the iPhone and, if a sandbox is linked, rebuilds its tools with the new mode.
+    public func setIphoneControlPreference(_ preference: IphoneControlMode?) async {
+        iphoneControlPreference = preference
+        if let preference {
+            UserDefaults.standard.set(preference.rawValue, forKey: Self.iphoneControlPreferenceKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.iphoneControlPreferenceKey)
+        }
+        guard let client = sandboxClient, let link = sandboxLink, !sandboxLinkBusy,
+              let backend = currentBackend as? NativeSwiftBackend else { return }
+        sandboxLinkBusy = true
+        defer { sandboxLinkBusy = false }
+        do {
+            let info = try await client.bridgeInfo()
+            backend.attachSandbox(
+                await makeSandboxExecutor(client: client, sandboxID: link.sandboxID, info: info),
+                projectName: info.projectName,
+                projectPath: link.directory
+            )
+            addSystemEvent(iphoneControlEventText)
+        } catch {
+            sandboxLinkError = error.localizedDescription
+        }
+    }
+
+    var iphoneControlEventText: String {
+        switch iphoneControlActive {
+        case .thisPhone: return "El agente controla este iPhone directamente (sin pasar por la computadora)."
+        case .computer: return "El agente controla el iPhone a través de tu computadora."
+        case nil: return "El agente no tiene control del iPhone: ni la computadora lo ofrece ni este iPhone responde."
         }
     }
 
@@ -1411,7 +1487,7 @@ extension WorkbenchStore {
             let info = try await client.bridgeInfo()
             let prepared = try await prepareSandbox(client: client, info: info)
             backend.attachSandbox(
-                SandboxToolExecutor(client: client, sandboxID: prepared.status.id, info: info),
+                await makeSandboxExecutor(client: client, sandboxID: prepared.status.id, info: info),
                 projectName: info.projectName,
                 projectPath: link.directory
             )
@@ -1447,6 +1523,7 @@ extension WorkbenchStore {
         sandboxClient = nil
         sandboxLink = nil
         sandboxLinkError = nil
+        iphoneControlActive = nil
         fileTree = []
         connectionStatus = await currentBackend?.connectionStatus ?? ""
         addSystemEvent("Sandbox desvinculado. El agente vuelve a trabajar con los archivos de este iPhone.")
