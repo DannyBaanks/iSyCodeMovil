@@ -123,7 +123,7 @@ final class WorkspaceHomeAndRuntimeTests: XCTestCase {
             clientId: "123-abc.apps.googleusercontent.com",
             sessionExpired: false
         )
-        XCTAssertEqual(partial, .connected(email: "ana@empresa.mx", services: [.gmail]))
+        XCTAssertEqual(partial, GoogleConnectionState.connected(email: "ana@empresa.mx", services: [GoogleService.gmail]))
 
         let calendarTool = AssistantCatalog.tool("googlecalendar.read.events")!
         let blockedCalendar = ConnectionStatusEvaluator.availability(

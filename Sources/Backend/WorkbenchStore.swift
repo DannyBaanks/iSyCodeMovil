@@ -432,7 +432,7 @@ public final class WorkbenchStore: ObservableObject {
             
             await loadModelsAndAgents()
             if backendMode == .native {
-                let preferredModelID = backend.currentModelName
+                let preferredModelID = (backend as? NativeSwiftBackend)?.currentModelName
                 if let preferredModelID,
                    let match = availableModels.first(where: { $0.apiModelId == preferredModelID || $0.name == preferredModelID }) {
                     sessionState.selectedModel = match
