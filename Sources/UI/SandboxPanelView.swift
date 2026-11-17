@@ -47,6 +47,7 @@ struct SandboxPanelView: View {
     @State private var workArchive: URL?
     @State private var confirmRestart = false
     @State private var confirmUnlink = false
+    @State private var showExplanation = false
 
     var body: some View {
         NavigationStack {
@@ -69,6 +70,9 @@ struct SandboxPanelView: View {
                 }
             }
             .task { await store.refreshSandboxStatus() }
+            .sheet(isPresented: $showExplanation) {
+                SandboxExplanationSheet()
+            }
         }
         .presentationDetents([.large])
     }
@@ -87,6 +91,11 @@ struct SandboxPanelView: View {
                 Label(message, systemImage: "exclamationmark.circle")
                     .font(OCTypography.meta)
                     .foregroundColor(OCColor.danger)
+            }
+            Button {
+                showExplanation = true
+            } label: {
+                Label("¿Qué es el sandbox?", systemImage: "questionmark.circle")
             }
         } header: {
             Text("En tu computadora")

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Main workspace shell uniting Home, Conversations, Projects, Google/Memory, and Settings.
-/// Uses TabView on compact screens and NavigationSplitView (defaulting to Home) on regular screens.
+/// Main workspace shell: ChatGPT/Claude-style chat home with a slide-over sidebar drawer
+/// on compact screens, and a persistent NavigationSplitView sidebar on regular screens.
 public struct AppShellView: View {
     @EnvironmentObject private var store: WorkbenchStore
     @EnvironmentObject private var hostStore: MobileHostStore
@@ -9,8 +9,11 @@ public struct AppShellView: View {
     @EnvironmentObject private var assistant: AssistantStore
     @EnvironmentObject private var router: AppShellRouter
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var dragOffset: CGFloat = 0
 
     public init() {}
+
+    private let sidebarWidth: CGFloat = 292
 
     public var body: some View {
         Group {
@@ -38,6 +41,9 @@ public struct AppShellView: View {
             GoogleOAuthSetupSheet()
                 .environmentObject(assistant)
         }
+        .sheet(isPresented: $router.showSandboxExplanationSheet) {
+            SandboxExplanationSheet()
+        }
         .sheet(item: $assistant.pending) { action in
             AssistantConfirmActionSheet(action: action)
                 .environmentObject(assistant)
@@ -46,96 +52,128 @@ public struct AppShellView: View {
     }
 
     private var compactShell: some View {
-        TabView(selection: $router.selectedTab) {
+        ZStack(alignment: .leading) {
             NavigationStack {
-                WorkspaceHomeView()
+                destinationContent(showsSidebarButton: true)
             }
-            .tabItem {
-                Label(AppShellTab.home.title, systemImage: AppShellTab.home.symbol)
-            }
-            .tag(AppShellTab.home)
-            .accessibilityIdentifier(AppShellTab.home.accessibilityID)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .disabled(router.isSidebarOpen)
 
-            NavigationStack {
-                ConversationsTabView()
+            if router.isSidebarOpen {
+                Color.black.opacity(0.42)
+                    .ignoresSafeArea()
+                    .onTapGesture { router.closeSidebar() }
+                    .transition(.opacity)
             }
-            .tabItem {
-                Label(AppShellTab.conversations.title, systemImage: AppShellTab.conversations.symbol)
-            }
-            .tag(AppShellTab.conversations)
-            .accessibilityIdentifier(AppShellTab.conversations.accessibilityID)
 
-            NavigationStack {
-                ProjectsTabView()
+            if router.isSidebarOpen || dragOffset > 0 {
+                ChatSidebarView(showsCloseButton: true) {
+                    router.closeSidebar()
+                }
+                .frame(width: sidebarWidth)
+                .offset(x: router.isSidebarOpen ? min(0, dragOffset) : (-sidebarWidth + min(sidebarWidth, dragOffset)))
+                .shadow(color: Color.black.opacity(0.35), radius: 14, x: 4, y: 0)
+                .transition(.move(edge: .leading))
             }
-            .tabItem {
-                Label(AppShellTab.projects.title, systemImage: AppShellTab.projects.symbol)
-            }
-            .tag(AppShellTab.projects)
-            .accessibilityIdentifier(AppShellTab.projects.accessibilityID)
-
-            NavigationStack {
-                GoogleWorkspaceHubView()
-            }
-            .tabItem {
-                Label(AppShellTab.google.title, systemImage: AppShellTab.google.symbol)
-            }
-            .tag(AppShellTab.google)
-            .accessibilityIdentifier(AppShellTab.google.accessibilityID)
-
-            NavigationStack {
-                UnifiedSettingsView()
-            }
-            .tabItem {
-                Label(AppShellTab.settings.title, systemImage: AppShellTab.settings.symbol)
-            }
-            .tag(AppShellTab.settings)
-            .accessibilityIdentifier(AppShellTab.settings.accessibilityID)
         }
-        .tint(IysThemePreferences.active.accent)
+        .simultaneousGesture(edgeSwipeGesture)
+        .animation(.easeOut(duration: 0.22), value: router.isSidebarOpen)
+    }
+
+    private var edgeSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 16, coordinateSpace: .local)
+            .onChanged { value in
+                if router.isSidebarOpen {
+                    if value.translation.width < 0 {
+                        dragOffset = value.translation.width
+                    }
+                } else if value.startLocation.x < 32 && value.translation.width > 0 {
+                    dragOffset = value.translation.width
+                }
+            }
+            .onEnded { value in
+                let threshold: CGFloat = 72
+                if router.isSidebarOpen {
+                    if value.translation.width < -threshold {
+                        router.closeSidebar()
+                    }
+                } else if value.startLocation.x < 32 && value.translation.width > threshold {
+                    withAnimation(.easeOut(duration: 0.22)) {
+                        router.isSidebarOpen = true
+                    }
+                }
+                dragOffset = 0
+            }
     }
 
     private var regularShell: some View {
         NavigationSplitView {
-            List(selection: Binding<AppShellTab?>(
-                get: { router.selectedTab },
-                set: { if let next = $0 { router.selectedTab = next } }
-            )) {
-                Section("Espacio de trabajo") {
-                    ForEach(AppShellTab.allCases) { tab in
-                        Label(tab.title, systemImage: tab.symbol)
-                            .tag(tab)
-                            .accessibilityIdentifier("sidebar-\(tab.rawValue)")
-                    }
-                }
-            }
-            .navigationTitle("ISYCODE")
+            ChatSidebarView(showsCloseButton: false)
+                .navigationTitle("ISYCODE")
         } detail: {
             NavigationStack {
-                regularDetailContent
+                destinationContent(showsSidebarButton: false)
             }
         }
     }
 
     @ViewBuilder
-    private var regularDetailContent: some View {
-        switch router.selectedTab {
-        case .home:
-            WorkspaceHomeView()
-        case .conversations:
-            ConversationsTabView()
+    private func destinationContent(showsSidebarButton: Bool) -> some View {
+        switch router.activeDestination {
+        case .chat:
+            if sessionState.currentSession != nil {
+                ActiveSessionView(onOpenSidebar: showsSidebarButton ? { router.toggleSidebar() } : nil)
+            } else {
+                ChatLandingView(onOpenSidebar: { router.toggleSidebar() })
+            }
         case .projects:
             ProjectsTabView()
+                .toolbar {
+                    if showsSidebarButton {
+                        sidebarLeadingToolbarItem
+                    }
+                }
         case .google:
             GoogleWorkspaceHubView()
+                .toolbar {
+                    if showsSidebarButton {
+                        sidebarLeadingToolbarItem
+                    }
+                }
+        case .connections:
+            ConnectionsView()
+                .toolbar {
+                    if showsSidebarButton {
+                        sidebarLeadingToolbarItem
+                    }
+                }
         case .settings:
             UnifiedSettingsView()
+                .toolbar {
+                    if showsSidebarButton {
+                        sidebarLeadingToolbarItem
+                    }
+                }
+        }
+    }
+
+    private var sidebarLeadingToolbarItem: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button {
+                router.toggleSidebar()
+            } label: {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(OCColor.iconPrimary)
+                    .frame(width: 44, height: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Abrir barra lateral")
         }
     }
 }
 
-/// Conversations tab: embeds the active chat directly inside the shell when selected,
-/// or lets the user resume/start a conversation without going through Sandbox/Settings.
+/// Conversations tab view kept for compatibility.
 public struct ConversationsTabView: View {
     @EnvironmentObject private var store: WorkbenchStore
     @EnvironmentObject private var sessionState: ActiveSessionState
@@ -147,62 +185,14 @@ public struct ConversationsTabView: View {
         Group {
             if sessionState.currentSession != nil {
                 ActiveSessionView()
-            } else if let project = sessionState.currentProject {
-                SessionListView(project: project)
             } else {
-                emptyConversationsHub
+                ChatLandingView(onOpenSidebar: { router.toggleSidebar() })
             }
         }
-    }
-
-    private var emptyConversationsHub: some View {
-        let runtime = store.runtimeSnapshot
-        return VStack(spacing: OCSpacing.xl) {
-            Image(systemName: "bubble.left.and.bubble.right.fill")
-                .font(.system(size: 44, weight: .light))
-                .foregroundColor(IysThemePreferences.active.accent)
-
-            VStack(spacing: OCSpacing.xs) {
-                Text("Sin conversación abierta")
-                    .font(.system(size: 19, weight: .bold))
-                    .foregroundColor(OCColor.textPrimary)
-                Text(runtime.readiness.isUsableForChat
-                     ? "Tu motor (\(runtime.providerName)) está listo para empezar de inmediato."
-                     : "Empieza una conversación de prueba o configura tu motor en Inicio.")
-                    .font(.system(size: 14))
-                    .foregroundColor(OCColor.textSecondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            Button {
-                Task { _ = await store.openOrCreateConversation(preferNew: true) }
-            } label: {
-                Label("Nueva conversación", systemImage: "plus.bubble.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(OCColor.onAccent)
-                    .padding(.horizontal, 22)
-                    .frame(height: 48)
-                    .background(Capsule().fill(IysThemePreferences.active.accent))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("conversations-empty-new-button")
-
-            Button("Ver proyectos") {
-                router.openProjects()
-            }
-            .font(.system(size: 14, weight: .medium))
-            .foregroundColor(OCColor.textSecondary)
-        }
-        .padding(OCSpacing.huge)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(OCColor.bgDeep.ignoresSafeArea())
-        .navigationTitle("Conversaciones")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
-/// Projects tab: always starts at the project list so it stays distinct from Conversations,
-/// and drills into a project's sessions on tap.
+/// Projects view: starts at the project list and drills into a project's sessions on tap.
 public struct ProjectsTabView: View {
     @EnvironmentObject private var store: WorkbenchStore
     @EnvironmentObject private var sessionState: ActiveSessionState
@@ -217,7 +207,7 @@ public struct ProjectsTabView: View {
                 SessionListView(
                     project: project,
                     onBack: { browsingProject = nil },
-                    onOpenSession: { router.selectedTab = .conversations }
+                    onOpenSession: { router.openConversations() }
                 )
             } else {
                 ProjectListContent(onSelectProject: { project in
