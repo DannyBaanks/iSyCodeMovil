@@ -268,12 +268,18 @@ public actor WdaClient {
         if path != "/status", unanswered >= Self.stallLimit {
             throw WdaError.stalled
         }
+        // /status no pasa por XCTest: responde aunque WDA esté medio muerto, así que ni suma ni limpia
+        // el contador. Si lo limpiara, un WDA atascado que sigue contestando /status nunca se detectaría
+        // (el daemon Rust tampoco lo cuenta).
+        let countsForStall = path != "/status"
         do {
             let json = try await perform(method, path, body: body, timeout: timeout ?? self.timeout)
-            unanswered = 0 // WDA respondió (aunque fuera con error): no está atascado
+            if countsForStall { unanswered = 0 } // WDA respondió (aunque fuera con error): no está atascado
             return json
         } catch let error as WdaError {
-            if case .timeout = error { unanswered += 1 } else { unanswered = 0 }
+            if countsForStall {
+                if case .timeout = error { unanswered += 1 } else { unanswered = 0 }
+            }
             throw error
         }
     }

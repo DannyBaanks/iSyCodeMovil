@@ -368,6 +368,22 @@ final class WdaClientTests: XCTestCase {
         XCTAssertEqual(MockWDA.requests.count, WdaClient.stallLimit)
         XCTAssertNotNil((WdaError.stalled as LocalizedError).errorDescription?.contains("atascado"))
     }
+
+    /// `/status` no pasa por XCTest y responde aunque WDA esté medio muerto: contestarlo no debe limpiar el
+    /// atasco (el daemon Rust tampoco lo cuenta), o un WDA atascado nunca se detectaría.
+    func testStatusAnswerDoesNotClearStall() async throws {
+        stub { request in
+            if request.url?.path == "/status" { return self.json(["value": ["ready": true]]) }
+            throw URLError(.timedOut)
+        }
+        for _ in 0..<WdaClient.stallLimit {
+            await XCTAssertThrowsAsyncError(try await client.pressButton("lock")) { _ in }
+        }
+        _ = try? await client.status()
+        await XCTAssertThrowsAsyncError(try await client.pressButton("lock")) { error in
+            guard case WdaError.stalled = error else { return XCTFail("esperaba stalled, llegó \(error)") }
+        }
+    }
 }
 
 private func XCTAssertThrowsAsyncError<T>(_ expression: @autoclosure () async throws -> T, _ message: String = "", file: StaticString = #filePath, line: UInt = #line, _ errorHandler: (Error) -> Void) async {
