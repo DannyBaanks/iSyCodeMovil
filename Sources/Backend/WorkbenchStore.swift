@@ -708,13 +708,16 @@ public final class WorkbenchStore: ObservableObject {
         addSystemEvent("Agent mode: \(mode.rawValue)")
     }
     
-    public func loadFiles(path: String = "") async {
-        guard let backend = currentBackend else { return }
+    @discardableResult
+    public func loadFiles(path: String = "") async -> Bool {
+        guard let backend = currentBackend else { return false }
         do {
             fileTree = try await backend.listFiles(path: path)
             filesPath = path
+            return true
         } catch {
             addErrorEvent("No pude cargar los archivos: \(error.localizedDescription)")
+            return false
         }
     }
     

@@ -194,7 +194,8 @@ private struct MarkdownText: View {
     let emphasisColor: Color
 
     private var renderedText: AttributedString {
-        var value = (try? AttributedString(markdown: content)) ?? AttributedString(content)
+        let markdown = ChatMarkdownLayout.preserveLineBreaks(in: content)
+        var value = (try? AttributedString(markdown: markdown)) ?? AttributedString(content)
         let emphasizedRanges = value.runs.compactMap { run -> Range<AttributedString.Index>? in
             guard run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true else { return nil }
             return run.range
@@ -207,6 +208,38 @@ private struct MarkdownText: View {
 
     var body: some View {
         Text(renderedText)
+            .lineSpacing(3)
+    }
+}
+
+/// SwiftUI's Markdown text keeps inline styling but can visually flatten soft
+/// line breaks. Promote prose line breaks to Markdown hard breaks while
+/// leaving fenced code and table rows untouched.
+private enum ChatMarkdownLayout {
+    static func preserveLineBreaks(in markdown: String) -> String {
+        let normalized = markdown
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let lines = normalized.components(separatedBy: "\n")
+        var insideCodeFence = false
+
+        return lines.enumerated().map { index, line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") {
+                insideCodeFence.toggle()
+                return line
+            }
+
+            let isTableRow = trimmed.hasPrefix("|") && trimmed.hasSuffix("|")
+            guard index < lines.count - 1,
+                  !insideCodeFence,
+                  !line.isEmpty,
+                  !line.hasSuffix("  "),
+                  !isTableRow else {
+                return line
+            }
+            return line + "  "
+        }.joined(separator: "\n")
     }
 }
 
