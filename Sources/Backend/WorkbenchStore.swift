@@ -1054,14 +1054,15 @@ public final class WorkbenchStore: ObservableObject {
             case "error": state = .failed
             default: state = .running
             }
+            let resolvedOutput = (output?.isEmpty == false ? output : nil) ?? error
             if let index = sessionState.timelineEvents.firstIndex(where: { $0.id == eventID }) {
-                sessionState.updateToolCall(id: eventID, state: state, output: output ?? error, duration: nil)
+                sessionState.updateToolCall(id: eventID, state: state, output: resolvedOutput, duration: nil)
             } else {
                 let toolName = tool ?? "tool"
                 let event = TimelineEvent.toolCall(id: eventID, name: toolName, arguments: input, state: state, agentMode: sessionState.agentMode)
                 sessionState.addEvent(event)
-                if let output = output ?? error {
-                    sessionState.updateToolCall(id: eventID, state: state, output: output, duration: nil)
+                if let resolvedOutput {
+                    sessionState.updateToolCall(id: eventID, state: state, output: resolvedOutput, duration: nil)
                 }
             }
         } else if kind == "reasoning" {

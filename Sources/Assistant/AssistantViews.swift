@@ -1387,7 +1387,7 @@ public struct AssistantGoogleSectionView: View {
                         Muted("Permisos: " + (GoogleService.allCases.filter(store.granted).map(\.title).joined(separator: ", ").nilIfEmpty ?? "ninguno"))
                         HStack(spacing: 12) {
                             PrimaryButton(title: "Actualizar todo") { store.refreshAll() }
-                            Button("Cambiar permisos") { store.signIn() }.font(.system(size: 14))
+                            Button("Reconectar") { store.signIn() }.font(.system(size: 14, weight: .semibold))
                             Button("Desconectar", role: .destructive) { store.signOut() }.font(.system(size: 14))
                         }
                     } else {

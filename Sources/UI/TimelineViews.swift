@@ -429,6 +429,14 @@ public struct ToolCallCollapsedView: View {
         if name.hasPrefix("iphone_") {
             return "Control del iPhone"
         }
+        if name == "gmail.read.inbox" { return "Leyendo Gmail" }
+        if name == "gmail.write.send" { return "Enviando correo" }
+        if name.hasPrefix("gmail.") { return "Gmail" }
+        if name.hasPrefix("googlecalendar.") { return "Agenda de Google" }
+        if name.hasPrefix("googletasks.") { return "Tareas de Google" }
+        if name.hasPrefix("googledrive.") || name.hasPrefix("googledocs.") || name.hasPrefix("googlesheets.") { return "Google Drive" }
+        if name.hasPrefix("googlecontacts.") { return "Contactos de Google" }
+        if name.hasPrefix("shortcuts.") { return "Atajos del iPhone" }
         if name.contains("read") || name.contains("glob") || name.contains("search") || name.contains("list") {
             return "Consultando archivos"
         }
@@ -464,6 +472,11 @@ public struct ToolCallCollapsedView: View {
     private func toolIcon(for name: String?) -> String {
         guard let name = name?.lowercased() else { return "wrench" }
         if name.hasPrefix("iphone_") { return "iphone" }
+        if name.hasPrefix("gmail.") { return "envelope" }
+        if name.hasPrefix("googlecalendar.") { return "calendar" }
+        if name.hasPrefix("googletasks.") { return "checkmark.circle" }
+        if name.hasPrefix("googledrive.") || name.hasPrefix("googledocs.") || name.hasPrefix("googlesheets.") { return "externaldrive" }
+        if name.hasPrefix("shortcuts.") { return "bolt" }
         if name.contains("read") { return "doc.text" }
         if name.contains("write") || name.contains("edit") { return "pencil" }
         if name.contains("bash") || name.contains("shell") { return "terminal" }
@@ -565,6 +578,11 @@ public struct ToolCallExpandedView: View {
     private func toolIcon(for name: String?) -> String {
         guard let name = name?.lowercased() else { return "wrench" }
         if name.hasPrefix("iphone_") { return "iphone" }
+        if name.hasPrefix("gmail.") { return "envelope" }
+        if name.hasPrefix("googlecalendar.") { return "calendar" }
+        if name.hasPrefix("googletasks.") { return "checkmark.circle" }
+        if name.hasPrefix("googledrive.") || name.hasPrefix("googledocs.") || name.hasPrefix("googlesheets.") { return "externaldrive" }
+        if name.hasPrefix("shortcuts.") { return "bolt" }
         if name.contains("read") { return "doc.text" }
         if name.contains("write") || name.contains("edit") { return "pencil" }
         if name.contains("bash") || name.contains("shell") { return "terminal" }
