@@ -8,6 +8,8 @@ public struct SandboxBridgeInfo: Equatable, Sendable {
     public let defaultBranch: String?
     /// Whether the computer holds a GitHub token. The token itself never travels here.
     public let hasGitHubAccount: Bool
+    /// iPhone tools the computer's gate allows (empty unless the link was started with `--iphone`).
+    public var iphoneTools: [String] = []
 }
 
 public struct SandboxStatus: Equatable, Sendable {
@@ -73,8 +75,22 @@ public struct SandboxHostClient: Sendable {
             projectName: project["name"] as? String ?? pairing.projectName,
             repo: project["repo"] as? String,
             defaultBranch: project["defaultBranch"] as? String,
-            hasGitHubAccount: json["github"] as? Bool ?? false
+            hasGitHubAccount: json["github"] as? Bool ?? false,
+            iphoneTools: await iphoneTools()
         )
+    }
+
+    /// The iPhone tools the computer allows. Empty when the link has no `--iphone`, the
+    /// computer is older, or the phone service is down: that must never break the sandbox.
+    public func iphoneTools() async -> [String] {
+        guard let json = try? await object("GET", "api/iphone") else { return [] }
+        return (json["tools"] as? [String] ?? []).filter { IphoneControlCatalog.names.contains($0) }
+    }
+
+    /// One call to the iPhone. The computer's gate decides whether it runs; the answer is
+    /// the device's MCP result (`content` parts and `isError`).
+    public func iphoneCall(tool: String, arguments: [String: Any], timeout: TimeInterval = 90) async throws -> [String: Any] {
+        try await object("POST", "api/iphone/call", body: ["tool": tool, "arguments": arguments], timeout: timeout)
     }
 
     public func listSandboxes() async throws -> [SandboxStatus] {
