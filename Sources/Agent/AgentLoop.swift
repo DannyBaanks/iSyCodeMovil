@@ -389,6 +389,7 @@ public actor AgentLoop {
                             reason: tool.capabilities.approvalReason ?? "This tool will modify files in your workspace. Are you sure you want to proceed?"
                         )
 
+                        await PermissionNotifier.shared.note(requestID: request.id, askEveryTime: tool.capabilities.requiresApprovalEveryTime)
                         await eventHandler?(.permissionRequested(request))
 
                         guard let handler = context.permissionHandler else {

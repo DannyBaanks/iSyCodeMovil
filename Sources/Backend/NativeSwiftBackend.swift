@@ -450,8 +450,11 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             throw WorkbenchError.unsupportedFeature("Agent runtime not initialized")
         }
         
+        await PermissionNotifier.shared.prepare()
         let sessionAtStart = sessionID
+        BackgroundRunKeeper.shared.begin()
         runningTask = Task { [weak self] in
+            defer { BackgroundRunKeeper.shared.end() }
             guard let self else { return }
             do {
                 _ = try await loop.run(userInput: text)

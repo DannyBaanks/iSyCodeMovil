@@ -707,7 +707,7 @@ enum ConnectionStatusHint {
             return "Deja abierta la terminal del comando, y pon el iPhone en la misma red o en Tailscale."
         }
         if text.contains("invalid") || text.contains("missing required") || text.contains("pairing") {
-            return "Copia la línea completa que empieza por iyscodemovil://, codex:// o grok://."
+            return "Copia la línea completa que empieza por iyscodemovil://, isysandbox://, codex:// o grok://."
         }
         return nil
     }
@@ -747,6 +747,14 @@ struct PairingOfferSummary {
     let notice: String
 
     init(link: String) throws {
+        if SandboxPairing.isPairingLink(link) {
+            let sandbox = try SandboxPairing.parse(link)
+            kind = "Sandbox en la computadora"
+            hostLine = "\(sandbox.host):\(sandbox.port)"
+            directory = sandbox.directory
+            notice = "El agente se queda en este iPhone; solo sus herramientas corren en la computadora, por Tailscale. No reenvíes el enlace: incluye un token."
+            return
+        }
         let (type, pairing) = try WorkbenchBackendFactory.parsePairingURL(link)
         switch pairing {
         case .openCode(let value):

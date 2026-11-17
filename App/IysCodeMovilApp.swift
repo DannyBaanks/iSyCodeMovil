@@ -8,6 +8,7 @@ final class GUSBackgroundDownloadAppDelegate: NSObject, UIApplicationDelegate, U
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        PermissionNotifier.shared.registerCategory()
         return true
     }
 
@@ -20,6 +21,11 @@ final class GUSBackgroundDownloadAppDelegate: NSObject, UIApplicationDelegate, U
     /// Tapping an assistant alert opens the Asistente.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
+        let userInfo = response.notification.request.content.userInfo
+        if let requestID = userInfo[PermissionNotifier.requestKey] as? String,
+           let decision = PermissionNotifier.decision(forAction: response.actionIdentifier) {
+            Task { @MainActor in PermissionNotifier.shared.deliver(requestID: requestID, decision: decision) }
+        }
         if response.notification.request.content.userInfo["open"] as? String == "assistant" {
             UserDefaults.standard.set(true, forKey: AssistantLaunch.openKey)
             DispatchQueue.main.async { AssistantLaunch.open() }
