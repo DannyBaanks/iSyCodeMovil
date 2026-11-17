@@ -429,6 +429,12 @@ public struct ToolCallCollapsedView: View {
         if name.hasPrefix("iphone_") {
             return "Control del iPhone"
         }
+        if name == "browser_navigate" { return "Navegando en la web" }
+        if name == "browser_get_page" { return "Leyendo página web" }
+        if name == "browser_click" { return "Tocando en la web" }
+        if name == "browser_input" { return "Escribiendo en la web" }
+        if name == "browser_scroll" { return "Desplazando página web" }
+        if name.hasPrefix("browser_") { return "Navegador" }
         if name == "gmail.read.inbox" { return "Leyendo Gmail" }
         if name == "gmail.write.send" { return "Enviando correo" }
         if name.hasPrefix("gmail.") { return "Gmail" }
@@ -475,6 +481,7 @@ public struct ToolCallCollapsedView: View {
     static func iconName(for name: String?) -> String {
         guard let name = name?.lowercased() else { return "wrench" }
         if name.hasPrefix("iphone_") { return "iphone" }
+        if name.hasPrefix("browser_") { return "safari" }
         if name.hasPrefix("gmail.") { return "envelope" }
         if name.hasPrefix("googlecalendar.") { return "calendar" }
         if name.hasPrefix("googletasks.") { return "checkmark.circle" }
@@ -585,6 +592,7 @@ public struct ToolCallExpandedView: View {
     private func toolIcon(for name: String?) -> String {
         guard let name = name?.lowercased() else { return "wrench" }
         if name.hasPrefix("iphone_") { return "iphone" }
+        if name.hasPrefix("browser_") { return "safari" }
         if name.hasPrefix("gmail.") { return "envelope" }
         if name.hasPrefix("googlecalendar.") { return "calendar" }
         if name.hasPrefix("googletasks.") { return "checkmark.circle" }

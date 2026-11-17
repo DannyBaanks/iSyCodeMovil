@@ -126,6 +126,13 @@ public struct AppShellView: View {
             } else {
                 ChatLandingView(onOpenSidebar: { router.toggleSidebar() })
             }
+        case .browser:
+            InAppBrowserView()
+                .toolbar {
+                    if showsSidebarButton {
+                        sidebarLeadingToolbarItem
+                    }
+                }
         case .projects:
             ProjectsTabView()
                 .toolbar {

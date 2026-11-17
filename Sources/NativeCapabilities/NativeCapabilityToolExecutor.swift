@@ -208,9 +208,59 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
             return await cancelNotification(invocation, started: started)
         case "shortcuts.run":
             return await runConfiguredShortcut(invocation, started: started)
+        case "browser_navigate":
+            return await runBrowserNavigate(invocation, started: started)
+        case "browser_get_page":
+            return await runBrowserGetPage(invocation, started: started)
+        case "browser_click":
+            return await runBrowserClick(invocation, started: started)
+        case "browser_input":
+            return await runBrowserInput(invocation, started: started)
+        case "browser_scroll":
+            return await runBrowserScroll(invocation, started: started)
         default:
             return failure(invocation, "Unknown native capability tool.", started: started)
         }
+    }
+
+    private func browserResult(_ result: Result<String, InAppBrowserError>, for invocation: ToolInvocation, started: Date) -> ToolExecutionResult {
+        switch result {
+        case .success(let message):
+            return ToolExecutionResult(toolCallId: invocation.id, output: message, duration: Date().timeIntervalSince(started))
+        case .failure(let error):
+            return failure(invocation, error.localizedDescription, started: started)
+        }
+    }
+
+    private func runBrowserNavigate(_ invocation: ToolInvocation, started: Date) async -> ToolExecutionResult {
+        guard let url = invocation.arguments["url"], !url.isEmpty else {
+            return failure(invocation, "Falta el argumento url.", started: started)
+        }
+        return browserResult(await InAppBrowserService.shared.navigate(to: url, byAgent: true), for: invocation, started: started)
+    }
+
+    private func runBrowserGetPage(_ invocation: ToolInvocation, started: Date) async -> ToolExecutionResult {
+        browserResult(await InAppBrowserService.shared.getPageInfo(includeContent: true), for: invocation, started: started)
+    }
+
+    private func runBrowserClick(_ invocation: ToolInvocation, started: Date) async -> ToolExecutionResult {
+        let elementId = invocation.arguments["element_id"]
+        let selector = invocation.arguments["selector"]
+        return browserResult(await InAppBrowserService.shared.click(elementId: elementId, selector: selector), for: invocation, started: started)
+    }
+
+    private func runBrowserInput(_ invocation: ToolInvocation, started: Date) async -> ToolExecutionResult {
+        guard let text = invocation.arguments["text"] else {
+            return failure(invocation, "Falta el argumento text.", started: started)
+        }
+        let elementId = invocation.arguments["element_id"]
+        let selector = invocation.arguments["selector"]
+        return browserResult(await InAppBrowserService.shared.input(elementId: elementId, selector: selector, text: text), for: invocation, started: started)
+    }
+
+    private func runBrowserScroll(_ invocation: ToolInvocation, started: Date) async -> ToolExecutionResult {
+        let direction = invocation.arguments["direction"] ?? "down"
+        return browserResult(await InAppBrowserService.shared.scroll(direction: direction), for: invocation, started: started)
     }
 
     private func scheduleNotification(_ invocation: ToolInvocation, started: Date) async -> ToolExecutionResult {
@@ -371,7 +421,23 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
             "shortcut_id": .init(type: "string", description: "Configured shortcut reference returned by settings"),
             "text": .init(type: "string", description: "Optional text input for the shortcut")
         ], required: ["shortcut_id"], capabilities: .init(isDestructive: true,
-            approvalReason: "Open the user-configured shortcut in Apple Shortcuts? It may perform external actions.", requiresApprovalEveryTime: true))
+            approvalReason: "Open the user-configured shortcut in Apple Shortcuts? It may perform external actions.", requiresApprovalEveryTime: true)),
+        AgentTool(name: "browser_navigate", description: "Abre una página web en el navegador integrado de iSyCode (sin salir de la app).", properties: [
+            "url": .init(type: "string", description: "Dirección web (https://...)")
+        ], required: ["url"], capabilities: .init(requiresNetwork: true)),
+        AgentTool(name: "browser_get_page", description: "Lee el título, URL y contenido simplificado (enlaces, botones y campos con [#id]) de la página actual del navegador integrado.", properties: [:], required: [], capabilities: .init(requiresNetwork: true)),
+        AgentTool(name: "browser_click", description: "Toca un enlace o botón en el navegador integrado usando element_id (el #id devuelto por browser_get_page) o un selector CSS.", properties: [
+            "element_id": .init(type: "string", description: "ID corto devuelto por browser_get_page, sin #"),
+            "selector": .init(type: "string", description: "Selector CSS alternativo")
+        ], required: [], capabilities: .init(requiresNetwork: true)),
+        AgentTool(name: "browser_input", description: "Escribe texto en un campo del navegador integrado usando element_id o selector CSS.", properties: [
+            "element_id": .init(type: "string", description: "ID corto devuelto por browser_get_page, sin #"),
+            "selector": .init(type: "string", description: "Selector CSS alternativo"),
+            "text": .init(type: "string", description: "Texto a escribir")
+        ], required: ["text"], capabilities: .init(requiresNetwork: true)),
+        AgentTool(name: "browser_scroll", description: "Desplaza la página del navegador integrado hacia arriba o abajo.", properties: [
+            "direction": .init(type: "string", description: "down o up", enumValues: ["down", "up"])
+        ], required: [], capabilities: .init(requiresNetwork: true))
     ]
 
     private static let updateSharedContextTool = AgentTool(

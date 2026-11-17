@@ -365,10 +365,16 @@ struct ChatSurfaceView: View {
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var store: WorkbenchStore
     @State private var scrollProxy: ScrollViewProxy?
+    @State private var showActivityDetail = false
     
     var body: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
+                if sessionState.isProcessing {
+                    ThinkingShimmerView(label: liveActivityLabel) {
+                        showActivityDetail = true
+                    }
+                }
                 ChatActivityBar(
                     isProcessing: sessionState.isProcessing,
                     needsApproval: sessionState.pendingPermission != nil,
@@ -412,8 +418,20 @@ struct ChatSurfaceView: View {
                 .onChange(of: sessionState.isProcessing) { processing in
                     if !processing { scrollToBottom() }
                 }
+                .sheet(isPresented: $showActivityDetail) {
+                    AgentActivityDetailSheet(events: sessionState.timelineEvents)
+                }
             }
         }
+    }
+
+    private var liveActivityLabel: String {
+        if sessionState.pendingPermission != nil { return "Esperando tu permiso…" }
+        if sessionState.pendingQuestion != nil { return "Esperando tu respuesta…" }
+        if let activeTool = sessionState.timelineEvents.last(where: { $0.kind == .toolCall && $0.toolState == .running }) {
+            return "\(ToolCallCollapsedView.displayTitle(for: activeTool.toolName))…"
+        }
+        return "Pensando…"
     }
     
     private func scrollToBottom() {

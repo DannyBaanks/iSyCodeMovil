@@ -462,11 +462,9 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         if let ps = persistence, var conv = try? await ps.loadConversation(id: sessionID) {
             let trimmedTitle = conv.title.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmedTitle.isEmpty || trimmedTitle == "Nueva conversación" {
-                let candidate = text
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    .replacingOccurrences(of: "\n", with: " ")
+                let candidate = await ConversationTitleService.generateTitle(from: text)
                 if !candidate.isEmpty {
-                    conv.title = String(candidate.prefix(44))
+                    conv.title = candidate
                     try? await ps.saveConversation(conv)
                     eventContinuation?.yield(.sessionsChanged)
                 }

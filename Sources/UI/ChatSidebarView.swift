@@ -174,6 +174,7 @@ public struct ChatSidebarView: View {
 
     private var destinationsSection: some View {
         VStack(spacing: 2) {
+            destinationButton(.browser, title: "Navegador", subtitle: "Web integrada")
             destinationButton(.google, title: "Google", subtitle: "Correo, agenda, Drive")
             destinationButton(.projects, title: "Proyectos", subtitle: nil)
             destinationButton(.connections, title: "Conexiones", subtitle: "Computadora e iPhone")
@@ -187,6 +188,7 @@ public struct ChatSidebarView: View {
         return Button {
             switch destination {
             case .chat: router.openConversations()
+            case .browser: router.openBrowser()
             case .google: router.openGoogle()
             case .projects: router.openProjects()
             case .connections: router.openConnections()

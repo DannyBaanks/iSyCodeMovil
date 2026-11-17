@@ -83,6 +83,7 @@ public enum RuntimeSetupTrack: String, CaseIterable, Identifiable, Sendable {
 
 public enum AppShellDestination: String, CaseIterable, Identifiable, Sendable {
     case chat
+    case browser
     case projects
     case google
     case connections
@@ -93,6 +94,7 @@ public enum AppShellDestination: String, CaseIterable, Identifiable, Sendable {
     public var title: String {
         switch self {
         case .chat: return "Chat"
+        case .browser: return "Navegador"
         case .projects: return "Proyectos"
         case .google: return "Google"
         case .connections: return "Conexiones"
@@ -103,6 +105,7 @@ public enum AppShellDestination: String, CaseIterable, Identifiable, Sendable {
     public var symbol: String {
         switch self {
         case .chat: return "bubble.left.and.bubble.right.fill"
+        case .browser: return "safari"
         case .projects: return "folder.fill"
         case .google: return "person.crop.circle.badge.checkmark"
         case .connections: return "link.circle.fill"
@@ -153,6 +156,11 @@ public final class AppShellRouter: ObservableObject {
 
     public func openConnections() {
         activeDestination = .connections
+        isSidebarOpen = false
+    }
+
+    public func openBrowser() {
+        activeDestination = .browser
         isSidebarOpen = false
     }
 
