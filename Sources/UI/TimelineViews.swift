@@ -187,15 +187,76 @@ public struct AssistantTextView: View {
     }
 }
 
-/// Uses SwiftUI's native Markdown parser, then gives strong emphasis an
-/// explicit accent so literal `**markers**` never appear in the conversation.
+/// Draws an assistant message block by block (see `ChatMarkdownParser`): SwiftUI's `Text` keeps inline styling but
+/// drops paragraph and list structure, which glued lines together. Strong emphasis gets an explicit accent so literal
+/// `**markers**` never appear in the conversation.
 private struct MarkdownText: View {
     let content: String
     let emphasisColor: Color
 
-    private var renderedText: AttributedString {
-        let markdown = ChatMarkdownLayout.preserveLineBreaks(in: content)
-        var value = (try? AttributedString(markdown: markdown)) ?? AttributedString(content)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(ChatMarkdownParser.parse(content).enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: ChatMarkdownBlock) -> some View {
+        switch block {
+        case .paragraph(let text):
+            inline(text)
+        case .heading(let level, let text):
+            inline(text).font(.system(size: level <= 1 ? 20 : (level == 2 ? 18 : 16), weight: .semibold))
+        case .bullet(let indent, let text):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("•")
+                inline(text)
+            }
+            .padding(.leading, CGFloat(indent) * 14)
+        case .numbered(let indent, let number, let text):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("\(number).")
+                inline(text)
+            }
+            .padding(.leading, CGFloat(indent) * 14)
+        case .quote(let text):
+            inline(text)
+                .foregroundColor(OCColor.textSecondary)
+                .padding(.leading, 12)
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(OCColor.borderBase).frame(width: 3)
+                }
+        case .code(_, let text):
+            monospacedScroll(text)
+        case .table(let rows):
+            monospacedScroll(rows.joined(separator: "\n"))
+        case .rule:
+            Divider().overlay(OCColor.borderBase)
+        }
+    }
+
+    /// Code and tables keep their exact spacing and scroll sideways instead of wrapping.
+    private func monospacedScroll(_ text: String) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            Text(text)
+                .font(.system(size: 13, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(10)
+        }
+        .background(Color.black.opacity(0.22))
+        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+    }
+
+    private func inline(_ text: String) -> some View {
+        Text(renderedInline(text)).lineSpacing(3)
+    }
+
+    /// Inline Markdown only (bold, italics, code, links), keeping every newline the model wrote.
+    private func renderedInline(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        var value = (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
         let emphasizedRanges = value.runs.compactMap { run -> Range<AttributedString.Index>? in
             guard run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true else { return nil }
             return run.range
@@ -204,42 +265,6 @@ private struct MarkdownText: View {
             value[range].foregroundColor = emphasisColor
         }
         return value
-    }
-
-    var body: some View {
-        Text(renderedText)
-            .lineSpacing(3)
-    }
-}
-
-/// SwiftUI's Markdown text keeps inline styling but can visually flatten soft
-/// line breaks. Promote prose line breaks to Markdown hard breaks while
-/// leaving fenced code and table rows untouched.
-private enum ChatMarkdownLayout {
-    static func preserveLineBreaks(in markdown: String) -> String {
-        let normalized = markdown
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-        let lines = normalized.components(separatedBy: "\n")
-        var insideCodeFence = false
-
-        return lines.enumerated().map { index, line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("```") {
-                insideCodeFence.toggle()
-                return line
-            }
-
-            let isTableRow = trimmed.hasPrefix("|") && trimmed.hasSuffix("|")
-            guard index < lines.count - 1,
-                  !insideCodeFence,
-                  !line.isEmpty,
-                  !line.hasSuffix("  "),
-                  !isTableRow else {
-                return line
-            }
-            return line + "  "
-        }.joined(separator: "\n")
     }
 }
 
