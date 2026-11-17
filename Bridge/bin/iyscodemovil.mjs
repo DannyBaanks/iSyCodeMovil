@@ -155,11 +155,11 @@ export function resolvePairingHost(explicitHost, exec = execSync) {
 export function parseLinkOptions(args, env = process.env) {
     const command = args[0] ?? "link";
     if (command !== "link") {
-        throw new Error("usage: iyscodemovil link [--runtime opencode|openisy|crush|codex|claude-code|gemini|grok|sandbox] [--port 4096] [--directory PATH] [--host LAN|tailscale|IP] [--openisy-root PATH]");
+        throw new Error("usage: iyscodemovil link [--runtime opencode|openisy|crush|codex|claude-code|gemini|grok|sandbox] [--port 4096] [--directory PATH] [--host LAN|tailscale|IP] [--iphone readonly|control] [--openisy-root PATH]");
     }
 
     const values = new Map();
-    const valid = new Set(["--runtime", "--port", "--directory", "--host", "--openisy-root"]);
+    const valid = new Set(["--runtime", "--port", "--directory", "--host", "--iphone", "--openisy-root"]);
     for (let i = 1; i < args.length; i += 2) {
         const name = args[i];
         const value = args[i + 1];
@@ -182,6 +182,12 @@ export function parseLinkOptions(args, env = process.env) {
         throw new Error(`${rt.label} not available. Make sure it's installed and in PATH.`);
     }
 
+    const iphone = values.get("--iphone");
+    if (iphone !== undefined && !["readonly", "control"].includes(iphone)) {
+        throw new Error("--iphone must be readonly or control");
+    }
+    if (iphone !== undefined && runtime !== "sandbox") throw new Error("--iphone only works with --runtime sandbox");
+
     const port = Number(values.get("--port") ?? (runtime === "sandbox" ? "8788" : "4096"));
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`invalid port: ${port}`);
     return {
@@ -190,6 +196,7 @@ export function parseLinkOptions(args, env = process.env) {
         port,
         directory: path.resolve(values.get("--directory") ?? process.cwd()),
         host: values.get("--host"),
+        iphone,
         openisyRoot,
     };
 }
@@ -251,6 +258,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
                 host: resolvedHost.host,
                 port: options.port,
                 directory: options.directory,
+                iphone: options.iphone,
                 env,
             });
         }
