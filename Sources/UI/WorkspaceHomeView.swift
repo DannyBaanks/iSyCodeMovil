@@ -378,6 +378,7 @@ public struct WorkspaceHomeView: View {
 
             if let verifiedAt = runtime.lastVerifiedAt {
                 Text("Verificado \(verifiedAt.formatted(.relative(presentation: .named)))")
+                    .environment(\.locale, Locale(identifier: "es"))
                     .font(OCTypography.meta)
                     .foregroundColor(OCColor.textFaint)
             }

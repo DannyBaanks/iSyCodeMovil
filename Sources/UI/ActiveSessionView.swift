@@ -5,8 +5,11 @@ public struct ActiveSessionView: View {
     @EnvironmentObject private var store: WorkbenchStore
     @State private var showDisconnectConfirm = false
     @State private var showSandboxPanel = false
+    let onOpenSidebar: (() -> Void)?
     
-    public init() {}
+    public init(onOpenSidebar: (() -> Void)? = nil) {
+        self.onOpenSidebar = onOpenSidebar
+    }
 
     private var isCodexRemote: Bool {
         store.backendMode == .remote && sessionState.selectedModel?.route == "codex"
@@ -135,18 +138,29 @@ public struct ActiveSessionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                // RootView intercambia vistas por estado (no hay push), asi que
-                // la salida de la sesion es explicita: currentSession = nil.
-                Button {
-                    sessionState.currentSession = nil
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(OCColor.iconPrimary)
-                        .frame(width: 44, height: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+                if let onOpenSidebar {
+                    Button(action: onOpenSidebar) {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(OCColor.iconPrimary)
+                            .frame(width: 44, height: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Abrir barra lateral")
+                } else {
+                    // RootView intercambia vistas por estado (no hay push), asi que
+                    // la salida de la sesion es explicita: currentSession = nil.
+                    Button {
+                        sessionState.currentSession = nil
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(OCColor.iconPrimary)
+                            .frame(width: 44, height: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Volver")
                 }
-                .accessibilityLabel("Volver")
             }
 
             // El titulo va al centro: en el lado izquierdo se aplastaba contra
@@ -162,6 +176,16 @@ public struct ActiveSessionView: View {
             
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: OCSpacing.xs) {
+                    if onOpenSidebar != nil {
+                        Button {
+                            Task { _ = await store.openOrCreateConversation(preferNew: true) }
+                        } label: {
+                            Image(systemName: "square.and.pencil")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+                        .accessibilityLabel("Nueva conversación")
+                    }
+
                     if availableSurfaces.count > 1 {
                         Menu {
                             ForEach(availableSurfaces) { surface in
@@ -175,6 +199,7 @@ public struct ActiveSessionView: View {
                             Image(systemName: "square.grid.2x2")
                                 .font(.system(size: 16, weight: .medium))
                         }
+                        .accessibilityLabel("Cambiar vista")
                     }
 
                     if sessionState.activeSurface == .files && !isCodexRemote && !isGrokRemote {
@@ -182,6 +207,7 @@ public struct ActiveSessionView: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 17))
                         }
+                        .accessibilityLabel("Actualizar archivos")
                     }
                     
                     if sessionState.activeSurface == .review {
@@ -189,12 +215,14 @@ public struct ActiveSessionView: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 17))
                         }
+                        .accessibilityLabel("Actualizar cambios")
                     }
                     
                     Button { showDisconnectConfirm = true } label: {
                         Image(systemName: "rectangle.portrait.and.arrow.right")
                             .font(.system(size: 17))
                     }
+                    .accessibilityLabel("Desconectar")
                 }
             }
         }
@@ -1367,6 +1395,6 @@ private struct CodexCapabilityNotice: View {
                 .overlay(Capsule().stroke(OCColor.warning.opacity(0.18), lineWidth: 1))
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Experimental Codex connection. Chat and approvals only.")
+        .accessibilityLabel("Conexión experimental de Codex. Solo chat y aprobaciones.")
     }
 }

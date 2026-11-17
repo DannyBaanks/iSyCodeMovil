@@ -79,6 +79,7 @@ public struct ProjectListContent: View {
     @State private var selectedProject: Project?
     @State private var showSettings = false
     @State private var searchText = ""
+    let onSelectProject: ((Project) -> Void)?
 
     private var filteredProjects: [Project] {
         guard !searchText.isEmpty else { return store.projects }
@@ -88,7 +89,9 @@ public struct ProjectListContent: View {
         }
     }
     
-    public init() {}
+    public init(onSelectProject: ((Project) -> Void)? = nil) {
+        self.onSelectProject = onSelectProject
+    }
     
     public var body: some View {
         List {
@@ -167,6 +170,7 @@ public struct ProjectListContent: View {
         }
         sessionState.currentProject = project
         Task { await store.selectProject(project) }
+        onSelectProject?(project)
     }
 
     private var emptyState: some View {
@@ -261,6 +265,7 @@ public struct SessionRow: View {
                 
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(session.timestamp, style: .relative)
+                        .environment(\.locale, Locale(identifier: "es"))
                         .font(OCTypography.metaMono)
                         .foregroundColor(OCColor.textFaint)
                     
@@ -281,8 +286,8 @@ public struct SessionRow: View {
         .buttonStyle(.plain)
         .contextMenu {
             if showsManagementActions {
-                Button("Rename", action: onRename)
-                Button("Delete", role: .destructive, action: onDelete)
+                Button("Renombrar", action: onRename)
+                Button("Eliminar", role: .destructive, action: onDelete)
             }
         }
     }
@@ -299,9 +304,13 @@ public struct SessionListView: View {
     @State private var showDeleteConfirm = false
     @State private var sessionToDelete: Session?
     @State private var searchText = ""
+    let onBack: (() -> Void)?
+    let onOpenSession: (() -> Void)?
     
-    public init(project: Project) {
+    public init(project: Project, onBack: (() -> Void)? = nil, onOpenSession: (() -> Void)? = nil) {
         self.project = project
+        self.onBack = onBack
+        self.onOpenSession = onOpenSession
     }
     
     private var filteredSessions: [Session] {
@@ -326,6 +335,7 @@ public struct SessionListView: View {
                             selectedSession = session
                             sessionState.currentSession = session
                             Task { await store.selectSession(session) }
+                            onOpenSession?()
                         },
                         onRename: { sessionToRename = session; renameTitle = session.title },
                         onDelete: { sessionToDelete = session; showDeleteConfirm = true }
@@ -339,7 +349,7 @@ public struct SessionListView: View {
                                 sessionToDelete = session
                                 showDeleteConfirm = true
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                Label("Eliminar", systemImage: "trash")
                             }
                         }
                     }
@@ -368,12 +378,17 @@ public struct SessionListView: View {
                 // RootView navega por estado, no por push: volver a la lista de
                 // proyectos significa soltar currentProject.
                 Button {
-                    selectedSession = nil
-                    sessionState.currentProject = nil
+                    if let onBack {
+                        onBack()
+                    } else {
+                        selectedSession = nil
+                        sessionState.currentProject = nil
+                    }
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 17, weight: .semibold))
                 }
+                .accessibilityLabel("Volver a proyectos")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showNewSessionSheet = true } label: {
@@ -420,13 +435,13 @@ public struct SessionListView: View {
                 Task { await store.renameSession(session, title: newTitle) }
             }
         }
-        .alert("Delete Session", isPresented: $showDeleteConfirm, presenting: sessionToDelete) { session in
-            Button("Delete", role: .destructive) {
+        .alert("Eliminar conversación", isPresented: $showDeleteConfirm, presenting: sessionToDelete) { session in
+            Button("Eliminar", role: .destructive) {
                 Task { await store.deleteSession(session) }
             }
-            Button("Cancel", role: .cancel) { sessionToDelete = nil }
+            Button("Cancelar", role: .cancel) { sessionToDelete = nil }
         } message: { session in
-            Text("Delete this conversation? This action cannot be undone.")
+            Text("¿Eliminar esta conversación? Esta acción no se puede deshacer.")
         }
     }
     

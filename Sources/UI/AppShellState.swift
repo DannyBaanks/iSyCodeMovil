@@ -81,37 +81,97 @@ public enum RuntimeSetupTrack: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public enum AppShellDestination: String, CaseIterable, Identifiable, Sendable {
+    case chat
+    case projects
+    case google
+    case connections
+    case settings
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .chat: return "Chat"
+        case .projects: return "Proyectos"
+        case .google: return "Google"
+        case .connections: return "Conexiones"
+        case .settings: return "Ajustes"
+        }
+    }
+
+    public var symbol: String {
+        switch self {
+        case .chat: return "bubble.left.and.bubble.right.fill"
+        case .projects: return "folder.fill"
+        case .google: return "person.crop.circle.badge.checkmark"
+        case .connections: return "link.circle.fill"
+        case .settings: return "gearshape.fill"
+        }
+    }
+}
+
 @MainActor
 public final class AppShellRouter: ObservableObject {
-    @Published public var selectedTab: AppShellTab = .home
+    @Published public var selectedTab: AppShellTab = .conversations
+    @Published public var activeDestination: AppShellDestination = .chat
+    @Published public var isSidebarOpen = false
     @Published public var googleSubtab: GoogleHubSubtab = .google
     @Published public var showRuntimeSetupSheet = false
     @Published public var runtimeSetupInitialTrack: RuntimeSetupTrack = .connected
     @Published public var runtimeSetupInitialProviderID: String?
     @Published public var showRemotePairingSheet = false
     @Published public var showGoogleOAuthSetupSheet = false
+    @Published public var showSandboxExplanationSheet = false
 
     public init() {}
 
     public func openHome() {
         selectedTab = .home
+        activeDestination = .chat
+        isSidebarOpen = false
     }
 
     public func openConversations() {
         selectedTab = .conversations
+        activeDestination = .chat
+        isSidebarOpen = false
     }
 
     public func openProjects() {
         selectedTab = .projects
+        activeDestination = .projects
+        isSidebarOpen = false
     }
 
     public func openGoogle(subtab: GoogleHubSubtab = .google) {
         googleSubtab = subtab
         selectedTab = .google
+        activeDestination = .google
+        isSidebarOpen = false
+    }
+
+    public func openConnections() {
+        activeDestination = .connections
+        isSidebarOpen = false
     }
 
     public func openSettings() {
         selectedTab = .settings
+        activeDestination = .settings
+        isSidebarOpen = false
+    }
+
+    public func toggleSidebar() {
+        withAnimation(.easeOut(duration: 0.22)) {
+            isSidebarOpen.toggle()
+        }
+    }
+
+    public func closeSidebar() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            isSidebarOpen = false
+        }
     }
 
     public func openRuntimeSetup(track: RuntimeSetupTrack, providerID: String? = nil) {

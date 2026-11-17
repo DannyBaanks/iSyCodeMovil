@@ -405,7 +405,30 @@ public struct ToolCallCollapsedView: View {
     }
 
     private var toolTitle: String {
-        let name = (event.toolName ?? "").lowercased()
+        Self.displayTitle(for: event.toolName)
+    }
+
+    static func displayTitle(for rawName: String?) -> String {
+        let name = (rawName ?? "").lowercased()
+        switch name {
+        case "iphone_status": return "Estado del iPhone"
+        case "iphone_list_elements": return "Leyendo pantalla del iPhone"
+        case "iphone_screenshot": return "Captura del iPhone"
+        case "iphone_tap", "iphone_tap_element": return "Tocando en el iPhone"
+        case "iphone_long_press": return "Manteniendo pulsado en el iPhone"
+        case "iphone_swipe": return "Deslizando en el iPhone"
+        case "iphone_type_text": return "Escribiendo en el iPhone"
+        case "iphone_press_button": return "Botón del iPhone"
+        case "iphone_launch_app": return "Abriendo app en el iPhone"
+        case "iphone_terminate_app": return "Cerrando app en el iPhone"
+        case "iphone_list_apps": return "Apps del iPhone"
+        case "iphone_open_url": return "Abriendo enlace en el iPhone"
+        case "iphone_wait_for": return "Esperando elemento en el iPhone"
+        default: break
+        }
+        if name.hasPrefix("iphone_") {
+            return "Control del iPhone"
+        }
         if name.contains("read") || name.contains("glob") || name.contains("search") || name.contains("list") {
             return "Consultando archivos"
         }
@@ -415,21 +438,32 @@ public struct ToolCallCollapsedView: View {
         if name.contains("bash") || name.contains("shell") || name.contains("command") || name.contains("exec") {
             return "Ejecutando comando"
         }
-        return event.toolName?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Herramienta"
+        return rawName?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Herramienta"
     }
 
     private var toolDetail: String? {
         guard let arguments = event.toolArguments, !arguments.isEmpty else { return nil }
-        let preferredKeys = ["path", "file", "file_path", "filepath", "pattern", "command", "url"]
-        let candidate = preferredKeys.compactMap { key in
+        let preferredKeys = [
+            "path", "file", "file_path", "filepath", "pattern", "command", "url",
+            "text", "filter", "element", "app", "bundle_id", "button", "direction", "query"
+        ]
+        if let preferred = preferredKeys.compactMap({ key in
             arguments.first(where: { $0.key.lowercased() == key })?.value
-        }.first ?? arguments.keys.sorted().compactMap { arguments[$0] }.first
-        guard let candidate, !candidate.isEmpty else { return nil }
-        return candidate
+        }).first(where: { !$0.isEmpty }) {
+            return preferred
+        }
+        let nonBooleanFallback = arguments.keys.sorted().compactMap { key -> String? in
+            guard let value = arguments[key], !value.isEmpty else { return nil }
+            let lower = value.lowercased()
+            if lower == "true" || lower == "false" { return nil }
+            return value
+        }.first
+        return nonBooleanFallback
     }
 
     private func toolIcon(for name: String?) -> String {
         guard let name = name?.lowercased() else { return "wrench" }
+        if name.hasPrefix("iphone_") { return "iphone" }
         if name.contains("read") { return "doc.text" }
         if name.contains("write") || name.contains("edit") { return "pencil" }
         if name.contains("bash") || name.contains("shell") { return "terminal" }
@@ -465,7 +499,7 @@ public struct ToolCallExpandedView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(OCColor.iconPrimary)
 
-                Text(event.toolName ?? "tool")
+                Text(ToolCallCollapsedView.displayTitle(for: event.toolName))
                     .font(OCTypography.toolLabel)
                     .foregroundColor(OCColor.textPrimary)
 
@@ -501,7 +535,7 @@ public struct ToolCallExpandedView: View {
 
             // Output
             if let output = event.toolOutput, !output.isEmpty {
-                ScrollView(.horizontal, showsIndicators: true) {
+                ScrollView([.vertical, .horizontal], showsIndicators: true) {
                     Text(output)
                         .font(OCTypography.codeSmall)
                         .foregroundColor(OCColor.textPrimary)
@@ -510,7 +544,7 @@ public struct ToolCallExpandedView: View {
                         .padding(.horizontal, OCSpacing.base)
                         .padding(.vertical, OCSpacing.xs)
                 }
-                .frame(maxHeight: 220)
+                .frame(maxHeight: 260)
             } else if event.toolState == .running {
                 HStack {
                     ProgressView()
@@ -530,6 +564,7 @@ public struct ToolCallExpandedView: View {
 
     private func toolIcon(for name: String?) -> String {
         guard let name = name?.lowercased() else { return "wrench" }
+        if name.hasPrefix("iphone_") { return "iphone" }
         if name.contains("read") { return "doc.text" }
         if name.contains("write") || name.contains("edit") { return "pencil" }
         if name.contains("bash") || name.contains("shell") { return "terminal" }

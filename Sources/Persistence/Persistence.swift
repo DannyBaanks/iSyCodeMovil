@@ -234,14 +234,19 @@ public actor IOSPersistence: Persistence {
             do {
                 let data = try Data(contentsOf: file)
                 let conv = try decoder.decode(Conversation.self, from: data)
-                let lastMsg = conv.messages.last
+                let previewText = conv.messages.last(where: {
+                    ($0.role == .user || $0.role == .assistant)
+                        && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                })?.content
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: "\n", with: " ")
                 summaries.append(ConversationSummary(
                     id: conv.id,
                     title: conv.title,
                     createdAt: conv.createdAt,
                     updatedAt: conv.updatedAt,
                     messageCount: conv.messages.count,
-                    lastMessagePreview: lastMsg?.content.prefix(100).description
+                    lastMessagePreview: previewText.map { String($0.prefix(100)) }
                 ))
             } catch {
                 // Skip corrupted files
