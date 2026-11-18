@@ -1435,7 +1435,14 @@ public struct SystemMessageView: View {
         if lower.contains("http") || lower.contains("network") || lower.contains("timed out") || lower.contains("offline") || lower.contains("conexión") {
             return "Problema de conexión"
         }
-        if lower.contains("auth") || lower.contains("clave") || lower.contains("key") || lower.contains("401") || lower.contains("403") {
+        if lower.contains("unsupported feature") || lower.contains("no admite") {
+            return "Esta función no está disponible aquí"
+        }
+        // Whole words only: "ChatGPT OAuth" inside an unrelated message used to match "auth"
+        // and show a key/session error for an image refusal.
+        let words = Set(lower.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
+        if !words.isDisjoint(with: ["auth", "authentication", "unauthorized", "clave", "key", "401", "403"])
+            || lower.contains("api key") || lower.contains("autenticación") {
             return "Revisa tu clave o sesión"
         }
         return "No pudimos completar la acción"

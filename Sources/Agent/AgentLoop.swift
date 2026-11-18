@@ -323,12 +323,9 @@ public actor AgentLoop {
         guard !isRunning else {
             throw AgentError.toolError("AgentLoop already running")
         }
-        let hasImageAttachment = multimodalParts.contains { $0.kind == .imageBase64 && $0.base64Data != nil }
-        if hasImageAttachment && !context.modelProvider.capabilities.supportsImages {
-            throw ModelProviderError.unsupportedFeature(
-                "El proveedor activo (\(context.modelProvider.name)) no admite imágenes. Cambia a OpenAI, Gemini, ChatGPT OAuth, OpenRouter o NVIDIA VL para enviar fotografías."
-            )
-        }
+        // No provider-level image gate: the flag was computed once per provider (without the
+        // model), so NVIDIA's vision models were refused. Images always go out; a model that
+        // can't see them gets them replaced by a note and says so itself (RemoteModelProvider).
         isRunning = true
         sequenceScope = nil
         await eventHandler?(.sequenceScopeChanged(nil))

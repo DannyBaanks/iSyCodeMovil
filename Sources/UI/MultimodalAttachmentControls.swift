@@ -536,8 +536,14 @@ public struct RichAttachmentsBar: View {
     }
 
     private var incompatibilityBanner: String? {
-        if attachments.contains(where: { $0.type == .image }) && !capabilityReport.supportsImages {
-            return capabilityReport.explanation
+        // A hint, not a block: the photo is sent anyway and the model says if it can't see it.
+        if attachments.contains(where: { $0.type == .image }) {
+            if !capabilityReport.canCarryImages {
+                return "Este motor no recibe imágenes: el modelo te dirá que no puede verla."
+            }
+            if !capabilityReport.supportsImages {
+                return "Puede que este modelo no vea imágenes. Se envía igual; si no puede, te lo dirá."
+            }
         }
         if let unsupported = attachments.first(where: {
             if case .unsupported = $0.state { return true }
