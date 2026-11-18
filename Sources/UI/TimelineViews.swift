@@ -4,10 +4,12 @@ import SwiftUI
 
 public struct TimelineEventContainer: View {
     let event: TimelineEvent
+    let showsSpeaker: Bool
     @EnvironmentObject private var store: WorkbenchStore
 
-    public init(event: TimelineEvent) {
+    public init(event: TimelineEvent, showsSpeaker: Bool = true) {
         self.event = event
+        self.showsSpeaker = showsSpeaker
     }
 
     private var agentColor: Color {
@@ -22,7 +24,7 @@ public struct TimelineEventContainer: View {
         case .userPrompt:
             UserPromptView(event: event, agentColor: agentColor)
         case .assistantText:
-            AssistantTextView(event: event)
+            AssistantTextView(event: event, showsSpeaker: showsSpeaker)
         case .toolCall, .toolResult:
             ToolCallView(event: event, agentColor: agentColor)
         case .diff:
@@ -70,27 +72,13 @@ public struct UserPromptView: View {
         self.agentColor = agentColor
     }
 
+    /// The person's turn is a single trailing bubble, as in Messages: no avatar, no
+    /// "Tú" label and no clock on every message. Alignment already says who wrote it.
     public var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text("T")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundColor(OCColor.onAccent)
-                .frame(width: 27, height: 27)
-                .background(agentColor.gradient)
-                .clipShape(Circle())
-                .accessibilityLabel("Tú")
+        HStack(alignment: .bottom, spacing: 0) {
+            Spacer(minLength: 48)
 
-            VStack(alignment: .leading, spacing: OCSpacing.md) {
-                HStack {
-                    Text("Tú")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(agentColor)
-                    Spacer()
-                    Text(event.timestamp.formatted(date: .omitted, time: .shortened))
-                        .font(OCTypography.metaMono)
-                        .foregroundColor(OCColor.textFaint)
-                }
-
+            VStack(alignment: .trailing, spacing: OCSpacing.base) {
                 if let text = event.promptText {
                     MarkdownText(content: text, emphasisColor: agentColor)
                         .font(OCTypography.userPrompt)
@@ -110,18 +98,14 @@ public struct UserPromptView: View {
                     }
                 }
             }
-            .padding(.horizontal, OCSpacing.lg)
+            .padding(.horizontal, OCSpacing.lg + 2)
             .padding(.vertical, OCSpacing.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(IysThemePreferences.active.userSurface)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r18))
-            .overlay {
-                RoundedRectangle(cornerRadius: OCRadius.r18)
-                    .stroke(agentColor.opacity(0.28), lineWidth: 1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(OCColor.bgLayer2)
+            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r22, style: .continuous))
         }
-        .padding(.vertical, OCSpacing.xs)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.top, OCSpacing.xl)
+        .padding(.bottom, OCSpacing.xs)
     }
 }
 
@@ -129,10 +113,14 @@ public struct UserPromptView: View {
 
 public struct AssistantTextView: View {
     let event: TimelineEvent
+    /// Only the first assistant message of a turn carries the speaker row; the rest of
+    /// the turn reads as one continuous answer.
+    let showsSpeaker: Bool
     @EnvironmentObject private var sessionState: ActiveSessionState
 
-    public init(event: TimelineEvent) {
+    public init(event: TimelineEvent, showsSpeaker: Bool = true) {
         self.event = event
+        self.showsSpeaker = showsSpeaker
     }
 
     private var isLiveTail: Bool {
@@ -142,30 +130,35 @@ public struct AssistantTextView: View {
 
     private var speakerLabel: String {
         switch sessionState.selectedModel?.route {
-        case "codex": return "CODEX"
-        case "grok": return "GROK"
-        default: return "ASISTENTE"
+        case "codex": return "Codex"
+        case "grok": return "Grok"
+        default: return "iSyCode"
         }
     }
 
+    private var speakerSymbol: String {
+        let route = sessionState.selectedModel?.route
+        return route == "codex" || route == "grok" ? "chevron.left.forwardslash.chevron.right" : "sparkle"
+    }
+
+    /// The answer sits on the page with no bubble or border, like ChatGPT and Claude:
+    /// the person's bubbles and the tool rows are the only framed things in the chat.
     public var body: some View {
-        VStack(alignment: .leading, spacing: OCSpacing.sm) {
-            let text = event.assistantText ?? ""
+        let text = event.assistantText ?? ""
+        VStack(alignment: .leading, spacing: OCSpacing.base) {
             if !text.isEmpty || isLiveTail {
-                HStack(spacing: 8) {
-                    Image(systemName: sessionState.selectedModel?.route == "codex" || sessionState.selectedModel?.route == "grok" ? "chevron.left.forwardslash.chevron.right" : "sparkle")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(OCColor.agentBuild)
-                        .frame(width: 28, height: 28)
-                        .background(OCColor.agentBuildSoft)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
-                    Text(speakerLabel)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundColor(OCColor.agentBuild)
-                    Spacer()
-                    Text(event.timestamp.formatted(date: .omitted, time: .shortened))
-                        .font(OCTypography.metaMono)
-                        .foregroundColor(OCColor.textFaint)
+                if showsSpeaker {
+                    HStack(spacing: 6) {
+                        Image(systemName: speakerSymbol)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(OCColor.agentBuild)
+                            .accessibilityHidden(true)
+                        Text(speakerLabel)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(OCColor.textSecondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isHeader)
                 }
 
                 MarkdownText(content: isLiveTail ? text + "▍" : text, emphasisColor: OCColor.syntaxType)
@@ -176,15 +169,9 @@ public struct AssistantTextView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, OCSpacing.lg)
-        .padding(.vertical, OCSpacing.md)
-        .background(IysThemePreferences.active.assistantSurface)
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r18))
-        .overlay {
-            RoundedRectangle(cornerRadius: OCRadius.r18)
-                .stroke(OCColor.borderBase, lineWidth: 1)
-        }
-        .padding(.vertical, OCSpacing.xs)
+        .padding(.horizontal, 2)
+        .padding(.top, showsSpeaker ? OCSpacing.md : OCSpacing.xs)
+        .padding(.bottom, OCSpacing.xs)
     }
 }
 
@@ -339,6 +326,7 @@ public struct ToolCallCollapsedView: View {
     let event: TimelineEvent
     let agentColor: Color
     let onExpand: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     public init(event: TimelineEvent, agentColor: Color, onExpand: @escaping () -> Void) {
         self.event = event
@@ -346,69 +334,94 @@ public struct ToolCallCollapsedView: View {
         self.onExpand = onExpand
     }
 
+    /// One line: tool icon, what it did, the target (file, URL, command) and its state.
+    /// Success is a quiet check; only running, failed and permission draw color.
     public var body: some View {
-        HStack(spacing: OCSpacing.md) {
-            ZStack {
-                Circle()
-                    .fill(statusColor.opacity(0.14))
-                    .frame(width: 32, height: 32)
-                if event.toolState == .running {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .tint(statusColor)
-                } else {
-                    Image(systemName: toolIcon(for: event.toolName))
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(statusColor)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: OCSpacing.xs) {
-                    Text(toolTitle)
-                        .font(OCTypography.toolLabel)
-                        .foregroundColor(OCColor.textPrimary)
-                        .lineLimit(1)
-                    Spacer(minLength: OCSpacing.xs)
-                    if let duration = event.toolDuration {
-                        Text(formatDuration(duration))
-                            .font(OCTypography.metaMono)
-                            .foregroundColor(OCColor.textFaint)
-                    }
-                }
-                HStack(spacing: 5) {
-                    Text(statusTitle)
-                        .foregroundColor(statusColor)
-                    if let detail = toolDetail {
-                        Text("·")
-                            .foregroundColor(OCColor.textFaint)
-                        Text(detail)
-                            .foregroundColor(OCColor.textFaint)
-                            .lineLimit(1)
-                    }
-                }
-                .font(OCTypography.toolDetail)
-            }
-
-            Button(action: onExpand) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(OCColor.iconMuted)
-                    .rotationEffect(.degrees(event.isExpanded ? 90 : 0))
-                    .animation(.easeInOut(duration: 0.18), value: event.isExpanded)
-                    .frame(width: 36, height: 44)
-                    .contentShape(Rectangle())
-            }
+        // Toda la fila es el botón que despliega el detalle, no solo la flecha.
+        Button(action: onExpand) { rowContent }
             .buttonStyle(.plain)
-            .accessibilityLabel(event.isExpanded ? "Ocultar detalles" : "Ver detalles")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel([toolTitle, statusTitle, toolDetail].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityHint(event.isExpanded ? "Ocultar detalles" : "Ver detalles")
+            .accessibilityAddTraits(.isButton)
+    }
+
+    private var rowContent: some View {
+        HStack(spacing: OCSpacing.base) {
+            Image(systemName: toolIcon(for: event.toolName))
+                .font(.footnote.weight(.medium))
+                .foregroundColor(OCColor.iconMuted)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+
+            // At accessibility text sizes one line cannot hold title + path: stack them
+            // and let the title wrap instead of truncating to "Editando archi…".
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    titleText.lineLimit(3)
+                    detailText
+                }
+                .padding(.vertical, OCSpacing.base)
+            } else {
+                HStack(spacing: 5) {
+                    titleText.lineLimit(1).layoutPriority(1)
+                    detailText
+                }
+            }
+
+            Spacer(minLength: OCSpacing.xs)
+
+            if let duration = event.toolDuration, event.toolState != .running {
+                Text(formatDuration(duration))
+                    .font(OCTypography.metaMono)
+                    .foregroundColor(OCColor.textFaint)
+            }
+
+            statusMark
+                .frame(width: 18)
+
+            Image(systemName: "chevron.right")
+                .font(.caption2.weight(.semibold))
+                .foregroundColor(OCColor.iconMuted)
+                .rotationEffect(.degrees(event.isExpanded ? 90 : 0))
+                .animation(.easeInOut(duration: 0.18), value: event.isExpanded)
+                .accessibilityHidden(true)
         }
-        .padding(.horizontal, OCSpacing.md)
-        .padding(.vertical, OCSpacing.xs)
-        .frame(minHeight: 58)
+        .padding(.horizontal, OCSpacing.lg)
+        .frame(minHeight: 44)
         .background(event.toolState == .permission ? OCColor.warning.opacity(0.08) : Color.clear)
-        // Toda la fila despliega el detalle, no solo la flecha de 12 pt.
         .contentShape(Rectangle())
-        .onTapGesture { onExpand() }
+    }
+
+    private var titleText: some View {
+        Text(toolTitle)
+            .font(OCTypography.toolLabel)
+            .foregroundColor(OCColor.textPrimary)
+    }
+
+    @ViewBuilder private var detailText: some View {
+        if let detail = toolDetail {
+            Text(detail)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(OCColor.textFaint)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+    }
+
+    @ViewBuilder private var statusMark: some View {
+        switch event.toolState {
+        case .some(.running):
+            ProgressView()
+                .controlSize(.mini)
+                .tint(statusColor)
+        case .some(.failed), .some(.permission), .some(.success):
+            Image(systemName: event.toolState == .success ? "checkmark" : (event.toolState == .failed ? "xmark.circle.fill" : "exclamationmark.shield.fill"))
+                .font(.caption.weight(.semibold))
+                .foregroundColor(event.toolState == .success ? OCColor.success : statusColor)
+        case .none:
+            EmptyView()
+        }
     }
 
     private var statusColor: Color {
@@ -715,10 +728,8 @@ public struct ToolCallView: View {
                 agentColor: agentColor,
                 onExpand: { sessionState.toggleToolExpansion(id: event.id) }
             )
-            .padding(.horizontal, OCSpacing.md)
-            .background(OCColor.bgBase)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
-            .overlay(RoundedRectangle(cornerRadius: OCRadius.r10).stroke(OCColor.borderMuted, lineWidth: 1))
+            .background(OCColor.bgLayer1)
+            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12, style: .continuous))
 
             if event.isExpanded {
                 ToolCallExpandedView(event: event, agentColor: agentColor)
@@ -927,15 +938,16 @@ public struct CodeBlockView: View {
                     UIPasteboard.general.string = event.codeContent
                 } label: {
                     Image(systemName: "doc.on.doc")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundColor(OCColor.iconMuted)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 44, height: 36)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Copiar código")
             }
-            .padding(.horizontal, OCSpacing.base)
-            .frame(height: 30)
+            .padding(.leading, OCSpacing.lg)
+            .frame(minHeight: 36)
             .background(OCColor.bgBase)
             .overlay(
                 Rectangle()

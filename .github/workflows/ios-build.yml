@@ -241,13 +241,38 @@ jobs:
             xcrun simctl io "$UDID" screenshot "docs/screenshots/$SCENE.png"
             sips -Z 1600 "docs/screenshots/$SCENE.png"
           done
+          # Review-only captures (CI artifact, never committed: the commit step adds
+          # docs/screenshots/*.png, not this subfolder). The chat in dark mode and at a
+          # large accessibility text size, so a UI change is checked where it breaks first.
+          mkdir -p docs/screenshots/review
+          for SHOT in "chat-dark:dark:large" "chat-a11y-xl:light:accessibility-extra-large"; do
+            NAME="${SHOT%%:*}"
+            REST="${SHOT#*:}"
+            xcrun simctl ui "$UDID" appearance "${REST%%:*}"
+            xcrun simctl ui "$UDID" content_size "${REST#*:}"
+            xcrun simctl terminate "$UDID" dev.iyscode.movil || true
+            xcrun simctl launch "$UDID" dev.iyscode.movil "--readme-screenshot=chat"
+            # A content_size change makes the first frame slower; wait longer and log
+            # whether the app is still alive, so a blank capture says hang vs crash.
+            sleep 6
+            if xcrun simctl spawn "$UDID" launchctl list | grep -q dev.iyscode.movil; then
+              echo "review/$NAME: app running"
+            else
+              echo "::warning::review/$NAME: app NOT running (crashed?)"
+            fi
+            xcrun simctl io "$UDID" screenshot "docs/screenshots/review/$NAME.png"
+            sips -Z 1600 "docs/screenshots/review/$NAME.png"
+          done
+          xcrun simctl ui "$UDID" content_size large
           xcrun simctl ui "$UDID" appearance dark
 
       - name: Upload README screenshots
         uses: actions/upload-artifact@v4
         with:
           name: IysCodeMovil-ci-screenshots
-          path: docs/screenshots/*.png
+          path: |
+            docs/screenshots/*.png
+            docs/screenshots/review/*.png
           retention-days: 30
 
       # Keeps the README showing the current app. Pushes made with GITHUB_TOKEN
