@@ -152,6 +152,13 @@ public struct ChatSidebarView: View {
                         .foregroundColor(OCColor.textFaint)
                 }
                 Spacer(minLength: 4)
+                // Several conversations can work at once: show which ones are busy.
+                if store.runningSessionIDs.contains(session.id) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(IysThemePreferences.active.accent)
+                        .accessibilityLabel("Trabajando")
+                }
             }
             .padding(.horizontal, OCSpacing.md)
             .padding(.vertical, 9)

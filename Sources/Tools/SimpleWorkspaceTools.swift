@@ -35,21 +35,31 @@ public actor SimpleWorkspaceToolExecutor {
     private let workspace: any Workspace
     private let defaults: UserDefaults
     private let cloner: RepositoryCloner
+    /// Where the active project is remembered. Each conversation sandbox passes its own
+    /// key: with one shared key, opening conversation B (whose folder lacks A's clone)
+    /// erased A's active project.
+    private let projectKey: String
     private var undoStack: [Checkpoint] = []
 
-    public init(workspace: any Workspace, defaults: UserDefaults = .standard, cloner: RepositoryCloner = RepositoryCloner()) {
+    public init(
+        workspace: any Workspace,
+        defaults: UserDefaults = .standard,
+        cloner: RepositoryCloner = RepositoryCloner(),
+        activeProjectKey: String = SimpleWorkspaceToolExecutor.activeProjectKey
+    ) {
         self.workspace = workspace
         self.defaults = defaults
         self.cloner = cloner
+        self.projectKey = activeProjectKey
     }
 
     // MARK: - Active project
 
     /// The cloned repository the tools are scoped to, if it still exists.
     public func activeProject() async -> String? {
-        guard let stored = defaults.string(forKey: Self.activeProjectKey), !stored.isEmpty else { return nil }
+        guard let stored = defaults.string(forKey: projectKey), !stored.isEmpty else { return nil }
         guard await workspace.fileExists(at: stored) else {
-            defaults.removeObject(forKey: Self.activeProjectKey)
+            defaults.removeObject(forKey: projectKey)
             return nil
         }
         return stored
@@ -57,9 +67,9 @@ public actor SimpleWorkspaceToolExecutor {
 
     public func setActiveProject(_ directory: String?) {
         if let directory, !directory.isEmpty {
-            defaults.set(directory, forKey: Self.activeProjectKey)
+            defaults.set(directory, forKey: projectKey)
         } else {
-            defaults.removeObject(forKey: Self.activeProjectKey)
+            defaults.removeObject(forKey: projectKey)
         }
         undoStack.removeAll()
     }

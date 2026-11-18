@@ -52,10 +52,11 @@ public actor NativeCapabilityToolExecutor: @preconcurrency ToolExecutor {
         defaults: UserDefaults = .standard,
         l1Registry: DynamicToolRegistry = .shared,
         secretResolver: SecretVaultRuntimeResolver = .shared,
-        localIphone: LocalIphoneController = LocalIphoneController(wda: WdaClientDriver(client: WdaClient()), elementReader: WdaElementReader())
+        localIphone: LocalIphoneController = LocalIphoneController(wda: WdaClientDriver(client: WdaClient()), elementReader: WdaElementReader()),
+        activeProjectKey: String = SimpleWorkspaceToolExecutor.activeProjectKey
     ) {
         self.fileSystem = MiniAgentFileSystemToolExecutor(workspace: workspace)
-        self.simple = SimpleWorkspaceToolExecutor(workspace: workspace, defaults: defaults)
+        self.simple = SimpleWorkspaceToolExecutor(workspace: workspace, defaults: defaults, activeProjectKey: activeProjectKey)
         self.persistence = persistence
         self.defaults = defaults
         self.assistant = AssistantToolExecutor()

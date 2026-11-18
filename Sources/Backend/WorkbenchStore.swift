@@ -13,6 +13,9 @@ public final class WorkbenchStore: ObservableObject {
     @Published public var sessionState = ActiveSessionState()
     @Published public private(set) var projects: [Project] = []
     @Published public private(set) var sessions: [Session] = []
+    /// Conversations with a turn in progress (or waiting for the on-device model). Several
+    /// can run at once; `sessionState.isProcessing` mirrors only the one on screen.
+    @Published public private(set) var runningSessionIDs: Set<String> = []
     @Published public private(set) var backendMode: BackendMode = .unconfigured
     @Published public private(set) var connectionStatus: String = ""
     /// Enlace recibido o pegado, a la espera de que la persona confirme el equipo.
@@ -606,7 +609,14 @@ public final class WorkbenchStore: ObservableObject {
         }
         streamPartKinds.removeAll()
         sessionState.clearTimeline()
-        
+        // Another conversation may still be working: the composer shows Stop only when
+        // the one being opened is busy, and the previous one's question stays with it
+        // (the backend asks again when that conversation is reopened).
+        sessionState.isProcessing = runningSessionIDs.contains(session.id)
+        if backendMode == .native {
+            sessionState.pendingPermission = nil
+        }
+
         if let backend = currentBackend {
             do {
                 try await backend.selectSession(session.id)
@@ -644,6 +654,12 @@ public final class WorkbenchStore: ObservableObject {
             UserDefaults.standard.set(project.id, forKey: RuntimeIntentDefaults.lastProjectIDKey)
             UserDefaults.standard.set(project.name, forKey: RuntimeIntentDefaults.lastProjectNameKey)
             sessionState.clearTimeline()
+            // A new conversation starts free even while another one keeps working: it used
+            // to inherit isProcessing, so the composer stayed on Stop and nothing could be sent.
+            sessionState.isProcessing = false
+            if backendMode == .native {
+                sessionState.pendingPermission = nil
+            }
             try? await backend.selectSession(session.id)
             return session
         } catch {
@@ -706,6 +722,10 @@ public final class WorkbenchStore: ObservableObject {
         let activeModelID = sessionState.selectedModel?.apiModelId ?? snapshot.modelName ?? configuredModelName
 
         sessionState.isProcessing = true
+        let runningID = currentSessionID
+        if let runningID {
+            runningSessionIDs.insert(runningID)
+        }
         if backendMode == .remote {
             isProcessingRemote = true
         }
@@ -729,6 +749,7 @@ public final class WorkbenchStore: ObservableObject {
                 if let blockedReason = prepared.blockedReason {
                     await MainActor.run {
                         self.sessionState.isProcessing = false
+                        if let runningID { self.runningSessionIDs.remove(runningID) }
                         self.isProcessingRemote = false
                         self.addErrorEvent("Adjunto no compatible con el proveedor actual:\n\(blockedReason)")
                     }
@@ -760,12 +781,14 @@ public final class WorkbenchStore: ObservableObject {
             } catch is CancellationError {
                 await MainActor.run {
                     self.sessionState.isProcessing = false
+                    if let runningID { self.runningSessionIDs.remove(runningID) }
                     self.isProcessingRemote = false
                     self.addSystemEvent("Stopped")
                 }
             } catch {
                 await MainActor.run {
                     self.sessionState.isProcessing = false
+                    if let runningID { self.runningSessionIDs.remove(runningID) }
                     self.isProcessingRemote = false
                     self.addErrorEvent("Prompt failed: \(error.localizedDescription)")
                 }
@@ -1056,12 +1079,14 @@ public final class WorkbenchStore: ObservableObject {
         case .connected:
             sessionState.isProcessing = false
             isProcessingRemote = false
+            runningSessionIDs.removeAll()
             connectionHealth = .connected
             addSystemEvent("Connected")
-            
+
         case .disconnected(let reason):
             sessionState.isProcessing = false
             isProcessingRemote = false
+            runningSessionIDs.removeAll()
             connectionHealth = .disconnected
             if let reason { addSystemEvent("Disconnected: \(reason)") }
             
@@ -1087,19 +1112,50 @@ public final class WorkbenchStore: ObservableObject {
                     self?.respondToPermission(requestId: requestID, decision: decision)
                 }
                 PermissionNotifier.shared.notify(requestID: requestID, tool: tool, command: command, explanation: explanation)
+            } else if backendMode == .native {
+                // A conversation working in the background is waiting: tell the person.
+                // The question shows up in full when they open that conversation.
+                PermissionNotifier.shared.notify(requestID: requestID, tool: tool, command: command, explanation: explanation)
             }
-            
+
         case .sessionIdle(let sessionID):
+            // The native backend reports busy/idle with `.sessionRunState`, sent once the
+            // turn has fully released the model; `.sessionIdle` comes a moment earlier.
+            if backendMode != .native {
+                runningSessionIDs.remove(sessionID)
+            }
             if sessionID == currentSessionID {
-                sessionState.isProcessing = false
-                isProcessingRemote = false
+                if backendMode != .native {
+                    sessionState.isProcessing = false
+                    isProcessingRemote = false
+                }
                 addSuccessEvent("Listo")
             }
-            
+
         case .sessionError(let message):
             sessionState.isProcessing = false
             isProcessingRemote = false
+            if backendMode != .native, let currentSessionID {
+                runningSessionIDs.remove(currentSessionID)
+            }
             addErrorEvent(message)
+
+        case .sessionRunState(let sessionID, let state):
+            let onScreen = sessionID == currentSessionID
+            switch state {
+            case .running:
+                runningSessionIDs.insert(sessionID)
+                if onScreen { sessionState.isProcessing = true }
+            case .queued:
+                runningSessionIDs.insert(sessionID)
+                if onScreen {
+                    sessionState.isProcessing = true
+                    addSystemEvent("En fila: el modelo del iPhone está terminando otra conversación. Esta empieza en cuanto quede libre.")
+                }
+            case .idle:
+                runningSessionIDs.remove(sessionID)
+                if onScreen { sessionState.isProcessing = false }
+            }
             
         case .sessionsChanged:
             if let projectID = currentProjectID, let backend = currentBackend {
@@ -1120,9 +1176,6 @@ public final class WorkbenchStore: ObservableObject {
             
         case .filesChanged:
             await loadFiles()
-            
-        default:
-            break
         }
     }
     
@@ -1823,5 +1876,63 @@ extension WorkbenchStore {
                 await restorePersistedExperience()
             }
         }
+    }
+}
+
+// MARK: - Conversation sandboxes (Ajustes)
+
+public struct ConversationSandboxSummary: Equatable, Sendable {
+    public let folders: Int
+    public let bytes: Int64
+    /// Folders whose conversation was deleted; nil when the conversation list could not be read.
+    public let orphanFolders: Int?
+    public let orphanBytes: Int64
+}
+
+extension WorkbenchStore {
+    /// How many conversation folders exist and how much they take, for Ajustes.
+    public func conversationSandboxSummary() async -> ConversationSandboxSummary {
+        let entries = ConversationSandboxes.list()
+        let live = await liveConversationIDs()
+        let orphans = live.map { ConversationSandboxes.orphans(entries, liveConversationIDs: $0) }
+        return ConversationSandboxSummary(
+            folders: entries.count,
+            bytes: entries.reduce(0) { $0 + $1.byteCount },
+            orphanFolders: orphans?.count,
+            orphanBytes: orphans?.reduce(0) { $0 + $1.byteCount } ?? 0
+        )
+    }
+
+    /// `onlyOrphans`: folders of deleted conversations. Otherwise every folder. Folders of
+    /// conversations working right now are always kept.
+    public func cleanConversationSandboxes(onlyOrphans: Bool) async -> ConversationSandboxes.CleanupResult {
+        let entries = ConversationSandboxes.list()
+        let targets: [ConversationSandboxes.Entry]
+        if onlyOrphans {
+            // Without the conversation list we cannot tell which folders are orphans: delete nothing.
+            guard let live = await liveConversationIDs() else {
+                return ConversationSandboxes.CleanupResult(removedFolders: 0, freedBytes: 0, skippedRunning: 0)
+            }
+            targets = ConversationSandboxes.orphans(entries, liveConversationIDs: live)
+        } else {
+            targets = entries
+        }
+        let result = ConversationSandboxes.remove(targets, keepingRunning: runningSessionIDs)
+        (currentBackend as? NativeSwiftBackend)?.forgetIdleRuntimes(folderNames: Set(targets.map(\.folderName)))
+        if !onlyOrphans {
+            _ = await loadFiles()
+        }
+        return result
+    }
+
+    private func liveConversationIDs() async -> Set<String>? {
+        let persistence: IOSPersistence?
+        if let native = currentBackend as? NativeSwiftBackend, let shared = native.persistence {
+            persistence = shared
+        } else {
+            persistence = try? IOSPersistence()
+        }
+        guard let persistence, let conversations = try? await persistence.listConversations() else { return nil }
+        return Set(conversations.map(\.id))
     }
 }

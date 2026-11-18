@@ -78,6 +78,17 @@ public enum WorkbenchEvent: Sendable {
     case modelChanged(ModelInfo?)
     case auxiliaryModelStatus(GUSDualModelStatus)
     case sequenceScopeChanged(SequenceApprovalScope?)
+    /// A conversation started, queued for the on-device model, or finished a turn.
+    /// Sent for every conversation, not only the one on screen, so the store knows which
+    /// ones are busy while the person moves between them.
+    case sessionRunState(sessionID: String, state: ConversationRunState)
+}
+
+public enum ConversationRunState: String, Sendable, Equatable {
+    case running
+    /// Waiting for the on-device model, which another conversation is using.
+    case queued
+    case idle
 }
 
 public protocol WorkbenchBackend: Sendable {

@@ -1,13 +1,49 @@
 import Foundation
 import SwiftUI
 
+/// Everything one conversation needs to run on its own: its loop, its folder and its
+/// tools. Several can run at the same time; switching conversations no longer cancels
+/// the one that was working.
+@MainActor
+private final class ConversationRuntime {
+    let sessionID: String
+    let loop: AgentLoop
+    let executor: NativeCapabilityToolExecutor
+    let workspace: IOSWorkspace
+    /// The backend's `loopGeneration` this loop was built for (model, provider, tools).
+    let generation: Int
+    var runningTask: Task<Void, Never>?
+    var liveAnswerID: String?
+    var mayHaveLeftApp = false
+    /// True while this conversation holds the on-device model (see `LocalModelTurnGate`).
+    var holdsLocalModel = false
+
+    var isRunning: Bool { runningTask != nil }
+
+    init(sessionID: String, loop: AgentLoop, executor: NativeCapabilityToolExecutor, workspace: IOSWorkspace, generation: Int) {
+        self.sessionID = sessionID
+        self.loop = loop
+        self.executor = executor
+        self.workspace = workspace
+        self.generation = generation
+    }
+}
+
 @MainActor
 public final class NativeSwiftBackend: WorkbenchBackend {
     public var mode: BackendMode { .native }
-    
+
+    /// The default shared folder: listed as the project, and the folder every
+    /// conversation uses when the person picked one in Files (`workspaceBookmark`).
     private var workspace: IOSWorkspace?
     var persistence: IOSPersistence?
-    private var agentLoop: AgentLoop?
+    /// One runtime per conversation opened in this launch, keyed by conversation id.
+    private var runtimes: [String: ConversationRuntime] = [:]
+    /// Bumped when the model, provider or tool target changes. An idle runtime built for
+    /// an older generation is rebuilt before its next turn; a running one finishes first.
+    private var loopGeneration = 0
+    private var gusPermissionMode = false
+    private let localModelGate = LocalModelTurnGate()
     private var modelProvider: (any ModelProvider)?
     private var activeModelName: String?
     private var providerID = "scripted"
@@ -17,22 +53,23 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     public var usesLiveModel: Bool { providerID != "scripted" }
     public var activeProviderID: String { providerID }
     public var currentModelName: String? { activeModelName }
-    private var liveAnswerID: String?
+    /// Executor over the shared `workspace`: used by conversations when the person picked
+    /// a folder, and for phone-project actions before any conversation is open.
     private var toolExecutor: NativeCapabilityToolExecutor?
     /// When set, the agent's tools run in a Docker sandbox on the user's computer
     /// instead of the iPhone workspace. The model and the conversation stay here.
     private var sandboxExecutor: SandboxToolExecutor?
     private var sandboxProjectName: String?
     private var sandboxProjectPath: String?
-    private var boundSessionID: String?
-    private var runningTask: Task<Void, Never>?
-    private var permissionWaiters: [String: CheckedContinuation<PermissionResponse.Decision, Never>] = [:]
+    private var permissionWaiters: [String: (sessionID: String, continuation: CheckedContinuation<PermissionResponse.Decision, Never>)] = [:]
+    /// The question each waiting conversation asked, re-sent when the person opens it:
+    /// a conversation running in the background would otherwise wait forever.
+    private var pendingPermissionEvents: [String: WorkbenchEvent] = [:]
     public var flowMode = false
     /// Acuse de recibo del turno del buzón [GUS] (una sola vez): lo pone
     /// deliverMailboxTask y lo resuelve el Task de sendPrompt al terminar el turno.
     /// Nil en turnos normales del usuario.
     private var mailboxTurnCompletion: ((Bool) -> Void)?
-    private var mayHaveLeftAppInTurn = false
     private var connectionStatusStorage = "native runtime"
     private var currentSessionIDStorage: String?
     private var eventContinuation: AsyncStream<WorkbenchEvent>.Continuation?
@@ -66,7 +103,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     public func disconnect() async {
         await releaseActiveModel()
         failPendingPermissions()
-        boundSessionID = nil
+        runtimes.removeAll()
         activeModelName = nil
         toolExecutor = nil
         sandboxExecutor = nil
@@ -106,53 +143,88 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     /// dropped so the next prompt is built with the sandbox tools and prompt.
     public func attachSandbox(_ executor: SandboxToolExecutor, projectName: String, projectPath: String) {
         failPendingPermissions()
-        runningTask?.cancel()
-        runningTask = nil
+        cancelAllRuns()
         sandboxExecutor = executor
         sandboxProjectName = projectName
         sandboxProjectPath = projectPath
-        agentLoop = nil
-        boundSessionID = nil
+        invalidateLoops()
     }
 
     /// Back to the iPhone workspace tools.
     public func detachSandbox() {
         guard sandboxExecutor != nil else { return }
         failPendingPermissions()
-        runningTask?.cancel()
-        runningTask = nil
+        cancelAllRuns()
         sandboxExecutor = nil
         sandboxProjectName = nil
         sandboxProjectPath = nil
-        agentLoop = nil
-        boundSessionID = nil
+        invalidateLoops()
     }
 
     public var isUsingSandbox: Bool { sandboxExecutor != nil }
 
+    // MARK: - Conversation runtimes
+
+    private var currentRuntime: ConversationRuntime? {
+        currentSessionIDStorage.flatMap { runtimes[$0] }
+    }
+
+    /// Tools of the conversation on screen (its own folder), or the shared ones before
+    /// any conversation is open.
+    private var currentExecutor: NativeCapabilityToolExecutor? {
+        currentRuntime?.executor ?? toolExecutor
+    }
+
+    private var currentWorkspace: IOSWorkspace? {
+        currentRuntime?.workspace ?? workspace
+    }
+
+    /// Ids of the conversations with a turn in progress.
+    public var runningSessionIDs: Set<String> {
+        Set(runtimes.values.filter(\.isRunning).map(\.sessionID))
+    }
+
+    /// Loops are rebuilt lazily, so a turn in progress is never cut by a rebuild.
+    private func invalidateLoops() {
+        loopGeneration += 1
+    }
+
+    private func cancelAllRuns() {
+        for runtime in runtimes.values {
+            runtime.runningTask?.cancel()
+        }
+    }
+
+    /// Forgets idle runtimes whose folder was just deleted, so their next turn recreates it.
+    public func forgetIdleRuntimes(folderNames: Set<String>) {
+        for (id, runtime) in runtimes where !runtime.isRunning && folderNames.contains(ConversationSandboxes.folderName(for: id)) {
+            runtimes[id] = nil
+        }
+    }
+
     // MARK: - Disposable clones on the iPhone
 
-    /// Downloads a public GitHub repository into the workspace and makes it the active project.
+    /// Downloads a public GitHub repository into the conversation's folder and makes it the active project.
     public func cloneRepository(_ repository: String) async throws -> RepositoryCloner.Report {
-        guard let exec = toolExecutor else { throw WorkbenchError.notConnected }
+        guard let exec = currentExecutor else { throw WorkbenchError.notConnected }
         return try await exec.cloneRepository(repository)
     }
 
     public func activePhoneProject() async -> String? {
-        await toolExecutor?.activeProject()
+        await currentExecutor?.activeProject()
     }
 
     public func canUndoPhoneProjectChange() async -> Bool {
-        await toolExecutor?.canUndoLastChange() ?? false
+        await currentExecutor?.canUndoLastChange() ?? false
     }
 
     public func undoPhoneProjectChange() async throws -> String {
-        guard let exec = toolExecutor else { throw WorkbenchError.notConnected }
+        guard let exec = currentExecutor else { throw WorkbenchError.notConnected }
         return try await exec.undoLastChange()
     }
 
     public func closeActivePhoneProject() async {
-        await toolExecutor?.closeActiveProject()
+        await currentExecutor?.closeActiveProject()
     }
 
     /// Loads the selected provider when its key exists, then falls back to any
@@ -166,7 +238,11 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         }
         let configuration = try await ps.loadConfiguration()
         let preference = configuration?.defaultModelProvider ?? "nvidia"
-        await toolExecutor?.setGUSPermissionMode(preference == "gus-local")
+        gusPermissionMode = preference == "gus-local"
+        await toolExecutor?.setGUSPermissionMode(gusPermissionMode)
+        for runtime in runtimes.values {
+            await runtime.executor.setGUSPermissionMode(gusPermissionMode)
+        }
         if preference == "gus-local" {
             await modelDownloadManager.refresh()
             guard let manifest = modelDownloadManager.selectedManifest,
@@ -199,8 +275,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
                     providerDisplay = coordinator.name
                     providerModelIDs = coordinator.availableModels
                     isDualSmolActive = true
-                    agentLoop = nil
-                    boundSessionID = nil
+                    invalidateLoops()
                     connectionStatusStorage = "sandbox · GUS local · Dual-Smol experimental · Qwen2.5-0.5B + SmolLM2-360M · 2K · sin conexión de proveedor"
                     eventContinuation?.yield(.auxiliaryModelStatus(.active))
                     return
@@ -222,8 +297,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             providerDisplay = provider.name
             providerModelIDs = provider.availableModels
             isDualSmolActive = false
-            agentLoop = nil
-            boundSessionID = nil
+            invalidateLoops()
             connectionStatusStorage = "sandbox · GUS local · \(manifest.modelName) · 2K · sin conexión de proveedor"
             return
         }
@@ -263,27 +337,33 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     }
 
 
+    /// Stops every conversation's turn (they all use this model) before unloading it.
     private func releaseActiveModel() async {
-        runningTask?.cancel()
-        let activeTask = runningTask
-        runningTask = nil
+        let activeTasks = runtimes.values.compactMap(\.runningTask)
+        cancelAllRuns()
         failPendingPermissions()
         if let dualProvider = modelProvider as? GUSDualModelCoordinator {
             await dualProvider.cancel()
         } else if let localProvider = modelProvider as? GUSLocalModelProvider {
             await localProvider.cancel()
         }
-        await activeTask?.value
+        for task in activeTasks {
+            await task.value
+        }
         if let dualProvider = modelProvider as? GUSDualModelCoordinator {
             await dualProvider.unload()
         } else if let localProvider = modelProvider as? GUSLocalModelProvider {
             await localProvider.unload()
         }
         isDualSmolActive = false
-        agentLoop = nil
+        invalidateLoops()
         modelProvider = nil
         activeModelName = nil
-        boundSessionID = nil
+    }
+
+    /// The on-device model has one context: its turns go through `localModelGate`.
+    private var usesOnDeviceModel: Bool {
+        modelProvider is GUSLocalModelProvider || modelProvider is GUSDualModelCoordinator
     }
 
     private func installOfflineDemo() {
@@ -294,8 +374,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         providerDisplay = "Scripted Demo"
         providerModelIDs = provider.availableModels
         isDualSmolActive = false
-        agentLoop = nil
-        boundSessionID = nil
+        invalidateLoops()
         connectionStatusStorage = "sandbox · offline demo. No API key or network required."
     }
 
@@ -327,8 +406,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         providerDisplay = display
         providerModelIDs = models
         isDualSmolActive = false
-        agentLoop = nil
-        boundSessionID = nil
+        invalidateLoops()
         connectionStatusStorage = "sandbox · \(activeModelName ?? fallback)"
     }
 
@@ -346,29 +424,56 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         providerDisplay = codex.name
         providerModelIDs = models
         isDualSmolActive = false
-        agentLoop = nil
-        boundSessionID = nil
+        invalidateLoops()
         connectionStatusStorage = "sandbox · \(activeModelName ?? "ChatGPT OAuth")"
     }
 
-    /// The loop persists under the session the UI opened. A backend-wide id
-    /// made `session.idle` miss the open session, so the composer never left Stop.
-    private func installLoop(sessionID: String) async {
+    /// Makes `sessionID` the conversation on screen and returns its runtime, building it
+    /// on first use or when the model/tools changed while it was idle. Opening another
+    /// conversation no longer cancels the one that is working: each keeps its own loop.
+    @discardableResult
+    private func installLoop(sessionID: String) async -> ConversationRuntime? {
         // El vigilante del buzón [GUS] arranca con la sesión (idempotente: si ya
         // está corriendo, no hace nada). Sin sesión no hay dónde ejecutar.
         await maybeStartMailboxWatcher()
-        guard let ws = workspace, let ps = persistence, let provider = modelProvider, let exec = toolExecutor else { return }
+        currentSessionIDStorage = sessionID
+        defer { resendPendingPermission(for: sessionID) }
+
+        let existing = runtimes[sessionID]
+        if let existing, existing.generation == loopGeneration || existing.isRunning {
+            return existing
+        }
+        guard let ps = persistence, let provider = modelProvider else { return nil }
+
+        // Own folder per conversation; the folder the person picked in Files is shared.
+        // A rebuilt runtime keeps its folder and executor (active project, undo history).
+        let ws: IOSWorkspace
+        let exec: NativeCapabilityToolExecutor
+        if let existing {
+            ws = existing.workspace
+            exec = existing.executor
+        } else if workspaceBookmark == nil {
+            do {
+                ws = try IOSWorkspace(rootName: ConversationSandboxes.folderName(for: sessionID))
+            } catch {
+                eventContinuation?.yield(.sessionError("No pude crear la carpeta de esta conversación: \(error.localizedDescription)"))
+                return nil
+            }
+            exec = NativeCapabilityToolExecutor(
+                workspace: ws,
+                persistence: ps,
+                activeProjectKey: ConversationSandboxes.activeProjectKey(for: sessionID)
+            )
+        } else {
+            guard let shared = workspace, let sharedExecutor = toolExecutor else { return nil }
+            ws = shared
+            exec = sharedExecutor
+        }
+
+        await exec.setGUSPermissionMode(gusPermissionMode)
         let activeContract = AgentContractStore.shared.activeAgentForSession
         await exec.setActiveContract(activeContract)
         await exec.configureSharedMemory(localOnly: provider.capabilities.localOnly, conversationID: sessionID)
-        let modelName = activeModelName
-        if boundSessionID == sessionID, agentLoop != nil {
-            currentSessionIDStorage = sessionID
-            return
-        }
-        failPendingPermissions()
-        runningTask?.cancel()
-        runningTask = nil
         // With a sandbox linked the agent also gets the iPhone's companion tools (Google, notifications, Shortcuts):
         // before, it used only the sandbox's and could not read the person's mail.
         let activeExecutor: any ToolExecutor
@@ -382,7 +487,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             workspace: ws,
             persistence: ps,
             modelProvider: provider,
-            modelName: modelName,
+            modelName: activeModelName,
             toolExecutor: activeExecutor,
             systemPrompt: systemPromptText(contract: activeContract),
             maxTurns: 12,
@@ -394,37 +499,47 @@ public final class NativeSwiftBackend: WorkbenchBackend {
                 if await self.flowMode && !request.requiresApprovalEveryTime {
                     return PermissionResponse(requestId: request.id, decision: .allowOnce)
                 }
-                let decision = await self.waitForPermission(request)
+                let decision = await self.waitForPermission(request, sessionID: sessionID)
                 return PermissionResponse(requestId: request.id, decision: decision)
             }
         ))
         await loop.setEventHandler { [weak self] event in
-            await self?.handleAgentEvent(event)
+            await self?.handleAgentEvent(event, sessionID: sessionID)
         }
-        agentLoop = loop
-        boundSessionID = sessionID
-        currentSessionIDStorage = sessionID
+        let runtime = ConversationRuntime(sessionID: sessionID, loop: loop, executor: exec, workspace: ws, generation: loopGeneration)
+        runtimes[sessionID] = runtime
+        return runtime
     }
 
-    private func waitForPermission(_ request: PermissionRequest) async -> PermissionResponse.Decision {
-        guard let sessionID = currentSessionIDStorage else { return .deny }
-        eventContinuation?.yield(.permissionAsked(
+    private func waitForPermission(_ request: PermissionRequest, sessionID: String) async -> PermissionResponse.Decision {
+        let event = WorkbenchEvent.permissionAsked(
             requestID: request.id,
             sessionID: sessionID,
             tool: request.toolName,
             command: request.arguments.map { "\($0.key)=\($0.value)" }.joined(separator: " "),
             explanation: request.reason
-        ))
+        )
+        pendingPermissionEvents[sessionID] = event
+        eventContinuation?.yield(event)
         return await withCheckedContinuation { continuation in
-            permissionWaiters[request.id] = continuation
+            permissionWaiters[request.id] = (sessionID, continuation)
         }
     }
 
-    private func failPendingPermissions() {
-        let waiters = permissionWaiters
-        permissionWaiters.removeAll()
-        for waiter in waiters.values {
-            waiter.resume(returning: .deny)
+    /// The store shows a permission only for the conversation on screen; re-ask when the
+    /// person opens a conversation that has been waiting in the background.
+    private func resendPendingPermission(for sessionID: String) {
+        guard let event = pendingPermissionEvents[sessionID] else { return }
+        eventContinuation?.yield(event)
+    }
+
+    /// Denies the waiting permissions of one conversation, or of all when `sessionID` is nil.
+    private func failPendingPermissions(for sessionID: String? = nil) {
+        let matching = permissionWaiters.filter { sessionID == nil || $0.value.sessionID == sessionID }
+        for (requestID, waiter) in matching {
+            permissionWaiters[requestID] = nil
+            pendingPermissionEvents[waiter.sessionID] = nil
+            waiter.continuation.resume(returning: .deny)
         }
     }
     
@@ -442,11 +557,11 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     }
 
     public func revokeSequenceApproval() async {
-        await agentLoop?.revokeSequenceApproval()
+        await currentRuntime?.loop.revokeSequenceApproval()
     }
-    
+
     public func listProjects() async throws -> [Project] {
-        guard let ws = workspace else { throw WorkbenchError.notConnected }
+        guard let ws = currentWorkspace else { throw WorkbenchError.notConnected }
         let project = Project(
             id: "native:\(ws.rootURL.lastPathComponent)",
             name: sandboxProjectName.map { "\($0) · sandbox" } ?? "iOS Sandbox",
@@ -494,12 +609,13 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     public func deleteSession(sessionID: String) async throws {
         guard let ps = persistence else { throw WorkbenchError.notConnected }
         try await ps.deleteConversation(id: sessionID)
+        // Its folder stays on disk until "Limpiar" in Ajustes: deleting a chat should
+        // not silently delete files the agent made.
+        if let runtime = runtimes[sessionID] {
+            await stopRun(runtime)
+        }
+        runtimes[sessionID] = nil
         if currentSessionIDStorage == sessionID {
-            failPendingPermissions()
-            runningTask?.cancel()
-            runningTask = nil
-            agentLoop = nil
-            boundSessionID = nil
             currentSessionIDStorage = nil
         }
         eventContinuation?.yield(.sessionsChanged)
@@ -523,14 +639,16 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         guard let sessionID = currentSessionIDStorage else { throw WorkbenchError.noSession }
         if let requested = model?.apiModelId, providerModelIDs.contains(requested), requested != activeModelName {
             activeModelName = requested
-            agentLoop = nil
-            boundSessionID = nil
+            invalidateLoops()
         }
-        await installLoop(sessionID: sessionID)
-        guard let loop = agentLoop else {
+        guard let runtime = await installLoop(sessionID: sessionID) else {
             throw WorkbenchError.unsupportedFeature("Agent runtime not initialized")
         }
-        
+        guard !runtime.isRunning else {
+            throw WorkbenchError.unsupportedFeature("Esta conversación todavía está trabajando. Espera a que termine o detenla.")
+        }
+        let loop = runtime.loop
+
         await PermissionNotifier.shared.prepare()
         if let ps = persistence, var conv = try? await ps.loadConversation(id: sessionID) {
             let trimmedTitle = conv.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -543,39 +661,70 @@ public final class NativeSwiftBackend: WorkbenchBackend {
                 }
             }
         }
-        let sessionAtStart = sessionID
-        mayHaveLeftAppInTurn = false
+        runtime.mayHaveLeftApp = false
+        // A mailbox turn's acknowledgement belongs to this turn only.
+        let mailboxCompletion = mailboxTurnCompletion
+        mailboxTurnCompletion = nil
+        let onDeviceModel = usesOnDeviceModel
+        let gate = localModelGate
         BackgroundRunKeeper.shared.begin()
-        runningTask = Task { [weak self] in
-            defer {
-                BackgroundRunKeeper.shared.end()
-                self?.eventContinuation?.yield(.sessionsChanged)
+        eventContinuation?.yield(.sessionRunState(sessionID: sessionID, state: .running))
+        runtime.runningTask = Task { [weak self, runtime] in
+            var holdsModel = false
+            if onDeviceModel {
+                // The on-device model serves one conversation at a time: wait in line.
+                if await gate.isBusy {
+                    self?.eventContinuation?.yield(.sessionRunState(sessionID: sessionID, state: .queued))
+                }
+                holdsModel = await gate.acquire()
+                runtime.holdsLocalModel = holdsModel
+                if holdsModel {
+                    self?.eventContinuation?.yield(.sessionRunState(sessionID: sessionID, state: .running))
+                }
             }
-            guard let self else { return }
-            do {
-                _ = try await loop.run(userInput: text, multimodalParts: multimodalParts)
-                await self.returnToAppIfNeeded()
-                self.completeMailboxTurn(success: true)
-            } catch is CancellationError {
-                return
-            } catch {
-                self.completeMailboxTurn(success: false)
-                guard self.currentSessionIDStorage == sessionAtStart else { return }
-                self.eventContinuation?.yield(.sessionError(error.localizedDescription))
+            if !onDeviceModel || holdsModel {
+                do {
+                    try Task.checkCancellation()
+                    _ = try await loop.run(userInput: text, multimodalParts: multimodalParts)
+                    await self?.returnToAppIfNeeded(runtime)
+                    mailboxCompletion?(true)
+                } catch is CancellationError {
+                    // Stopped: the mailbox task stays "en curso" and is retried later.
+                } catch {
+                    mailboxCompletion?(false)
+                    if self?.currentSessionIDStorage == sessionID {
+                        self?.eventContinuation?.yield(.sessionError(error.localizedDescription))
+                    }
+                }
             }
+            if holdsModel {
+                runtime.holdsLocalModel = false
+                await gate.release()
+            }
+            runtime.runningTask = nil
+            BackgroundRunKeeper.shared.end()
+            self?.eventContinuation?.yield(.sessionRunState(sessionID: sessionID, state: .idle))
+            self?.eventContinuation?.yield(.sessionsChanged)
         }
     }
-    
+
+    /// Stops the conversation on screen only; the others keep working.
     public func abort() async throws {
-        failPendingPermissions()
-        runningTask?.cancel()
-        runningTask = nil
+        guard let runtime = currentRuntime else { return }
+        await stopRun(runtime)
+        eventContinuation?.yield(.sessionError("Stopped"))
+    }
+
+    private func stopRun(_ runtime: ConversationRuntime) async {
+        failPendingPermissions(for: runtime.sessionID)
+        runtime.runningTask?.cancel()
+        // Interrupt the on-device generation only when this conversation is the one using it.
+        guard runtime.holdsLocalModel else { return }
         if let dualProvider = modelProvider as? GUSDualModelCoordinator {
             await dualProvider.cancel()
         } else if let localProvider = modelProvider as? GUSLocalModelProvider {
             await localProvider.cancel()
         }
-        eventContinuation?.yield(.sessionError("Stopped"))
     }
 
     private func installSingleLocalModel(manifest: GUSModelManifest, modelURL: URL) async throws {
@@ -587,14 +736,14 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         providerDisplay = provider.name
         providerModelIDs = provider.availableModels
         isDualSmolActive = false
-        agentLoop = nil
-        boundSessionID = nil
+        invalidateLoops()
         connectionStatusStorage = "sandbox · GUS local · \(manifest.modelName) · 2K · sin conexión de proveedor"
     }
     
     public func replyPermission(requestID: String, decision: PermissionResponse.Decision) async throws {
         guard let waiter = permissionWaiters.removeValue(forKey: requestID) else { return }
-        waiter.resume(returning: decision)
+        pendingPermissionEvents[waiter.sessionID] = nil
+        waiter.continuation.resume(returning: decision)
     }
 
     // MARK: - Buzón [GUS] (loop GUS ↔ Muse, Fase 3)
@@ -613,20 +762,13 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         await GUSMailboxWatcher.shared.stopPolling()
     }
 
-    /// Resuelve el acuse de recibo del turno del buzón (una sola vez). Nil en turnos normales.
-    private func completeMailboxTurn(success: Bool) {
-        guard let completion = mailboxTurnCompletion else { return }
-        mailboxTurnCompletion = nil
-        completion(success)
-    }
-
     /// Entrega una tarea pendiente del buzón [GUS] como un turno del agente.
     /// Marca `en curso` al tomarla y `hecho` solo si el turno terminó bien; si falla
     /// o no se puede entregar, queda `en curso` y el vigilante la reintenta cuando se
     /// vuelve obsoleta (el buzón es la fuente de verdad). No entrega si ya hay un
     /// turno en marcha o no hay sesión abierta: la tarea sigue pendiente en el buzón.
     private func deliverMailboxTask(_ task: GUSMailboxWatcher.MailboxTask, body: String) async {
-        guard runningTask == nil, currentSessionIDStorage != nil else { return }
+        guard currentSessionIDStorage != nil, currentRuntime?.isRunning != true else { return }
         do {
             try await GUSMailboxWatcher.shared.mark(
                 taskID: task.id, state: .enCurso, recipient: task.recipient,
@@ -691,13 +833,13 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     
     public func stopEventStream() async {
         failPendingPermissions()
-        runningTask?.cancel()
-        runningTask = nil
+        cancelAllRuns()
     }
-    
+
+    /// Files of the conversation on screen (its own folder).
     public func listFiles(path: String) async throws -> [WorkbenchFileNode] {
         if let sandboxExecutor { return try await sandboxExecutor.listFiles(path: path) }
-        guard let ws = workspace else { throw WorkbenchError.notConnected }
+        guard let ws = currentWorkspace else { throw WorkbenchError.notConnected }
         let items = try await ws.listDirectory(at: path)
         return items.map { item in
             WorkbenchFileNode(
@@ -713,7 +855,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     
     public func fileContent(path: String) async throws -> WorkbenchFileContent {
         if let sandboxExecutor { return try await sandboxExecutor.fileContent(path: path) }
-        guard let ws = workspace else { throw WorkbenchError.notConnected }
+        guard let ws = currentWorkspace else { throw WorkbenchError.notConnected }
         let data = try await ws.readFile(at: path)
         return WorkbenchFileContent(path: path, content: String(data: data, encoding: .utf8) ?? "", mimeType: nil, encoding: "utf-8")
     }
@@ -772,11 +914,11 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         name == "iphone_launch_app" || name == "iphone_press_button" || name == "iphone_open_url" || name == "shortcuts.run"
     }
 
-    private func returnToAppIfNeeded() async {
-        guard mayHaveLeftAppInTurn else { return }
-        mayHaveLeftAppInTurn = false
+    private func returnToAppIfNeeded(_ runtime: ConversationRuntime) async {
+        guard runtime.mayHaveLeftApp else { return }
+        runtime.mayHaveLeftApp = false
         guard let bundleID = Bundle.main.bundleIdentifier, !bundleID.isEmpty else { return }
-        let executor: (any ToolExecutor)? = sandboxExecutor ?? toolExecutor
+        let executor: (any ToolExecutor)? = sandboxExecutor ?? runtime.executor
         if let executor,
            executor.availableTools.contains(where: { $0.name == "iphone_launch_app" }) {
             _ = await executor.execute(
@@ -788,40 +930,47 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         }
     }
 
-    private func handleAgentEvent(_ event: AgentLoopEvent) async {
+    /// Live parts reach the screen only for the conversation on it. A conversation working
+    /// in the background still saves every message (AgentLoop persists as it goes), so
+    /// opening it later shows its history; switching mid-answer picks up the stream.
+    private func handleAgentEvent(_ event: AgentLoopEvent, sessionID: String) async {
+        guard let runtime = runtimes[sessionID] else { return }
+        let onScreen = currentSessionIDStorage == sessionID
+        func yieldOnScreen(_ workbenchEvent: WorkbenchEvent) {
+            if onScreen { eventContinuation?.yield(workbenchEvent) }
+        }
         switch event {
         case .turnStarted:
-            liveAnswerID = nil
+            runtime.liveAnswerID = nil
 
         case .modelDelta(let delta):
-            if liveAnswerID == nil {
-                liveAnswerID = "sandbox-\(UUID().uuidString)"
-            }
-            eventContinuation?.yield(.partDelta(partID: liveAnswerID!, delta: delta))
+            let partID = runtime.liveAnswerID ?? "sandbox-\(UUID().uuidString)"
+            runtime.liveAnswerID = partID
+            yieldOnScreen(.partDelta(partID: partID, delta: delta))
 
         case .modelResponse(let response):
-            if liveAnswerID == nil, !response.content.isEmpty {
-                eventContinuation?.yield(.partUpdated(partID: UUID().uuidString, kind: "assistantText", text: response.content, tool: nil, callID: nil, status: nil, input: [:], output: nil, error: nil))
-            } else if let id = liveAnswerID, !response.content.isEmpty {
-                eventContinuation?.yield(.partUpdated(partID: id, kind: "assistantText", text: response.content, tool: nil, callID: nil, status: nil, input: [:], output: nil, error: nil))
+            if runtime.liveAnswerID == nil, !response.content.isEmpty {
+                yieldOnScreen(.partUpdated(partID: UUID().uuidString, kind: "assistantText", text: response.content, tool: nil, callID: nil, status: nil, input: [:], output: nil, error: nil))
+            } else if let id = runtime.liveAnswerID, !response.content.isEmpty {
+                yieldOnScreen(.partUpdated(partID: id, kind: "assistantText", text: response.content, tool: nil, callID: nil, status: nil, input: [:], output: nil, error: nil))
             }
-            liveAnswerID = nil
+            runtime.liveAnswerID = nil
             if let calls = response.toolCalls, !calls.isEmpty {
                 for call in calls {
                     if Self.toolMayLeaveApp(call.name) {
-                        mayHaveLeftAppInTurn = true
+                        runtime.mayHaveLeftApp = true
                     }
-                    eventContinuation?.yield(.partUpdated(partID: call.id, kind: "tool", text: nil, tool: call.name, callID: call.id, status: "running", input: call.arguments, output: nil, error: nil))
+                    yieldOnScreen(.partUpdated(partID: call.id, kind: "tool", text: nil, tool: call.name, callID: call.id, status: "running", input: call.arguments, output: nil, error: nil))
                 }
             }
-            
+
         case .toolResult(let result):
             let state: String
             switch result.error {
             case nil: state = "completed"
             default: state = "error"
             }
-            eventContinuation?.yield(.partUpdated(
+            yieldOnScreen(.partUpdated(
                 partID: result.toolCallId,
                 kind: "tool",
                 text: nil,
@@ -834,15 +983,15 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             ))
             
         case .error(let error):
-            eventContinuation?.yield(.sessionError(error.localizedDescription))
+            yieldOnScreen(.sessionError(error.localizedDescription))
 
         case .sequenceScopeChanged(let scope):
-            eventContinuation?.yield(.sequenceScopeChanged(scope))
-            
+            yieldOnScreen(.sequenceScopeChanged(scope))
+
         case .finished:
-            if let sessionID = currentSessionIDStorage {
-                eventContinuation?.yield(.sessionIdle(sessionID: sessionID))
-            }
+            // The store matches the id itself, so the conversation that finished is the
+            // one marked idle even when another is on screen.
+            eventContinuation?.yield(.sessionIdle(sessionID: sessionID))
             
         default:
             break
