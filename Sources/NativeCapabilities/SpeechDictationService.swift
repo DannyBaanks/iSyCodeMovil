@@ -101,6 +101,7 @@ public final class SpeechDictationService: ObservableObject {
     private var recordingStart: Date?
     private var interruptionObserver: NSObjectProtocol?
     private var routeObserver: NSObjectProtocol?
+    private var captureID = UUID()
     private var transcriptionTask: Task<Void, Never>?
     private var activeCompletion: (@MainActor (String) -> Void)?
 
@@ -135,10 +136,13 @@ public final class SpeechDictationService: ObservableObject {
 
     public func startRecording(onTranscript: @escaping @MainActor (String) -> Void) async {
         guard state == .idle || { if case .error = state { return true }; return false }() else { return }
+        let requestID = UUID()
+        captureID = requestID
         activeCompletion = onTranscript
         state = .requestingPermissions
 
         let perms = await requestPermissionsIfNeeded()
+        guard captureID == requestID else { return }
         guard perms.granted else {
             state = .error(perms.message ?? "Faltan permisos de micrófono o reconocimiento de voz.")
             return
@@ -204,6 +208,7 @@ public final class SpeechDictationService: ObservableObject {
         }
 
         state = .transcribing
+        let requestID = captureID
         let completion = activeCompletion
         let localeID = selectedLocale.rawValue
         let networkAllowed = allowNetworkFallback
@@ -212,7 +217,10 @@ public final class SpeechDictationService: ObservableObject {
             guard let self else { return }
             defer {
                 self.cleanupAudioFile(audioURL)
-                self.tempAudioURL = nil
+                if self.captureID == requestID {
+                    self.tempAudioURL = nil
+                    self.activeCompletion = nil
+                }
             }
             do {
                 let text = try await Self.transcribeAudioFile(
@@ -220,7 +228,7 @@ public final class SpeechDictationService: ObservableObject {
                     localeIdentifier: localeID,
                     allowNetworkFallback: networkAllowed
                 )
-                guard !Task.isCancelled else { return }
+                guard self.captureID == requestID, !Task.isCancelled else { return }
                 let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 if trimmed.isEmpty {
                     self.state = .error("No se detectó voz entendible en la grabación.")
@@ -229,14 +237,17 @@ public final class SpeechDictationService: ObservableObject {
                     completion?(trimmed)
                 }
             } catch is CancellationError {
+                guard self.captureID == requestID else { return }
                 self.state = .idle
             } catch {
+                guard self.captureID == requestID else { return }
                 self.state = .error(error.localizedDescription)
             }
         }
     }
 
     public func cancel() {
+        captureID = UUID()
         transcriptionTask?.cancel()
         transcriptionTask = nil
         stopCaptureHardware()

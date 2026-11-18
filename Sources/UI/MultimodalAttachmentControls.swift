@@ -850,7 +850,7 @@ public struct DictationMicrophoneButton: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(speech.state.isRecording ? OCColor.danger : OCColor.iconPrimary)
             }
-            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44)
             .contentShape(Rectangle())
         } primaryAction: {
             OCHaptics.medium()
@@ -901,55 +901,39 @@ public struct DictationLiveStatusBar: View {
             .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
 
         case .recording(let elapsed, let level):
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(OCColor.danger)
-                    .frame(width: 10, height: 10)
-                    .scaleEffect(reduceMotion ? 1.0 : (0.9 + CGFloat(level) * 0.45))
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Grabando voz · \(formatElapsed(elapsed))")
-                        .font(.system(size: 12.5, weight: .bold))
-                        .foregroundColor(OCColor.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                    Text("\(speech.selectedLocale.shortTag) · \(speech.currentAvailability().badgeText)")
-                        .font(.system(size: 11))
-                        .foregroundColor(OCColor.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+            VStack(alignment: .leading, spacing: OCSpacing.xs) {
+                HStack {
+                    Image(systemName: "mic.fill")
+                        .foregroundColor(OCColor.danger)
+                        .accessibilityHidden(true)
+                    Text("Grabando · \(speech.selectedLocale.shortTag)")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(formatElapsed(elapsed)).font(.footnote.monospacedDigit())
                 }
-
-                Spacer(minLength: 4)
-
-                Button("Cancelar") {
-                    OCHaptics.light()
-                    speech.cancel()
+                if !reduceMotion {
+                    ProgressView(value: Double(level), total: 1)
+                        .tint(OCColor.danger)
+                        .accessibilityHidden(true)
                 }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(OCColor.textSecondary)
-                .buttonStyle(.plain)
-                .fixedSize(horizontal: true, vertical: false)
-
-                Button {
-                    OCHaptics.success()
-                    speech.stopAndTranscribe()
-                } label: {
-                    Label("Detener", systemImage: "stop.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(IysThemePreferences.active.accent))
-                        .foregroundColor(OCColor.onAccent)
+                HStack {
+                    Button("Cancelar") { speech.cancel() }
+                        .frame(minHeight: 44)
+                    Spacer()
+                    Button {
+                        OCHaptics.light()
+                        speech.stopAndTranscribe()
+                    } label: {
+                        Label("Transcribir", systemImage: "stop.fill")
+                            .frame(minHeight: 44)
+                    }
                 }
-                .buttonStyle(.plain)
-                .fixedSize(horizontal: true, vertical: false)
+                .font(.subheadline.weight(.medium))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(OCColor.danger.opacity(0.10))
+            .padding(.horizontal, OCSpacing.md)
+            .padding(.top, OCSpacing.sm)
+            .background(OCColor.bgLayer1)
             .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-            .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.danger.opacity(0.35), lineWidth: 1))
 
         case .transcribing:
             HStack(spacing: 10) {
@@ -993,7 +977,9 @@ public struct DictationLiveStatusBar: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(OCColor.textFaint)
+                        .frame(width: 44, height: 44)
                 }
+                .accessibilityLabel("Cerrar aviso de dictado")
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 12)
