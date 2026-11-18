@@ -54,53 +54,57 @@ public struct WorkspaceHomeView: View {
 
     private var headerAndConnectionBar: some View {
         VStack(alignment: .leading, spacing: OCSpacing.md) {
+            // The large "Inicio" title already names the screen: no second "Centro de
+            // trabajo" title. A greeting only when we know the person's name.
             VStack(alignment: .leading, spacing: 4) {
-                Text(assistant.email.map { "Hola, \($0.split(separator: "@").first.map(String.init) ?? "")" } ?? "Centro de trabajo")
-                    .font(.system(size: 26, weight: .bold))
-                    .foregroundColor(OCColor.textPrimary)
-                Text("Tu motor de IA, conversaciones, proyectos y Google en un solo lugar. Nada se envía o modifica fuera de tu dispositivo sin tu confirmación.")
-                    .font(.system(size: 13.5))
+                if let name = assistant.email?.split(separator: "@").first.map(String.init), !name.isEmpty {
+                    Text("Hola, \(name)")
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(OCColor.textPrimary)
+                }
+                Label("Nada sale de tu iPhone sin tu confirmación.", systemImage: "lock.fill")
+                    .font(.footnote)
                     .foregroundColor(OCColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: OCSpacing.base) {
-                    statusPill(
-                        text: "Motor: \(runtime.readiness.badgeText)",
-                        symbol: runtime.readiness.symbol,
-                        tone: runtime.readiness.tone,
-                        id: "status-pill-runtime"
-                    ) {
-                        router.openRuntimeSetup(track: runtime.isLocal ? .local : .connected, providerID: runtime.providerID)
-                    }
+            // Wraps to a second line instead of hiding the third chip off-screen ("Eq…").
+            OCFlowLayout(spacing: OCSpacing.base, lineSpacing: OCSpacing.base) {
+                statusPill(
+                    text: "Motor: \(runtime.readiness.badgeText)",
+                    symbol: runtime.readiness.symbol,
+                    tone: runtime.readiness.tone,
+                    id: "status-pill-runtime"
+                ) {
+                    router.openRuntimeSetup(track: runtime.isLocal ? .local : .connected, providerID: runtime.providerID)
+                }
 
-                    statusPill(
-                        text: googleState.shortChipText,
-                        symbol: googleState.symbol,
-                        tone: googleState.tone,
-                        id: "status-pill-google"
-                    ) {
-                        switch googleState {
-                        case .needsClientID:
-                            router.showGoogleOAuthSetupSheet = true
-                        case .notConnected, .expired:
-                            router.openGoogle(subtab: .google)
-                        case .readOnly, .connected:
-                            router.openGoogle(subtab: .google)
-                        }
-                    }
-
-                    statusPill(
-                        text: hostState.shortChipText,
-                        symbol: hostState.symbol,
-                        tone: hostState.tone,
-                        id: "status-pill-host"
-                    ) {
-                        router.openSettings()
+                statusPill(
+                    text: googleState.shortChipText,
+                    symbol: googleState.symbol,
+                    tone: googleState.tone,
+                    id: "status-pill-google"
+                ) {
+                    switch googleState {
+                    case .needsClientID:
+                        router.showGoogleOAuthSetupSheet = true
+                    case .notConnected, .expired:
+                        router.openGoogle(subtab: .google)
+                    case .readOnly, .connected:
+                        router.openGoogle(subtab: .google)
                     }
                 }
+
+                statusPill(
+                    text: hostState.shortChipText,
+                    symbol: hostState.symbol,
+                    tone: hostState.tone,
+                    id: "status-pill-host"
+                ) {
+                    router.openSettings()
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityIdentifier("home-connection-bar")
         }
     }
@@ -115,10 +119,10 @@ public struct WorkspaceHomeView: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundColor(tone.semanticColor)
                 Text(text)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(.caption.weight(.medium))
                     .foregroundColor(OCColor.textPrimary)
                     .lineLimit(1)
             }
@@ -136,7 +140,7 @@ public struct WorkspaceHomeView: View {
             Image(systemName: "info.circle.fill")
                 .foregroundColor(IysThemePreferences.active.accent)
             Text(text)
-                .font(.system(size: 13.5))
+                .font(.footnote)
                 .foregroundColor(OCColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
@@ -161,19 +165,19 @@ public struct WorkspaceHomeView: View {
             } label: {
                 HStack(spacing: OCSpacing.md) {
                     Image(systemName: "hand.raised.fill")
-                        .font(.system(size: 18))
+                        .font(.title3)
                         .foregroundColor(OCColor.warning)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Confirmación pendiente")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                             .foregroundColor(OCColor.warning)
                         Text(formatted.headline)
-                            .font(.system(size: 14.5, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundColor(OCColor.textPrimary)
                     }
                     Spacer()
                     Text("Revisar")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundColor(OCColor.onAccent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
@@ -192,19 +196,19 @@ public struct WorkspaceHomeView: View {
             } label: {
                 HStack(spacing: OCSpacing.md) {
                     Image(systemName: "exclamationmark.shield.fill")
-                        .font(.system(size: 18))
+                        .font(.title3)
                         .foregroundColor(OCColor.warning)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Permiso pendiente en conversación")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                             .foregroundColor(OCColor.warning)
                         Text(formatted.headline)
-                            .font(.system(size: 14.5, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundColor(OCColor.textPrimary)
                     }
                     Spacer()
                     Text("Abrir")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundColor(OCColor.onAccent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
@@ -225,46 +229,32 @@ public struct WorkspaceHomeView: View {
         let activeSessionTitle = sessionState.currentSession?.title ?? store.lastSessionTitle
         let activeProjectTitle = sessionState.currentProject?.name ?? store.lastProjectName
 
+        // One primary action: type what you need. Continuing the last conversation is a
+        // secondary row, and "Nueva conversación" a text button (it used to be a second
+        // filled capsule with the same weight, plus a duplicate tile in the grid).
         return VStack(alignment: .leading, spacing: OCSpacing.md) {
-            HStack {
-                Label("Continuar donde quedaste", systemImage: "bubble.left.and.bubble.right.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(IysThemePreferences.active.accent)
+            HStack(alignment: .firstTextBaseline) {
+                Text(activeSessionTitle?.isEmpty == false ? "¿Qué sigue?" : "Empieza una conversación")
+                    .font(.headline)
+                    .foregroundColor(OCColor.textPrimary)
                 Spacer()
                 if startingConversation {
                     ProgressView().controlSize(.small)
                 }
             }
 
-            if let activeSessionTitle, !activeSessionTitle.isEmpty {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(activeSessionTitle)
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundColor(OCColor.textPrimary)
-                        .lineLimit(2)
-                    if let activeProjectTitle, !activeProjectTitle.isEmpty {
-                        Text(activeProjectTitle)
-                            .font(.system(size: 13))
-                            .foregroundColor(OCColor.textSecondary)
-                    }
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Empieza una conversación")
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundColor(OCColor.textPrimary)
-                    Text(runtime.readiness.isUsableForChat
-                         ? "Tu motor (\(runtime.providerName)) ya está listo. No necesitas volver a configurar nada."
-                         : "Configura un motor abajo o abre una conversación para probar el guion de demo.")
-                        .font(.system(size: 13))
-                        .foregroundColor(OCColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            if activeSessionTitle?.isEmpty != false {
+                Text(runtime.readiness.isUsableForChat
+                     ? "Tu motor (\(runtime.providerName)) ya está listo."
+                     : "Configura un motor abajo o prueba el guion de demo.")
+                    .font(.footnote)
+                    .foregroundColor(OCColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: OCSpacing.sm) {
                 TextField("¿Qué necesitas? Ej. revisa mi agenda o pregunta a GUS", text: $quickPrompt)
-                    .font(.system(size: 14.5))
+                    .font(.subheadline)
                     .foregroundColor(OCColor.textPrimary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
@@ -276,7 +266,7 @@ public struct WorkspaceHomeView: View {
 
                 Button(action: submitQuickPrompt) {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.callout.weight(.bold))
                         .foregroundColor(quickPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? OCColor.textFaint : OCColor.onAccent)
                         .frame(width: 44, height: 44)
                         .background(
@@ -293,55 +283,62 @@ public struct WorkspaceHomeView: View {
                 .accessibilityIdentifier("home-quick-prompt-send")
             }
 
-            HStack(spacing: OCSpacing.base) {
-                if activeSessionTitle != nil {
-                    Button {
-                        continueLastConversation()
-                    } label: {
-                        Label("Continuar", systemImage: "play.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(OCColor.onAccent)
-                            .padding(.horizontal, 16)
-                            .frame(minHeight: 42)
-                            .background(Capsule().fill(IysThemePreferences.active.accent))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(startingConversation)
-                    .accessibilityIdentifier("home-continue-button")
-                }
-
+            if let activeSessionTitle, !activeSessionTitle.isEmpty {
                 Button {
-                    startNewConversation()
+                    continueLastConversation()
                 } label: {
-                    Label("Nueva conversación", systemImage: "plus.bubble.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(activeSessionTitle == nil ? OCColor.onAccent : OCColor.textPrimary)
-                        .padding(.horizontal, 16)
-                        .frame(minHeight: 42)
-                        .background(
-                            Capsule().fill(activeSessionTitle == nil ? IysThemePreferences.active.accent : OCColor.bgLayer1)
-                        )
-                        .overlay(
-                            Capsule().stroke(activeSessionTitle == nil ? Color.clear : OCColor.borderBase, lineWidth: 1)
-                        )
+                    HStack(spacing: OCSpacing.md) {
+                        Image(systemName: "bubble.left.and.bubble.right.fill")
+                            .font(.subheadline)
+                            .foregroundColor(IysThemePreferences.active.accent)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Continuar: \(activeSessionTitle)")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(OCColor.textPrimary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                            if let activeProjectTitle, !activeProjectTitle.isEmpty {
+                                Text(activeProjectTitle)
+                                    .font(.caption)
+                                    .foregroundColor(OCColor.textSecondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(OCColor.iconMuted)
+                            .accessibilityHidden(true)
+                    }
+                    .padding(.horizontal, OCSpacing.lg)
+                    .padding(.vertical, OCSpacing.md)
+                    .frame(minHeight: 44)
+                    .background(OCColor.bgLayer1)
+                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12, style: .continuous))
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(startingConversation)
-                .accessibilityIdentifier("home-new-chat-button")
-
-                Spacer(minLength: 0)
+                .accessibilityIdentifier("home-continue-button")
             }
+
+            Button {
+                startNewConversation()
+            } label: {
+                Label("Nueva conversación", systemImage: "plus.bubble")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(IysThemePreferences.active.accent)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(startingConversation)
+            .accessibilityIdentifier("home-new-chat-button")
         }
         .padding(OCSpacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: OCRadius.r22)
-                .fill(OCColor.bgBase)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: OCRadius.r22)
-                .stroke(IysThemePreferences.active.accent.opacity(0.28), lineWidth: 1)
-        )
+        .ocCard(radius: OCRadius.r22, border: OCColor.borderMuted, background: OCColor.bgBase)
         .accessibilityIdentifier("home-continue-card")
     }
 
@@ -355,15 +352,15 @@ public struct WorkspaceHomeView: View {
                         .font(OCTypography.sectionLabel)
                         .foregroundColor(OCColor.textFaint)
                     Text(runtime.providerName)
-                        .font(.system(size: 17, weight: .bold))
+                        .font(.headline)
                         .foregroundColor(OCColor.textPrimary)
                 }
                 Spacer()
                 HStack(spacing: 5) {
                     Image(systemName: runtime.readiness.symbol)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.caption.weight(.semibold))
                     Text(runtime.readiness.badgeText)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.caption.weight(.semibold))
                 }
                 .foregroundColor(runtime.readiness.tone.semanticColor)
                 .padding(.horizontal, 10)
@@ -372,7 +369,7 @@ public struct WorkspaceHomeView: View {
             }
 
             Text(runtime.runtimeSummaryLine)
-                .font(.system(size: 13.5))
+                .font(.footnote)
                 .foregroundColor(OCColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -408,7 +405,7 @@ public struct WorkspaceHomeView: View {
                         handleRuntimePrimaryCTA()
                     } label: {
                         Text(runtime.primaryCTATitle)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundColor(OCColor.onAccent)
                             .padding(.horizontal, 16)
                             .frame(minHeight: 42)
@@ -425,7 +422,7 @@ public struct WorkspaceHomeView: View {
                         )
                     } label: {
                         Text("Cambiar motor")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.subheadline.weight(.medium))
                             .foregroundColor(OCColor.textPrimary)
                             .padding(.horizontal, 14)
                             .frame(minHeight: 42)
@@ -453,13 +450,13 @@ public struct WorkspaceHomeView: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
                 Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.headline)
                     .foregroundColor(IysThemePreferences.active.accent)
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundColor(OCColor.textPrimary)
                 Text(detail)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundColor(OCColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -478,20 +475,13 @@ public struct WorkspaceHomeView: View {
     private var quickActionsSection: some View {
         VStack(alignment: .leading, spacing: OCSpacing.md) {
             Text("Acciones rápidas")
-                .font(.system(size: 17, weight: .semibold))
+                .font(.headline)
                 .foregroundColor(OCColor.textPrimary)
+                .accessibilityAddTraits(.isHeader)
 
+            // "Nueva conversación" and "Cambiar motor" were tiles too, repeating the card
+            // above and the engine card: the grid keeps only actions found nowhere else.
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                workspaceTile(
-                    title: "Nueva conversación",
-                    subtitle: runtime.readiness.isUsableForChat ? "Con \(runtime.providerName)" : "Elige motor o demo",
-                    symbol: "plus.bubble.fill",
-                    badge: nil,
-                    id: "quick-action-new-chat"
-                ) {
-                    startNewConversation()
-                }
-
                 workspaceTile(
                     title: "Abrir proyecto",
                     subtitle: store.projects.isEmpty ? "Espacio de trabajo" : "\(store.projects.count) disponible(s)",
@@ -518,16 +508,6 @@ public struct WorkspaceHomeView: View {
                     case .readOnly, .connected:
                         router.openGoogle(subtab: .google)
                     }
-                }
-
-                workspaceTile(
-                    title: "Cambiar motor",
-                    subtitle: runtime.modelName ?? runtime.providerName,
-                    symbol: "cpu",
-                    badge: nil,
-                    id: "quick-action-runtime"
-                ) {
-                    router.openRuntimeSetup(track: runtime.isLocal ? .local : .connected, providerID: runtime.providerID)
                 }
 
                 ForEach(AssistantCatalog.quickActions) { action in
@@ -571,14 +551,15 @@ public struct WorkspaceHomeView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Image(systemName: symbol)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundColor(IysThemePreferences.active.accent)
                         .frame(width: 34, height: 34)
                         .background(Circle().fill(OCColor.agentBuildSoft))
+                        .accessibilityHidden(true)
                     Spacer(minLength: 0)
                     if let badge {
                         Text(badge)
-                            .font(.system(size: 10.5, weight: .semibold))
+                            .font(.caption2.weight(.semibold))
                             .foregroundColor(OCColor.warning)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
@@ -587,19 +568,21 @@ public struct WorkspaceHomeView: View {
                     }
                 }
 
+                // Title and subtitle reserve their lines, so every tile in the grid has
+                // the same height whatever the text ("Aprender acción" vs "Llavero").
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundColor(OCColor.textPrimary)
                     .lineLimit(1)
 
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundColor(OCColor.textSecondary)
-                    .lineLimit(2)
+                    .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.leading)
             }
             .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 124, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
             .ocCard(radius: OCRadius.r18)
         }
         .buttonStyle(.plain)
@@ -612,24 +595,24 @@ public struct WorkspaceHomeView: View {
         VStack(alignment: .leading, spacing: OCSpacing.md) {
             HStack {
                 Text("Actividad reciente")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.headline)
                     .foregroundColor(OCColor.textPrimary)
                 Spacer()
                 if assistant.developerMode && !assistant.logs.isEmpty {
                     Button("Ver registro") {
                         router.openGoogle(subtab: .log)
                     }
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.footnote.weight(.medium))
                 }
             }
 
             if assistant.feed.isEmpty && store.runtimeSnapshot.readiness.errorDetail == nil {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Aún no hay actividad reciente")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundColor(OCColor.textPrimary)
                     Text("Aquí verás tus respuestas, avisos del daemon de tu PC y confirmaciones ejecutadas.")
-                        .font(.system(size: 13))
+                        .font(.footnote)
                         .foregroundColor(OCColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -643,15 +626,15 @@ public struct WorkspaceHomeView: View {
                             .foregroundColor(OCColor.danger)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Error del motor")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.subheadline.weight(.semibold))
                                 .foregroundColor(OCColor.textPrimary)
                             Text(err)
-                                .font(.system(size: 13))
+                                .font(.footnote)
                                 .foregroundColor(OCColor.textSecondary)
                             Button("Reintentar") {
                                 Task { await store.retryRuntimeConnection() }
                             }
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.footnote.weight(.semibold))
                             .padding(.top, 2)
                         }
                     }
@@ -668,15 +651,15 @@ public struct WorkspaceHomeView: View {
                                 .foregroundColor(IysThemePreferences.active.accent)
                             Spacer()
                             Text(item.time, style: .relative)
-                                .font(.system(size: 12))
+                                .font(.caption)
                                 .foregroundColor(OCColor.textFaint)
                         }
                         Text(item.title)
-                            .font(.system(size: 14.5, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundColor(OCColor.textPrimary)
                         if !item.body.isEmpty {
                             Text(item.body)
-                                .font(.system(size: 13))
+                                .font(.footnote)
                                 .foregroundColor(OCColor.textSecondary)
                                 .lineLimit(3)
                         }

@@ -242,16 +242,20 @@ jobs:
             sips -Z 1600 "docs/screenshots/$SCENE.png"
           done
           # Review-only captures (CI artifact, never committed: the commit step adds
-          # docs/screenshots/*.png, not this subfolder). The chat in dark mode and at a
+          # docs/screenshots/*.png, not this subfolder). Screens in dark mode and at a
           # large accessibility text size, so a UI change is checked where it breaks first.
+          # Format: name:scene:appearance:content_size
           mkdir -p docs/screenshots/review
-          for SHOT in "chat-dark:dark:large" "chat-a11y-xl:light:accessibility-extra-large"; do
-            NAME="${SHOT%%:*}"
-            REST="${SHOT#*:}"
-            xcrun simctl ui "$UDID" appearance "${REST%%:*}"
-            xcrun simctl ui "$UDID" content_size "${REST#*:}"
+          for SHOT in \
+            "chat-dark:chat:dark:large" \
+            "chat-a11y-xl:chat:light:accessibility-extra-large" \
+            "home-dark:assistant:dark:large" \
+            "home-a11y-xl:assistant:light:accessibility-extra-large"; do
+            IFS=: read -r NAME SCENE LOOK SIZE <<< "$SHOT"
+            xcrun simctl ui "$UDID" appearance "$LOOK"
+            xcrun simctl ui "$UDID" content_size "$SIZE"
             xcrun simctl terminate "$UDID" dev.iyscode.movil || true
-            xcrun simctl launch "$UDID" dev.iyscode.movil "--readme-screenshot=chat"
+            xcrun simctl launch "$UDID" dev.iyscode.movil "--readme-screenshot=$SCENE"
             # A content_size change makes the first frame slower; wait longer and log
             # whether the app is still alive, so a blank capture says hang vs crash.
             sleep 6

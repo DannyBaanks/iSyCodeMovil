@@ -598,6 +598,73 @@ extension View {
     }
 }
 
+// MARK: - Flow Layout (chips that wrap)
+
+/// Places subviews left to right and wraps to a new line when the next one does not fit,
+/// centering each line vertically. Chip rows use it so a larger Dynamic Type size wraps
+/// the chips instead of truncating them to "Con…". A subview wider than the whole row is
+/// offered the row width (so its own lineLimit/truncation applies).
+public struct OCFlowLayout: Layout {
+    public var spacing: CGFloat
+    public var lineSpacing: CGFloat
+
+    public init(spacing: CGFloat = OCSpacing.base, lineSpacing: CGFloat = OCSpacing.base) {
+        self.spacing = spacing
+        self.lineSpacing = lineSpacing
+    }
+
+    public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(maxWidth: proposal.width ?? .infinity, subviews: subviews).size
+    }
+
+    public func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrange(maxWidth: bounds.width, subviews: subviews)
+        for (index, frame) in result.frames.enumerated() {
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                proposal: ProposedViewSize(frame.size)
+            )
+        }
+    }
+
+    private func arrange(maxWidth: CGFloat, subviews: Subviews) -> (frames: [CGRect], size: CGSize) {
+        var frames: [CGRect] = []
+        var lineStart = 0
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var widest: CGFloat = 0
+
+        func closeLine(upTo end: Int) {
+            // Center every item of the finished line inside the line's height.
+            for i in lineStart..<end {
+                frames[i].origin.y = y + (lineHeight - frames[i].height) / 2
+            }
+        }
+
+        for subview in subviews {
+            var size = subview.sizeThatFits(.unspecified)
+            if maxWidth.isFinite, size.width > maxWidth {
+                size = subview.sizeThatFits(ProposedViewSize(width: maxWidth, height: nil))
+                size.width = min(size.width, maxWidth)
+            }
+            if x > 0, x + size.width > maxWidth {
+                closeLine(upTo: frames.count)
+                y += lineHeight + lineSpacing
+                x = 0
+                lineHeight = 0
+                lineStart = frames.count
+            }
+            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+            widest = max(widest, x - spacing)
+        }
+        closeLine(upTo: frames.count)
+        return (frames, CGSize(width: widest, height: frames.isEmpty ? 0 : y + lineHeight))
+    }
+}
+
 // MARK: - 2026 Motion, Haptics & Reusable State Primitives
 
 public enum OCMotion {
