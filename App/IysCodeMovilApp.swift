@@ -119,6 +119,11 @@ struct RootView: View {
             }
             #endif
             await store.restorePersistedExperience()
+            // Already past the welcome screen: ask at launch (no-op once decided) so the
+            // alert never appears in the middle of an agent turn.
+            if store.hasCompletedOnboarding {
+                await PermissionNotifier.shared.prepare()
+            }
             await hostStore.restore()
             await hostStore.setAppActive(scenePhase == .active)
             consumePendingAppIntent()

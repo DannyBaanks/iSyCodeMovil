@@ -59,16 +59,16 @@ public struct ChatSidebarView: View {
     private var header: some View {
         HStack {
             Text("ISYCODE")
-                .font(.system(size: 16, weight: .heavy, design: .rounded))
+                .font(.system(.callout, design: .rounded, weight: .heavy))
                 .tracking(1.6)
                 .foregroundColor(OCColor.textPrimary)
             Spacer()
             if showsCloseButton {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundColor(OCColor.textSecondary)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -87,14 +87,14 @@ public struct ChatSidebarView: View {
         } label: {
             HStack(spacing: OCSpacing.sm) {
                 Image(systemName: "plus.bubble.fill")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                 Text("Nueva conversación")
-                    .font(.system(size: 14.5, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                 Spacer()
             }
             .foregroundColor(OCColor.onAccent)
             .padding(.horizontal, OCSpacing.md)
-            .frame(height: 42)
+            .frame(minHeight: 44)
             .background(IysThemePreferences.active.accent.gradient)
             .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
         }
@@ -114,7 +114,7 @@ public struct ChatSidebarView: View {
 
                 if store.sessions.isEmpty {
                     Text("Tus conversaciones aparecerán aquí.")
-                        .font(.system(size: 13))
+                        .font(.footnote)
                         .foregroundColor(OCColor.textFaint)
                         .padding(.horizontal, OCSpacing.lg)
                         .padding(.vertical, OCSpacing.sm)
@@ -143,12 +143,12 @@ public struct ChatSidebarView: View {
             HStack(spacing: OCSpacing.sm) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(session.title)
-                        .font(.system(size: 14, weight: isActive ? .semibold : .medium))
+                        .font(.subheadline.weight(isActive ? .semibold : .medium))
                         .foregroundColor(OCColor.textPrimary)
                         .lineLimit(1)
                     Text(session.timestamp, style: .relative)
                         .environment(\.locale, Locale(identifier: "es"))
-                        .font(.system(size: 11.5))
+                        .font(.caption2)
                         .foregroundColor(OCColor.textFaint)
                 }
                 Spacer(minLength: 4)
@@ -192,21 +192,22 @@ public struct ChatSidebarView: View {
                 let isHomeActive = router.activeDestination == .chat && sessionState.currentSession == nil
                 HStack(spacing: OCSpacing.md) {
                     Image(systemName: "house.fill")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundColor(isHomeActive ? IysThemePreferences.active.accent : OCColor.iconPrimary)
                         .frame(width: 24)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Inicio")
-                            .font(.system(size: 14.5, weight: isHomeActive ? .semibold : .medium))
+                            .font(.subheadline.weight(isHomeActive ? .semibold : .medium))
                             .foregroundColor(OCColor.textPrimary)
                         Text("Conversar, Construir, Agentes")
-                            .font(.system(size: 11.5))
+                            .font(.caption2)
                             .foregroundColor(OCColor.textFaint)
                     }
                     Spacer()
                 }
                 .padding(.horizontal, OCSpacing.md)
                 .padding(.vertical, 8)
+                .frame(minHeight: 44)
                 .background(isHomeActive ? IysThemePreferences.active.accent.opacity(0.12) : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
                 .contentShape(Rectangle())
@@ -217,39 +218,13 @@ public struct ChatSidebarView: View {
             destinationButton(.builder, title: "Construir agente", subtitle: "Plantillas y capacidades")
             destinationButton(.myAgents, title: "Mis agentes", subtitle: "Contratos y pruebas")
 
-            HStack(spacing: OCSpacing.xs) {
-                Button {
-                    OCHaptics.light()
-                    router.openLearnAction()
-                    onClose()
-                } label: {
-                    Label("Aprender acción", systemImage: "record.circle")
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundColor(IysThemePreferences.active.accent)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(OCColor.bgLayer1)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    OCHaptics.light()
-                    router.openSecretVault()
-                    onClose()
-                } label: {
-                    Label("Llavero", systemImage: "key.fill")
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundColor(OCColor.warning)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(OCColor.bgLayer1)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
-                }
-                .buttonStyle(.plain)
+            // Were two 31–35 pt pills; now rows like the rest (44 pt targets, HIG).
+            actionRow(title: "Aprender acción", symbol: "record.circle", tint: IysThemePreferences.active.accent) {
+                router.openLearnAction()
             }
-            .padding(.horizontal, OCSpacing.md)
-            .padding(.vertical, 4)
+            actionRow(title: "Llavero", symbol: "key.fill", tint: OCColor.warning) {
+                router.openSecretVault()
+            }
 
             destinationButton(.browser, title: "Navegador", subtitle: "Web integrada")
             destinationButton(.google, title: "Google", subtitle: "Correo, agenda, Drive")
@@ -277,16 +252,16 @@ public struct ChatSidebarView: View {
         } label: {
             HStack(spacing: OCSpacing.md) {
                 Image(systemName: destination.symbol)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.subheadline.weight(.medium))
                     .foregroundColor(isActive ? IysThemePreferences.active.accent : OCColor.iconPrimary)
                     .frame(width: 24)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
-                        .font(.system(size: 14.5, weight: isActive ? .semibold : .medium))
+                        .font(.subheadline.weight(isActive ? .semibold : .medium))
                         .foregroundColor(OCColor.textPrimary)
                     if let subtitle {
                         Text(subtitle)
-                            .font(.system(size: 11.5))
+                            .font(.caption2)
                             .foregroundColor(OCColor.textFaint)
                     }
                 }
@@ -294,12 +269,38 @@ public struct ChatSidebarView: View {
             }
             .padding(.horizontal, OCSpacing.md)
             .padding(.vertical, 9)
+            .frame(minHeight: 44)
             .background(isActive ? IysThemePreferences.active.accent.opacity(0.12) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("sidebar-dest-\(destination.rawValue)")
+    }
+
+    /// A row for an action that opens a sheet (not a destination), same size as the others.
+    private func actionRow(title: String, symbol: String, tint: Color, action: @escaping () -> Void) -> some View {
+        Button {
+            OCHaptics.light()
+            action()
+            onClose()
+        } label: {
+            HStack(spacing: OCSpacing.md) {
+                Image(systemName: symbol)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(tint)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(OCColor.textPrimary)
+                Spacer()
+            }
+            .padding(.horizontal, OCSpacing.md)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

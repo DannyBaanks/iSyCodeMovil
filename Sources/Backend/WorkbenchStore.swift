@@ -61,7 +61,14 @@ public final class WorkbenchStore: ObservableObject {
     @Published public private(set) var isRefreshingSessions = false
     @Published public private(set) var activeSequenceScope: SequenceApprovalScope?
     @Published public var hasCompletedOnboarding: Bool = UserDefaults.standard.bool(forKey: RuntimeIntentDefaults.onboardingCompletedKey) {
-        didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: RuntimeIntentDefaults.onboardingCompletedKey) }
+        didSet {
+            UserDefaults.standard.set(hasCompletedOnboarding, forKey: RuntimeIntentDefaults.onboardingCompletedKey)
+            // Ask for notifications at a calm moment (leaving the welcome screen), not on the
+            // first send: that system alert landed mid-turn and twice left WebDriverAgent stuck.
+            if hasCompletedOnboarding, !oldValue {
+                Task { await PermissionNotifier.shared.prepare() }
+            }
+        }
     }
     @Published public private(set) var lastSessionTitle: String? = UserDefaults.standard.string(forKey: RuntimeIntentDefaults.lastSessionTitleKey)
     @Published public private(set) var lastProjectName: String? = UserDefaults.standard.string(forKey: RuntimeIntentDefaults.lastProjectNameKey)
@@ -1081,7 +1088,7 @@ public final class WorkbenchStore: ObservableObject {
             isProcessingRemote = false
             runningSessionIDs.removeAll()
             connectionHealth = .connected
-            addSystemEvent("Connected")
+            addSystemEvent("Conectado")
 
         case .disconnected(let reason):
             sessionState.isProcessing = false
