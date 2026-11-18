@@ -367,15 +367,28 @@ private struct CodexWorkspaceFoldersUnavailableView: View {
 struct ChatSurfaceView: View {
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var store: WorkbenchStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrollProxy: ScrollViewProxy?
     @State private var showActivityDetail = false
+    @State private var runStartedAt = Date()
+    @State private var isPinnedToBottom = true
     
     var body: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 if sessionState.isProcessing {
-                    ThinkingShimmerView(label: liveActivityLabel) {
+                    ThinkingShimmerView(
+                        label: liveActivityLabel,
+                        activeStepCount: sessionState.timelineEvents.filter { $0.kind == .toolCall }.count,
+                        startedAt: runStartedAt
+                    ) {
                         showActivityDetail = true
+                    }
+                }
+                if let scope = store.activeSequenceScope {
+                    SequenceScopeBanner(scope: scope) {
+                        OCHaptics.light()
+                        store.revokeActiveSequenceApproval()
                     }
                 }
                 ChatActivityBar(
@@ -389,37 +402,77 @@ struct ChatSurfaceView: View {
                 .padding(.top, OCSpacing.sm)
                 .padding(.bottom, OCSpacing.xs)
 
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        if sessionState.timelineEvents.isEmpty {
-                            EmptyChatView(sessionTitle: sessionState.currentSession?.title)
-                        }
-                        ForEach(groupedTimelineItems) { item in
-                            switch item {
-                            case .single(let event):
-                                TimelineEventContainer(event: event)
-                                    .id(event.id)
-                            case .toolCarousel(let steps):
-                                ToolStepsCarouselView(steps: steps, agentColor: sessionState.agentMode.color)
-                                    .id(item.id)
+                ZStack(alignment: .bottomTrailing) {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            if sessionState.timelineEvents.isEmpty {
+                                EmptyChatView(sessionTitle: sessionState.currentSession?.title)
                             }
+                            ForEach(groupedTimelineItems) { item in
+                                switch item {
+                                case .single(let event):
+                                    TimelineEventContainer(event: event)
+                                        .id(event.id)
+                                case .toolCarousel(let steps):
+                                    ToolStepsCarouselView(steps: steps, agentColor: sessionState.agentMode.color)
+                                        .id(item.id)
+                                }
+                            }
+                            Color.clear
+                                .frame(height: 1)
+                                .id("chat-bottom-anchor")
+                                .onAppear { isPinnedToBottom = true }
+                                .onDisappear { isPinnedToBottom = false }
                         }
+                        .padding(.horizontal, OCSpacing.contentMargin)
+                        .padding(.top, OCSpacing.sm)
+                        .padding(.bottom, OCSpacing.lg)
                     }
-                    .padding(.horizontal, OCSpacing.contentMargin)
-                    .padding(.top, OCSpacing.sm)
-                    .padding(.bottom, OCSpacing.lg)
+                    .refreshable {
+                        guard !sessionState.isProcessing, let current = sessionState.currentSession else { return }
+                        await store.selectSession(current)
+                    }
+                    .scrollDismissesKeyboard(.interactively)
+
+                    if !isPinnedToBottom && !sessionState.timelineEvents.isEmpty {
+                        Button {
+                            OCHaptics.light()
+                            isPinnedToBottom = true
+                            scrollToBottom(force: true)
+                        } label: {
+                            Label("Ir al final", systemImage: "arrow.down")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(OCColor.textPrimary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(Capsule().fill(OCColor.bgBase.opacity(0.95)))
+                                .overlay(Capsule().stroke(OCColor.borderBase, lineWidth: 1))
+                                .shadow(color: Color.black.opacity(0.25), radius: 8, x: 0, y: 2)
+                        }
+                        .buttonStyle(OCInteractiveButtonStyle())
+                        .padding(.trailing, OCSpacing.contentMargin)
+                        .padding(.bottom, OCSpacing.sm)
+                    }
                 }
-                .scrollDismissesKeyboard(.interactively)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onAppear { scrollProxy = proxy }
                 .onChange(of: sessionState.timelineEvents.count) { _ in
-                    scrollToBottom()
+                    if sessionState.timelineEvents.last?.kind == .userPrompt {
+                        isPinnedToBottom = true
+                        scrollToBottom(force: true)
+                    } else if isPinnedToBottom {
+                        scrollToBottom()
+                    }
                 }
                 .onChange(of: sessionState.timelineEvents.last?.assistantText) { _ in
-                    scrollToBottom()
+                    if isPinnedToBottom { scrollToBottom() }
                 }
                 .onChange(of: sessionState.isProcessing) { processing in
-                    if !processing { scrollToBottom() }
+                    if processing {
+                        runStartedAt = Date()
+                    } else if isPinnedToBottom {
+                        scrollToBottom()
+                    }
                 }
                 .sheet(isPresented: $showActivityDetail) {
                     AgentActivityDetailSheet(events: sessionState.timelineEvents)
@@ -437,11 +490,14 @@ struct ChatSurfaceView: View {
         return "Pensando…"
     }
     
-    private func scrollToBottom() {
-        guard let proxy = scrollProxy,
-              let lastItem = groupedTimelineItems.last else { return }
-        withAnimation(.easeOut(duration: 0.2)) {
-            proxy.scrollTo(lastItem.id, anchor: .bottom)
+    private func scrollToBottom(force: Bool = false) {
+        guard force || isPinnedToBottom, let proxy = scrollProxy else { return }
+        if reduceMotion {
+            proxy.scrollTo("chat-bottom-anchor", anchor: .bottom)
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo("chat-bottom-anchor", anchor: .bottom)
+            }
         }
     }
 
@@ -479,6 +535,39 @@ struct ChatSurfaceView: View {
         }
         flushRun()
         return items
+    }
+}
+
+private struct SequenceScopeBanner: View {
+    let scope: SequenceApprovalScope
+    let onRevoke: () -> Void
+
+    var body: some View {
+        HStack(spacing: OCSpacing.sm) {
+            Image(systemName: "shield.lefthalf.filled")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(OCColor.warning)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Secuencia WDA acotada activa")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(OCColor.textPrimary)
+                Text(scope.summary())
+                    .font(OCTypography.metaMono)
+                    .foregroundColor(OCColor.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Button("Revocar", action: onRevoke)
+                .font(.system(size: 11.5, weight: .bold))
+                .foregroundColor(OCColor.onAccent)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(OCColor.danger))
+        }
+        .padding(.horizontal, OCSpacing.contentMargin)
+        .padding(.vertical, 7)
+        .background(OCColor.warning.opacity(0.10))
+        .overlay(Rectangle().frame(height: 0.5).foregroundColor(OCColor.warning.opacity(0.30)), alignment: .bottom)
     }
 }
 
@@ -744,6 +833,9 @@ struct FilesSurfaceView: View {
                             }
                         )
                     }
+                }
+                .refreshable {
+                    await loadDirectory(path: filesLoadPath)
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)

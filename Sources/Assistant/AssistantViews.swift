@@ -545,6 +545,9 @@ public struct AssistantMemorySectionView: View {
             }
             .padding(OCSpacing.contentMargin)
         }
+        .refreshable {
+            store.reloadMemory()
+        }
         .onAppear {
             if store.preferGraph { graphView = true } else { store.reloadMemory() }
         }

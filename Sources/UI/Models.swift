@@ -190,27 +190,117 @@ public struct TimelineEvent: Identifiable, Sendable {
     }
 }
 
-// MARK: - Attachment
+// MARK: - Attachment (shared multimodal attachment model)
 
-public struct Attachment: Identifiable, Hashable, Sendable {
+public enum AttachmentSource: String, Codable, Hashable, Sendable {
+    case photosLibrary
+    case camera
+    case filesImporter
+    case audioPicker
+    case workspace
+    case manual
+
+    public var displayName: String {
+        switch self {
+        case .photosLibrary: return "Fototeca"
+        case .camera: return "Cámara"
+        case .filesImporter: return "Archivos"
+        case .audioPicker: return "Audio"
+        case .workspace: return "Proyecto"
+        case .manual: return "Manual"
+        }
+    }
+}
+
+public enum AttachmentPreparationState: Codable, Hashable, Sendable {
+    case selected
+    case preparing
+    case ready
+    case uploading
+    case sent
+    case failed(String)
+    case cancelled
+    case unsupported(String)
+
+    public var isReady: Bool {
+        if case .ready = self { return true }
+        if case .sent = self { return true }
+        return false
+    }
+
+    public var badgeLabel: String {
+        switch self {
+        case .selected: return "Seleccionado"
+        case .preparing: return "Preparando…"
+        case .ready: return "Listo"
+        case .uploading: return "Enviando…"
+        case .sent: return "Enviado"
+        case .failed: return "Error"
+        case .cancelled: return "Cancelado"
+        case .unsupported: return "Solo referencia"
+        }
+    }
+}
+
+public struct Attachment: Identifiable, Hashable, Codable, Sendable {
     public let id: String
     public let type: AttachmentType
+    public let source: AttachmentSource
+    public var state: AttachmentPreparationState
     public let name: String
     public let path: String?
     public let icon: String
+    public let mimeType: String?
+    public let utTypeIdentifier: String?
+    public let byteCount: Int64?
+    public let pixelWidth: Int?
+    public let pixelHeight: Int?
+    public var extractedText: String?
+    public var warningMessage: String?
 
-    public enum AttachmentType: String, Sendable {
-        case file, folder, image, context
+    public enum AttachmentType: String, Codable, Hashable, Sendable {
+        case file, folder, image, video, audio, context
     }
 
-    public init(id: String = UUID().uuidString, type: AttachmentType, name: String, path: String? = nil, icon: String = "doc") {
+    public init(
+        id: String = UUID().uuidString,
+        type: AttachmentType,
+        source: AttachmentSource = .workspace,
+        state: AttachmentPreparationState = .ready,
+        name: String,
+        path: String? = nil,
+        icon: String = "doc",
+        mimeType: String? = nil,
+        utTypeIdentifier: String? = nil,
+        byteCount: Int64? = nil,
+        pixelWidth: Int? = nil,
+        pixelHeight: Int? = nil,
+        extractedText: String? = nil,
+        warningMessage: String? = nil
+    ) {
         self.id = id
         self.type = type
+        self.source = source
+        self.state = state
         self.name = name
         self.path = path
         self.icon = icon
+        self.mimeType = mimeType
+        self.utTypeIdentifier = utTypeIdentifier
+        self.byteCount = byteCount
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+        self.extractedText = extractedText
+        self.warningMessage = warningMessage
+    }
+
+    public var formattedByteSize: String? {
+        guard let byteCount, byteCount > 0 else { return nil }
+        return ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file)
     }
 }
+
+public typealias ChatAttachment = Attachment
 
 // MARK: - Diff
 

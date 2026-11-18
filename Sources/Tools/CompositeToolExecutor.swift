@@ -38,10 +38,11 @@ public final class CompositeToolExecutor: ToolExecutor, @unchecked Sendable {
     /// memory tools are deliberately left out.
     private static let companionPrefixes = [
         "gmail.", "googlecalendar.", "googletasks.", "googledrive.", "googledocs.", "googlecontacts.",
-        "googlesheets.", "googleclassroom.", "notifications.", "shortcuts.", "browser_"
+        "googlesheets.", "googleclassroom.", "notifications.", "shortcuts.", "browser_",
+        "python_eval", "isymcp_", "l1_", "importar_catalogo_csv", "secret_vault_", "learn_action_"
     ]
 
-    public static func isCompanionTool(_ name: String) -> Bool {
+    @Sendable public static func isCompanionTool(_ name: String) -> Bool {
         companionPrefixes.contains { name.hasPrefix($0) }
     }
 

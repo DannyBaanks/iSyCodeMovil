@@ -46,7 +46,7 @@ public struct TimelineEventContainer: View {
             QuestionView(
                 event: event,
                 onSelect: { choice in store.respondToPermission(requestId: event.id, decision: .allowOnce) },
-                onFreeform: { text in Task { await store.sendPrompt(text) } }
+                onFreeform: { text in store.sendPrompt(text) }
             )
         case .system:
             SystemMessageView(event: event)
@@ -282,14 +282,34 @@ public struct AttachmentToken: View {
 
     public var body: some View {
         HStack(spacing: OCSpacing.xs) {
+            #if canImport(UIKit)
+            if attachment.type == .image, let path = attachment.path, let img = UIImage(contentsOfFile: path) {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 22, height: 22)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            } else {
+                Image(systemName: attachment.icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(OCColor.iconPrimary)
+            }
+            #else
             Image(systemName: attachment.icon)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(OCColor.iconPrimary)
+            #endif
 
             Text(attachment.name)
                 .font(OCTypography.modelPillLabel)
                 .foregroundColor(OCColor.textPrimary)
                 .lineLimit(1)
+
+            if let size = attachment.formattedByteSize {
+                Text(size)
+                    .font(.system(size: 10))
+                    .foregroundColor(OCColor.textFaint)
+            }
 
             if let onRemove = onRemove {
                 Button(action: onRemove) {
@@ -430,6 +450,20 @@ public struct ToolCallCollapsedView: View {
         if name.hasPrefix("iphone_") {
             return "Control del iPhone"
         }
+        if name == "python_eval" { return "Procesando con Python local" }
+        if name == "http_request" { return "Consultando servicio web" }
+        if name == "isymcp_status" { return "Consultando ISyMCP (PC)" }
+        if name == "isymcp_tasks" { return "Consultando tareas de ISyMCP" }
+        if name == "isymcp_respond_task" { return "Respondiendo tarea en ISyMCP" }
+        if name == "secret_vault_list" { return "Consultando aliases del Llavero" }
+        if name == "secret_vault_request_entry" { return "Preparando ficha del Llavero" }
+        if name == "learn_action_prepare" { return "Preparando grabador 'Aprender acción'" }
+        if name == "learn_action_status" { return "Consultando estado de grabación" }
+        if name == "l1_create_tool" { return "Creando capacidad compuesta (L1)" }
+        if name == "l1_list_tools" { return "Listando capacidades L1" }
+        if name == "l1_delete_tool" { return "Eliminando capacidad L1" }
+        if name == "importar_catalogo_csv" { return "Importando catálogo CSV (L1)" }
+        if name.hasPrefix("l1_") { return "Ejecutando acción aprendida (L1)" }
         if name == "browser_navigate" { return "Navegando en la web" }
         if name == "browser_get_page" { return "Leyendo página web" }
         if name == "browser_click" { return "Tocando en la web" }
@@ -481,6 +515,12 @@ public struct ToolCallCollapsedView: View {
 
     static func iconName(for name: String?) -> String {
         guard let name = name?.lowercased() else { return "wrench" }
+        if name == "python_eval" { return "terminal.fill" }
+        if name.hasPrefix("secret_vault_") { return "key.fill" }
+        if name.hasPrefix("learn_action_") { return "record.circle" }
+        if name.hasPrefix("isymcp_") { return "desktopcomputer" }
+        if name.hasPrefix("l1_") || name == "importar_catalogo_csv" { return "square.stack.3d.up.fill" }
+        if name == "http_request" { return "network" }
         if name.hasPrefix("iphone_") { return "iphone" }
         if name.hasPrefix("browser_") { return "safari" }
         if name.hasPrefix("gmail.") { return "envelope" }
@@ -561,29 +601,70 @@ public struct ToolCallExpandedView: View {
                 alignment: .bottom
             )
 
+            // Arguments summary (human-readable parameters)
+            if let args = event.toolArguments, !args.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("PARÁMETROS")
+                        .font(OCTypography.metaMono)
+                        .foregroundColor(OCColor.textFaint)
+                    ForEach(args.keys.sorted().prefix(4), id: \.self) { key in
+                        if let val = args[key], !val.isEmpty {
+                            Text("\(key): \(String(val.prefix(240)))")
+                                .font(OCTypography.codeSmall)
+                                .foregroundColor(OCColor.textSecondary)
+                                .lineLimit(3)
+                        }
+                    }
+                }
+                .padding(.horizontal, OCSpacing.base)
+                .padding(.top, OCSpacing.sm)
+            }
+
             // Output
             if let output = event.toolOutput, !output.isEmpty {
-                ScrollView([.vertical, .horizontal], showsIndicators: true) {
-                    Text(output)
-                        .font(OCTypography.codeSmall)
-                        .foregroundColor(OCColor.textPrimary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, OCSpacing.base)
-                        .padding(.vertical, OCSpacing.xs)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("RESULTADO")
+                            .font(OCTypography.metaMono)
+                            .foregroundColor(OCColor.textFaint)
+                        Spacer()
+                        Button {
+                            #if canImport(UIKit)
+                            UIPasteboard.general.string = output
+                            #endif
+                            OCHaptics.light()
+                        } label: {
+                            Label("Copiar", systemImage: "doc.on.doc")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(IysThemePreferences.active.accent)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, OCSpacing.base)
+                    .padding(.top, OCSpacing.sm)
+
+                    ScrollView([.vertical, .horizontal], showsIndicators: true) {
+                        Text(output)
+                            .font(OCTypography.codeSmall)
+                            .foregroundColor(OCColor.textPrimary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, OCSpacing.base)
+                            .padding(.vertical, OCSpacing.xs)
+                    }
+                    .frame(maxHeight: 260)
                 }
-                .frame(maxHeight: 260)
             } else if event.toolState == .running {
-                HStack {
+                HStack(spacing: 8) {
                     ProgressView()
                         .scaleEffect(0.8)
                         .progressViewStyle(CircularProgressViewStyle(tint: agentColor))
-                    Text("Ejecutando…")
+                    Text("\(ToolCallCollapsedView.displayTitle(for: event.toolName)) en progreso…")
                         .font(OCTypography.codeSmall)
-                        .foregroundColor(OCColor.textFaint)
+                        .foregroundColor(OCColor.textSecondary)
                 }
                 .padding(.horizontal, OCSpacing.base)
-                .padding(.vertical, OCSpacing.xl)
+                .padding(.vertical, OCSpacing.md)
             }
         }
         .ocCard(radius: OCRadius.r10, border: OCColor.borderBase, background: OCColor.bgBase)
@@ -1148,7 +1229,7 @@ public struct PermissionView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("permission-allow-sequence")
 
-                    Text("Una sola aprobación para abrir, tocar, escribir y enviar en esta tarea. Al terminar vuelve a pedir permiso; no cubre otras herramientas.")
+                    Text("Autoriza una secuencia acotada (hasta 12 acciones o 3 minutos) solo para herramientas WDA en esta tarea. Puedes revocarla en cualquier momento desde la barra superior.")
                         .font(OCTypography.meta)
                         .foregroundColor(OCColor.textFaint)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1304,12 +1385,62 @@ public struct SystemMessageView: View {
 
     public var body: some View {
         if let text = event.assistantText {
-            Text(text)
-                .font(OCTypography.meta)
-                .foregroundColor(OCColor.textFaint)
-                .frame(maxWidth: .infinity, alignment: .center)
+            if text.hasPrefix("Error:") {
+                let raw = String(text.dropFirst("Error:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                OCUnifiedStateCard(
+                    kind: Self.classifyKind(raw),
+                    title: Self.friendlyTitle(raw),
+                    message: Self.friendlyMessage(raw),
+                    technicalDetail: raw
+                )
                 .padding(.vertical, OCSpacing.xs)
+            } else {
+                Text(text)
+                    .font(OCTypography.meta)
+                    .foregroundColor(OCColor.textFaint)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, OCSpacing.xs)
+            }
         }
+    }
+
+    private static func classifyKind(_ raw: String) -> OCVisualStateKind {
+        let lower = raw.lowercased()
+        if lower.contains("offline") || lower.contains("internet") || lower.contains("connection") || lower.contains("timed out") || lower.contains("sin conexión") {
+            return .offline
+        }
+        if lower.contains("stopped") || lower.contains("cancel") {
+            return .cancelled
+        }
+        return .error
+    }
+
+    private static func friendlyTitle(_ raw: String) -> String {
+        let lower = raw.lowercased()
+        if lower.contains("model") && (lower.contains("cargar") || lower.contains("load") || lower.contains("404") || lower.contains("401")) {
+            return "No pudimos cargar los modelos"
+        }
+        if lower.contains("http") || lower.contains("network") || lower.contains("timed out") || lower.contains("offline") || lower.contains("conexión") {
+            return "Problema de conexión"
+        }
+        if lower.contains("auth") || lower.contains("clave") || lower.contains("key") || lower.contains("401") || lower.contains("403") {
+            return "Revisa tu clave o sesión"
+        }
+        return "No pudimos completar la acción"
+    }
+
+    private static func friendlyMessage(_ raw: String) -> String {
+        let lower = raw.lowercased()
+        if lower.contains("model") {
+            return "No pudimos consultar o cargar los modelos. Revisa la conexión o vuelve a intentar."
+        }
+        if lower.contains("http") || lower.contains("network") || lower.contains("timed out") || lower.contains("conexión") {
+            return "Revisa tu conexión a internet o vuelve a intentarlo en unos segundos."
+        }
+        if lower.contains("auth") || lower.contains("clave") || lower.contains("401") || lower.contains("403") {
+            return "La sesión o clave del proveedor fue rechazada. Puedes actualizarla en Conexiones o Ajustes."
+        }
+        return "Ocurrió un inconveniente al ejecutar la operación. Puedes revisar los detalles técnicos abajo."
     }
 }
 

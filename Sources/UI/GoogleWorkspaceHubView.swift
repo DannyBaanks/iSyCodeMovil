@@ -53,6 +53,9 @@ public struct GoogleWorkspaceHubView: View {
                         .padding(.bottom, OCSpacing.xl)
                 }
             }
+            .refreshable {
+                assistant.refreshAll()
+            }
         case .memory:
             AssistantMemorySectionView()
         case .log:

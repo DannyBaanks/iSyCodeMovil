@@ -44,6 +44,19 @@ public struct AppShellView: View {
         .sheet(isPresented: $router.showSandboxExplanationSheet) {
             SandboxExplanationSheet()
         }
+        .sheet(isPresented: $router.showLearnActionSheet) {
+            LearnActionRecorderSheet()
+                .environmentObject(router)
+        }
+        .sheet(isPresented: $router.showSecretVaultSheet) {
+            SecretVaultSheet()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openLearnActionSheet)) { _ in
+            router.openLearnAction()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openSecretVaultSheet)) { _ in
+            router.openSecretVault()
+        }
         .sheet(item: $assistant.pending) { action in
             AssistantConfirmActionSheet(action: action)
                 .environmentObject(assistant)
@@ -119,6 +132,17 @@ public struct AppShellView: View {
 
     @ViewBuilder
     private func destinationContent(showsSidebarButton: Bool) -> some View {
+        VStack(spacing: 0) {
+            LearnActionLiveBanner(
+                onOpenRecorder: { router.openLearnAction() },
+                onOpenVault: { router.openSecretVault() }
+            )
+            destinationBody(showsSidebarButton: showsSidebarButton)
+        }
+    }
+
+    @ViewBuilder
+    private func destinationBody(showsSidebarButton: Bool) -> some View {
         switch router.activeDestination {
         case .chat:
             if sessionState.currentSession != nil {
@@ -126,6 +150,30 @@ public struct AppShellView: View {
             } else {
                 ChatLandingView(onOpenSidebar: { router.toggleSidebar() })
             }
+        case .builder:
+            AgentBuilderView()
+                .overlay(alignment: .bottomTrailing) {
+                    GUSFloatingAdvisorButton()
+                        .padding(.trailing, OCSpacing.contentMargin)
+                        .padding(.bottom, 68)
+                }
+                .toolbar {
+                    if showsSidebarButton {
+                        sidebarLeadingToolbarItem
+                    }
+                }
+        case .myAgents:
+            MyAgentsView()
+                .overlay(alignment: .bottomTrailing) {
+                    GUSFloatingAdvisorButton()
+                        .padding(.trailing, OCSpacing.contentMargin)
+                        .padding(.bottom, OCSpacing.lg)
+                }
+                .toolbar {
+                    if showsSidebarButton {
+                        sidebarLeadingToolbarItem
+                    }
+                }
         case .browser:
             InAppBrowserView()
                 .toolbar {
@@ -149,6 +197,11 @@ public struct AppShellView: View {
                 }
         case .connections:
             ConnectionsView()
+                .overlay(alignment: .bottomTrailing) {
+                    GUSFloatingAdvisorButton()
+                        .padding(.trailing, OCSpacing.contentMargin)
+                        .padding(.bottom, OCSpacing.lg)
+                }
                 .toolbar {
                     if showsSidebarButton {
                         sidebarLeadingToolbarItem

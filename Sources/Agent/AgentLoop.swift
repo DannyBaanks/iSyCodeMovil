@@ -172,6 +172,7 @@ public struct PermissionRequest: Codable, Sendable, Identifiable {
     public let toolDescription: String
     public let arguments: [String: String]
     public let reason: String
+    public let requiresApprovalEveryTime: Bool
     public let timestamp: Date
     
     public init(
@@ -179,14 +180,61 @@ public struct PermissionRequest: Codable, Sendable, Identifiable {
         toolName: String,
         toolDescription: String,
         arguments: [String: String],
-        reason: String
+        reason: String,
+        requiresApprovalEveryTime: Bool = false
     ) {
         self.id = id
         self.toolName = toolName
         self.toolDescription = toolDescription
         self.arguments = arguments
         self.reason = reason
+        self.requiresApprovalEveryTime = requiresApprovalEveryTime
         self.timestamp = Date()
+    }
+}
+
+/// Bounded sequence authorization grant for WDA (`iphone_*`) operations within one task (Section 12).
+public struct SequenceApprovalScope: Codable, Sendable, Equatable {
+    public let id: String
+    public let objective: String
+    public let allowedPrefix: String
+    public let targetLabel: String
+    public let maxActions: Int
+    public var usedActions: Int
+    public let grantedAt: Date
+    public let expiresAt: Date
+
+    public init(
+        id: String = UUID().uuidString,
+        objective: String,
+        allowedPrefix: String = "iphone_",
+        targetLabel: String = "Este iPhone (WDA)",
+        maxActions: Int = 12,
+        usedActions: Int = 0,
+        grantedAt: Date = Date(),
+        ttlSeconds: TimeInterval = 180
+    ) {
+        self.id = id
+        self.objective = objective
+        self.allowedPrefix = allowedPrefix
+        self.targetLabel = targetLabel
+        self.maxActions = max(1, maxActions)
+        self.usedActions = usedActions
+        self.grantedAt = grantedAt
+        self.expiresAt = grantedAt.addingTimeInterval(ttlSeconds)
+    }
+
+    public func isValid(for toolName: String, at date: Date = Date()) -> Bool {
+        toolName.hasPrefix(allowedPrefix) && usedActions < maxActions && date < expiresAt
+    }
+
+    public var remainingActions: Int {
+        max(0, maxActions - usedActions)
+    }
+
+    public func summary(at date: Date = Date()) -> String {
+        let secs = max(0, Int(expiresAt.timeIntervalSince(date)))
+        return "\(targetLabel) · \(usedActions)/\(maxActions) acciones · \(secs)s"
     }
 }
 
@@ -224,6 +272,7 @@ public enum AgentLoopEvent: Sendable {
     case toolInvocation(ToolInvocation)
     case toolResult(ToolExecutionResult)
     case permissionRequested(PermissionRequest)
+    case sequenceScopeChanged(SequenceApprovalScope?)
     case turnCompleted
     case error(Error)
     case finished(finalResponse: String)
@@ -238,15 +287,26 @@ public actor AgentLoop {
     private var eventHandler: (@Sendable (AgentLoopEvent) async -> Void)?
     private var isRunning = false
     private var alwaysAllowedTools: Set<String> = []
-    /// Aprobación por secuencia WDA vigente en este run (Fase 2): una sola aprobación
-    /// al inicio del turno que cubre las herramientas iphone_* de esa tarea. Se activa
-    /// solo con una decisión .allowSequence y se borra al terminar el run.
-    private var sequenceApprovalActive = false
+    /// Aprobación por secuencia WDA vigente en este run (Fase 2 + Sección 12): una sola aprobación
+    /// acotada por objetivo, presupuesto de acciones y tiempo límite que cubre las herramientas
+    /// iphone_* de esa tarea. Se borra al terminar el run o al revocarse.
+    private var sequenceScope: SequenceApprovalScope?
 
     /// La aprobación por secuencia solo cubre herramientas WDA (iphone_*) del turno vigente.
     /// Nunca cubre otras herramientas destructivas (archivos, correo, etc.).
-    static func isSequenceCovered(toolName: String, sequenceActive: Bool) -> Bool {
+    public static func isSequenceCovered(toolName: String, sequenceActive: Bool) -> Bool {
         sequenceActive && toolName.hasPrefix("iphone_")
+    }
+
+    public func revokeSequenceApproval() async {
+        guard let previous = sequenceScope else { return }
+        sequenceScope = nil
+        await eventHandler?(.sequenceScopeChanged(nil))
+        try? await context.persistence.appendEvent(AgentEvent(
+            conversationId: context.conversationId,
+            type: .stateChange,
+            payload: ["state": "sequence_approval_revoked", "used": String(previous.usedActions)]
+        ))
     }
     
     public init(context: AgentContext) {
@@ -257,17 +317,27 @@ public actor AgentLoop {
         self.eventHandler = handler
     }
     
-    /// Ejecuta un turno completo del agente
+    /// Ejecuta un turno completo del agente (con partes multimodales opcionales).
     /// Retorna la respuesta final del asistente
-    public func run(userInput: String) async throws -> String {
+    public func run(userInput: String, multimodalParts: [ModelMessage.ContentPart] = []) async throws -> String {
         guard !isRunning else {
             throw AgentError.toolError("AgentLoop already running")
         }
+        let hasImageAttachment = multimodalParts.contains { $0.kind == .imageBase64 && $0.base64Data != nil }
+        if hasImageAttachment && !context.modelProvider.capabilities.supportsImages {
+            throw ModelProviderError.unsupportedFeature(
+                "El proveedor activo (\(context.modelProvider.name)) no admite imágenes. Cambia a OpenAI, Gemini, ChatGPT OAuth, OpenRouter o NVIDIA VL para enviar fotografías."
+            )
+        }
         isRunning = true
-        sequenceApprovalActive = false
+        sequenceScope = nil
+        await eventHandler?(.sequenceScopeChanged(nil))
         defer {
             isRunning = false
-            sequenceApprovalActive = false
+            sequenceScope = nil
+            Task { [eventHandler = self.eventHandler] in
+                await eventHandler?(.sequenceScopeChanged(nil))
+            }
         }
         
         // Cargar o crear conversación
@@ -283,8 +353,13 @@ public actor AgentLoop {
             throw AgentError.noConversation
         }
         
-        // Añadir mensaje del usuario
-        let userMessage = Message(role: .user, content: userInput)
+        // Guardar en el mensaje únicamente texto / documentos o partes ligeras en el turno actual;
+        // las imágenes activas viajan para este turno y sus siguientes inmediatos dentro de la sesión.
+        let userMessage = Message(
+            role: .user,
+            content: userInput,
+            multimodalParts: multimodalParts.isEmpty ? nil : multimodalParts
+        )
         conversation.messages.append(userMessage)
         currentConversation = conversation
         try await context.persistence.saveConversation(conversation)
@@ -398,25 +473,42 @@ public actor AgentLoop {
                         payload: ["tool": toolCall.name, "arguments": toolCall.arguments.map { "\($0.key)=\($0.value)" }.joined(separator: ", ")]
                     ))
                     
-                    // Una aprobación por secuencia vigente cubre las operaciones WDA de
-                    // este turno sin volver a preguntar (Fase 2). No cubre otras herramientas.
-                    let coveredBySequence = Self.isSequenceCovered(toolName: toolCall.name, sequenceActive: sequenceApprovalActive)
+                    // Una aprobación por secuencia acotada cubre las operaciones WDA de
+                    // este turno dentro de su presupuesto de acciones y tiempo (Sección 12).
+                    let now = Date()
+                    if let scope = sequenceScope, !scope.isValid(for: toolCall.name, at: now), toolCall.name.hasPrefix(scope.allowedPrefix) {
+                        sequenceScope = nil
+                        await eventHandler?(.sequenceScopeChanged(nil))
+                        try? await context.persistence.appendEvent(AgentEvent(
+                            conversationId: context.conversationId,
+                            type: .stateChange,
+                            payload: ["state": "sequence_approval_expired", "used": String(scope.usedActions)]
+                        ))
+                    }
+                    let coveredBySequence = sequenceScope?.isValid(for: toolCall.name, at: now) == true
+                    let usesVaultSecret = SecretVaultStore.containsSecretReference(in: toolCall.arguments)
 
-                    // Destructive tools are fail-closed unless explicitly allowed.
+                    // Destructive or vault-secret tools are fail-closed unless explicitly allowed.
                     if let tool = turnTools.first(where: { $0.name == toolCall.name }),
-                       tool.capabilities.isDestructive,
-                       !coveredBySequence,
-                       (tool.capabilities.requiresApprovalEveryTime || !alwaysAllowedTools.contains(tool.name)) {
+                       (tool.capabilities.isDestructive || usesVaultSecret),
+                       !(coveredBySequence && !usesVaultSecret),
+                       (tool.capabilities.requiresApprovalEveryTime || usesVaultSecret || !alwaysAllowedTools.contains(tool.name)) {
                         try Task.checkCancellation()
+
+                        let effectiveAskEveryTime = tool.capabilities.requiresApprovalEveryTime || usesVaultSecret
+                        let reasonText = usesVaultSecret
+                            ? "Este paso inyectará una credencial protegida de tu Llavero usando Face ID (nunca expuesta al modelo)."
+                            : (tool.capabilities.approvalReason ?? "This tool will modify files in your workspace. Are you sure you want to proceed?")
 
                         let request = PermissionRequest(
                             toolName: tool.name,
                             toolDescription: tool.description,
                             arguments: toolCall.arguments,
-                            reason: tool.capabilities.approvalReason ?? "This tool will modify files in your workspace. Are you sure you want to proceed?"
+                            reason: reasonText,
+                            requiresApprovalEveryTime: effectiveAskEveryTime
                         )
 
-                        await PermissionNotifier.shared.note(requestID: request.id, askEveryTime: tool.capabilities.requiresApprovalEveryTime)
+                        await PermissionNotifier.shared.note(requestID: request.id, askEveryTime: effectiveAskEveryTime)
                         await eventHandler?(.permissionRequested(request))
 
                         guard let handler = context.permissionHandler else {
@@ -511,27 +603,39 @@ public actor AgentLoop {
                             toolApproval = .allowAlways
 
                         case .allowSequence:
-                            // Una sola aprobación de alcance para este turno: a partir de
-                            // aquí, las herramientas iphone_* de esta tarea ya no preguntan.
-                            // No cubre otras herramientas y expira al terminar el run.
-                            sequenceApprovalActive = true
+                            // Una sola aprobación de alcance acotada para este turno: máx. 12 acciones o 180s
+                            // sobre herramientas iphone_*. No cubre otras herramientas y se puede revocar.
+                            let target = toolCall.arguments["app"] ?? "Este iPhone (WDA)"
+                            let newScope = SequenceApprovalScope(
+                                objective: String(userInput.prefix(120)),
+                                allowedPrefix: "iphone_",
+                                targetLabel: target,
+                                maxActions: 12,
+                                usedActions: 1,
+                                ttlSeconds: 180
+                            )
+                            sequenceScope = newScope
+                            await eventHandler?(.sequenceScopeChanged(newScope))
                             toolApproval = .allowOnce
                             try await context.persistence.appendEvent(AgentEvent(
                                 conversationId: context.conversationId,
                                 type: .stateChange,
-                                payload: ["state": "sequence_approval_granted", "tool": tool.name]
+                                payload: ["state": "sequence_approval_granted", "tool": tool.name, "max_actions": "12"]
                             ))
                         }
                     }
 
-                    if coveredBySequence {
-                        // Cubierta por la aprobación por secuencia de este turno: ejecutar
-                        // sin volver a preguntar. Queda en el registro de auditoría.
+                    if coveredBySequence, var scope = sequenceScope {
+                        // Cubierta por la aprobación por secuencia de este turno: descontar del
+                        // presupuesto y registrar recibo en auditoría.
+                        scope.usedActions += 1
+                        sequenceScope = scope
+                        await eventHandler?(.sequenceScopeChanged(scope))
                         toolApproval = .allowOnce
                         try await context.persistence.appendEvent(AgentEvent(
                             conversationId: context.conversationId,
                             type: .stateChange,
-                            payload: ["state": "sequence_approval_used", "tool": toolCall.name]
+                            payload: ["state": "sequence_approval_used", "tool": toolCall.name, "used": String(scope.usedActions), "max": String(scope.maxActions)]
                         ))
                     }
 
@@ -602,10 +706,21 @@ public actor AgentLoop {
         }
         
         // Historial de conversación
-        for msg in conversation.messages {
+        let lastUserIndex = conversation.messages.lastIndex(where: { $0.role == .user })
+        for (idx, msg) in conversation.messages.enumerated() {
             switch msg.role {
             case .user:
-                messages.append(ModelMessage(role: .user, content: msg.content))
+                // Only keep binary base64 images on recent user turns (current or immediately preceding)
+                // so multi-turn conversations don't hit provider payload limits.
+                let filteredParts: [ModelMessage.ContentPart]?
+                if let parts = msg.multimodalParts {
+                    let keepImages = (lastUserIndex.map { idx >= max(0, $0 - 1) } ?? true)
+                    let kept = parts.filter { keepImages || $0.kind != .imageBase64 }
+                    filteredParts = kept.isEmpty ? nil : kept
+                } else {
+                    filteredParts = nil
+                }
+                messages.append(ModelMessage(role: .user, content: msg.content, multimodalParts: filteredParts))
             case .assistant:
                 let content = msg.content
                 messages.append(ModelMessage(

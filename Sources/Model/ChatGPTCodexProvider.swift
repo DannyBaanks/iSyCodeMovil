@@ -12,7 +12,7 @@ public actor ChatGPTCodexProvider: @preconcurrency ModelProvider {
         maxTokens: 16384,
         maxContextTokens: 200000,
         supportsSystemPrompt: true,
-        supportsImages: false,
+        supportsImages: true,
         localOnly: false,
         restrictions: ["Usa tu suscripción ChatGPT Plus/Pro", "Requiere conexión a internet"]
     )
@@ -279,11 +279,57 @@ public actor ChatGPTCodexProvider: @preconcurrency ModelProvider {
             case .system:
                 if !msg.content.isEmpty { systemParts.append(msg.content) }
             case .user:
-                inputItems.append([
-                    "type": "message",
-                    "role": "user",
-                    "content": msg.content
-                ])
+                if let parts = msg.multimodalParts, !parts.isEmpty {
+                    let hasImage = parts.contains { $0.kind == .imageBase64 && $0.base64Data != nil }
+                    if hasImage {
+                        var contentItems: [[String: Any]] = []
+                        if !msg.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            contentItems.append(["type": "input_text", "text": msg.content])
+                        }
+                        for part in parts {
+                            switch part.kind {
+                            case .text:
+                                if let t = part.text, !t.isEmpty {
+                                    contentItems.append(["type": "input_text", "text": t])
+                                }
+                            case .documentText:
+                                if let t = part.text, !t.isEmpty {
+                                    let prefix = part.filename.map { "[Archivo adjunto: \($0)]\n" } ?? ""
+                                    contentItems.append(["type": "input_text", "text": prefix + t])
+                                }
+                            case .imageBase64:
+                                if let b64 = part.base64Data, !b64.isEmpty {
+                                    let mime = part.mimeType ?? "image/jpeg"
+                                    contentItems.append(["type": "input_image", "image_url": "data:\(mime);base64,\(b64)"])
+                                }
+                            }
+                        }
+                        inputItems.append([
+                            "type": "message",
+                            "role": "user",
+                            "content": contentItems
+                        ])
+                    } else {
+                        let docSegments = parts.compactMap { part -> String? in
+                            guard part.kind == .documentText || part.kind == .text, let t = part.text, !t.isEmpty else { return nil }
+                            return part.filename.map { "[Archivo adjunto: \($0)]\n\(t)" } ?? t
+                        }
+                        let combined = docSegments.isEmpty
+                            ? msg.content
+                            : ([msg.content] + docSegments).filter { !$0.isEmpty }.joined(separator: "\n\n")
+                        inputItems.append([
+                            "type": "message",
+                            "role": "user",
+                            "content": combined
+                        ])
+                    }
+                } else {
+                    inputItems.append([
+                        "type": "message",
+                        "role": "user",
+                        "content": msg.content
+                    ])
+                }
             case .assistant:
                 if !msg.content.isEmpty {
                     inputItems.append([

@@ -62,6 +62,7 @@ public struct Message: Codable, Sendable, Identifiable {
     public let toolResults: [ToolResult]?
     public let timestamp: Date
     public let metadata: [String: String]
+    public let multimodalParts: [ModelMessage.ContentPart]?
     
     public enum Role: String, Codable, Sendable {
         case user, assistant, system, tool
@@ -73,7 +74,8 @@ public struct Message: Codable, Sendable, Identifiable {
         content: String,
         toolCalls: [ToolCall]? = nil,
         toolResults: [ToolResult]? = nil,
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
+        multimodalParts: [ModelMessage.ContentPart]? = nil
     ) {
         self.id = id
         self.role = role
@@ -82,6 +84,7 @@ public struct Message: Codable, Sendable, Identifiable {
         self.toolResults = toolResults
         self.timestamp = Date()
         self.metadata = metadata
+        self.multimodalParts = multimodalParts
     }
 }
 

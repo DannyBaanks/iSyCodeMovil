@@ -5,12 +5,19 @@ import SwiftUI
 public struct ComposerView: View {
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var store: WorkbenchStore
+    @StateObject private var mediaCoordinator = MultimodalComposerCoordinator()
     @FocusState private var isFocused: Bool
 
     public init() {}
 
     public var body: some View {
-        VStack(spacing: 0) {
+        let runtime = store.runtimeSnapshot
+        let capabilityReport = MultimodalProviderCompatibility.evaluate(
+            providerID: sessionState.selectedModel?.route ?? runtime.providerID,
+            modelID: sessionState.selectedModel?.apiModelId ?? runtime.modelName,
+            backendMode: store.backendMode
+        )
+        return VStack(spacing: 0) {
             if store.gusDualSmolActive {
                 HStack {
                     Label("Dual-Smol · experimental", systemImage: "sparkles")
@@ -22,25 +29,34 @@ public struct ComposerView: View {
                 .padding(.top, OCSpacing.xs)
             }
 
-            // Attachments row
+            DictationLiveStatusBar()
+                .padding(.horizontal, OCSpacing.contentMargin)
+                .padding(.top, OCSpacing.xs)
+
+            // Attachments preview row (photos, camera, PDF/docs with live state)
             if !sessionState.composerAttachments.isEmpty {
-                AttachmentsBar(attachments: sessionState.composerAttachments) { attachment in
-                    sessionState.composerAttachments.removeAll { $0.id == attachment.id }
-                }
+                RichAttachmentsBar(
+                    attachments: sessionState.composerAttachments,
+                    capabilityReport: capabilityReport,
+                    onInspect: { mediaCoordinator.inspectingAttachment = $0 },
+                    onRemove: { store.removeAttachment($0) }
+                )
                 .padding(.horizontal, OCSpacing.contentMargin)
                 .padding(.top, OCSpacing.xs)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             // Input area
-            HStack(alignment: .bottom, spacing: OCSpacing.base) {
+            HStack(alignment: .bottom, spacing: OCSpacing.xs) {
+                ComposerPlusMenuButton(coordinator: mediaCoordinator)
+
                 // Input text
                 ZStack(alignment: .topLeading) {
                     if sessionState.composerText.isEmpty {
                         Text(sessionState.isProcessing ? "" : composerPlaceholder)
                             .font(OCTypography.body)
                             .foregroundColor(OCColor.textFaint)
-                            .padding(.horizontal, OCSpacing.base)
+                            .padding(.horizontal, OCSpacing.xs)
                             .padding(.vertical, OCSpacing.sm)
                     }
 
@@ -52,10 +68,14 @@ public struct ComposerView: View {
                         .submitLabel(.send)
                         .onSubmit { handleSend() }
                         .disabled(sessionState.isProcessing)
-                        .padding(.horizontal, OCSpacing.base)
+                        .padding(.horizontal, OCSpacing.xs)
                         .padding(.vertical, OCSpacing.sm)
                 }
                 .frame(minHeight: 42)
+
+                DictationMicrophoneButton(targetText: $sessionState.composerText) {
+                    isFocused = true
+                }
 
                 // Send/Stop button
                 SendStopButton(
@@ -71,8 +91,8 @@ public struct ComposerView: View {
                     }
                 }
             }
-            .padding(.horizontal, OCSpacing.lg)
-            .padding(.vertical, OCSpacing.base)
+            .padding(.horizontal, OCSpacing.base)
+            .padding(.vertical, OCSpacing.xs)
 
             // Control row
             ComposerControlRow(
@@ -80,7 +100,8 @@ public struct ComposerView: View {
                 onAgentTap: { sessionState.showAgentPicker = true },
                 selectedModel: sessionState.selectedModel,
                 onModelTap: { sessionState.showModelPicker = true },
-                onAttachTap: { sessionState.showAttachments = true },
+                onAttachTap: { mediaCoordinator.showWorkspaceSheet = true },
+                showsAttachButton: false,
                 flowMode: $sessionState.flowMode,
                 codexMode: sessionState.selectedModel?.route == "codex",
                 limitedLabel: sessionState.selectedModel?.route == "grok" ? "Grok · en tu computadora" : nil
@@ -107,19 +128,44 @@ public struct ComposerView: View {
                 Button("Listo") { isFocused = false }
             }
         }
+        .multimodalComposerSupport(
+            coordinator: mediaCoordinator,
+            attachments: $sessionState.composerAttachments,
+            workspaceSheet: {
+                AnyView(
+                    AttachmentsSheet()
+                        .environmentObject(store)
+                        .environmentObject(sessionState)
+                )
+            }
+        )
+        .onChange(of: sessionState.showAttachments) { open in
+            if open {
+                mediaCoordinator.showWorkspaceSheet = true
+                sessionState.showAttachments = false
+            }
+        }
+        .alert("Adjuntos", isPresented: Binding(
+            get: { mediaCoordinator.statusError != nil },
+            set: { if !$0 { mediaCoordinator.statusError = nil } }
+        )) {
+            Button("Entendido", role: .cancel) { mediaCoordinator.statusError = nil }
+        } message: {
+            Text(mediaCoordinator.statusError ?? "")
+        }
     }
 
     private func handleSend() {
         guard !sessionState.isProcessing else { return }
-        guard !sessionState.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let trimmed = sessionState.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty || !sessionState.composerAttachments.isEmpty else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        // This will be handled by the parent view model
         NotificationCenter.default.post(name: .composerSend, object: sessionState.composerText)
         sessionState.composerText = ""
     }
 
     private var canSend: Bool {
-        !sessionState.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !sessionState.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !sessionState.composerAttachments.isEmpty
     }
 
     private var composerPlaceholder: String {
@@ -162,6 +208,7 @@ public struct SendStopButton: View {
         .disabled(isProcessing ? false : !canSend)
         .opacity(isProcessing || canSend ? 1 : 0.4)
         .frame(width: 44, height: 44)
+        .fixedSize(horizontal: true, vertical: false)
         .contentShape(Rectangle())
         .accessibilityLabel(isProcessing ? "Detener" : "Enviar mensaje")
         .animation(.easeInOut(duration: 0.15), value: isProcessing)
@@ -193,6 +240,7 @@ public struct ComposerControlRow: View {
     let selectedModel: ModelInfo?
     let onModelTap: () -> Void
     let onAttachTap: () -> Void
+    let showsAttachButton: Bool
     @Binding var flowMode: Bool
     let codexMode: Bool
     let limitedLabel: String?
@@ -203,6 +251,7 @@ public struct ComposerControlRow: View {
         selectedModel: ModelInfo?,
         onModelTap: @escaping () -> Void,
         onAttachTap: @escaping () -> Void,
+        showsAttachButton: Bool = true,
         flowMode: Binding<Bool> = .constant(false),
         codexMode: Bool = false,
         limitedLabel: String? = nil
@@ -212,6 +261,7 @@ public struct ComposerControlRow: View {
         self.selectedModel = selectedModel
         self.onModelTap = onModelTap
         self.onAttachTap = onAttachTap
+        self.showsAttachButton = showsAttachButton
         self._flowMode = flowMode
         self.codexMode = codexMode
         self.limitedLabel = limitedLabel
@@ -219,20 +269,22 @@ public struct ComposerControlRow: View {
 
     public var body: some View {
         HStack(spacing: OCSpacing.base) {
-            // Attach remains available for Codex sessions too; the old layout
-            // hid it whenever the Codex-specific controls were shown.
-            Button(action: onAttachTap) {
-                Image(systemName: "paperclip")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(OCColor.iconPrimary)
-                    .frame(width: 40, height: 40)
-                    .background(OCColor.bgLayer1)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r10).stroke(OCColor.borderMuted, lineWidth: 1))
-                    .contentShape(Rectangle())
+            if showsAttachButton {
+                // Attach remains available for Codex sessions too; the old layout
+                // hid it whenever the Codex-specific controls were shown.
+                Button(action: onAttachTap) {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundColor(OCColor.iconPrimary)
+                        .frame(width: 40, height: 40)
+                        .background(OCColor.bgLayer1)
+                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                        .overlay(RoundedRectangle(cornerRadius: OCRadius.r10).stroke(OCColor.borderMuted, lineWidth: 1))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Adjuntar archivo")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Adjuntar archivo")
 
             if let limitedLabel {
                 Label(limitedLabel, systemImage: "terminal")
@@ -307,7 +359,7 @@ public struct FlowPill: View {
         .buttonStyle(.plain)
         .frame(height: 44)
         .contentShape(Rectangle())
-        .accessibilityLabel(isActive ? "Modo Flow activado: sin pedir permisos" : "Activar modo Flow sin pedir permisos")
+        .accessibilityLabel(isActive ? "Modo Flow activado: omite confirmaciones rutinarias (acciones sensibles siguen pidiendo permiso)" : "Activar modo Flow acotado")
     }
 }
 

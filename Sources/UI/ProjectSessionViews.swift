@@ -120,6 +120,9 @@ public struct ProjectListContent: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(OCColor.bgDeep.ignoresSafeArea())
+        .refreshable {
+            await store.refreshConversations()
+        }
         .navigationTitle("ISYCODE")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -371,6 +374,9 @@ public struct SessionListView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(OCColor.bgDeep.ignoresSafeArea())
+        .refreshable {
+            await store.refreshConversations()
+        }
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

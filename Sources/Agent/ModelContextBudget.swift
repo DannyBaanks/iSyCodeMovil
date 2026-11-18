@@ -127,6 +127,7 @@ enum ModelContextBudget {
         let omitted = message.content.count - keep
         let content = head + "\n[… \(omitted) characters omitted to fit the model's context …]"
         return ModelMessage(role: message.role, content: content, name: message.name,
-                            toolCallId: message.toolCallId, toolCalls: message.toolCalls, metadata: message.metadata)
+                            toolCallId: message.toolCallId, toolCalls: message.toolCalls, metadata: message.metadata,
+                            multimodalParts: message.multimodalParts)
     }
 }

@@ -55,6 +55,8 @@ public final class WorkbenchStore: ObservableObject {
     @Published public private(set) var lastVerifiedAt: Date?
     @Published public private(set) var isRestoringRuntime = false
     @Published public private(set) var lastRuntimeError: String?
+    @Published public private(set) var isRefreshingSessions = false
+    @Published public private(set) var activeSequenceScope: SequenceApprovalScope?
     @Published public var hasCompletedOnboarding: Bool = UserDefaults.standard.bool(forKey: RuntimeIntentDefaults.onboardingCompletedKey) {
         didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: RuntimeIntentDefaults.onboardingCompletedKey) }
     }
@@ -681,45 +683,80 @@ public final class WorkbenchStore: ObservableObject {
     
     public func sendPrompt(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !sessionState.isProcessing else { return }
-        
         let attachments = sessionState.composerAttachments
-        let userEvent = TimelineEvent.userPrompt(
-            trimmed,
-            attachments: attachments,
-            agentMode: sessionState.agentMode
-        )
-        sessionState.addEvent(userEvent)
-        sessionState.composerAttachments.removeAll()
-        
+        guard (!trimmed.isEmpty || !attachments.isEmpty), !sessionState.isProcessing else { return }
+
+        if attachments.contains(where: {
+            if case .preparing = $0.state { return true }
+            if case .selected = $0.state { return true }
+            return false
+        }) {
+            addErrorEvent("Espera un momento a que terminen de prepararse los adjuntos antes de enviar.")
+            return
+        }
+
         guard let backend = currentBackend else {
             addErrorEvent("No backend available")
             return
         }
-        
+
+        let effectivePrompt = trimmed.isEmpty ? "Analiza los elementos adjuntos." : trimmed
+        let snapshot = runtimeSnapshot
+        let activeProviderID = sessionState.selectedModel?.route ?? snapshot.providerID
+        let activeModelID = sessionState.selectedModel?.apiModelId ?? snapshot.modelName ?? configuredModelName
+
+        sessionState.isProcessing = true
         if backendMode == .remote {
             isProcessingRemote = true
         }
-        sessionState.isProcessing = true
         if let native = backend as? NativeSwiftBackend {
             native.flowMode = sessionState.flowMode
         }
-        
+
         let agent = sessionState.agentMode.rawValue.lowercased()
         let model = sessionState.selectedModel
-        
+
         Task { [weak self] in
             guard let self else { return }
             do {
-                let promptText = attachments.isEmpty
-                    ? trimmed
-                    : trimmed + "\n" + attachments.map { attachment in
-                        if let path = attachment.path, !path.isEmpty {
-                            return "@\(path)"
-                        }
-                        return "@\(attachment.name)"
-                    }.joined(separator: " ")
-                try await backend.sendPrompt(promptText, agent: agent, model: model)
+                let prepared = await ChatAttachmentManager.shared.prepareForSend(
+                    attachments: attachments,
+                    providerID: activeProviderID,
+                    modelID: activeModelID,
+                    backendMode: self.backendMode
+                )
+
+                if let blockedReason = prepared.blockedReason {
+                    await MainActor.run {
+                        self.sessionState.isProcessing = false
+                        self.isProcessingRemote = false
+                        self.addErrorEvent("Adjunto no compatible con el proveedor actual:\n\(blockedReason)")
+                    }
+                    return
+                }
+
+                let sentAttachments: [Attachment] = attachments.map { item in
+                    var copy = item
+                    copy.state = .sent
+                    return copy
+                }
+
+                await MainActor.run {
+                    let userEvent = TimelineEvent.userPrompt(
+                        effectivePrompt,
+                        attachments: sentAttachments,
+                        agentMode: self.sessionState.agentMode
+                    )
+                    self.sessionState.addEvent(userEvent)
+                    self.sessionState.composerAttachments.removeAll()
+                }
+
+                if prepared.parts.isEmpty && !attachments.isEmpty {
+                    let promptText = effectivePrompt + "\n" + prepared.fallbackPromptNotes.joined(separator: " ")
+                    try await backend.sendPrompt(promptText, agent: agent, model: model)
+                } else {
+                    try await backend.sendPrompt(effectivePrompt, multimodalParts: prepared.parts, agent: agent, model: model)
+                }
             } catch is CancellationError {
                 await MainActor.run {
                     self.sessionState.isProcessing = false
@@ -788,6 +825,42 @@ public final class WorkbenchStore: ObservableObject {
         }
     }
     
+    public func revokeActiveSequenceApproval() {
+        Task { [weak self] in
+            if let native = self?.currentBackend as? NativeSwiftBackend {
+                await native.revokeSequenceApproval()
+            }
+            await MainActor.run {
+                self?.activeSequenceScope = nil
+                self?.addSystemEvent("Secuencia WDA revocada por el usuario.")
+            }
+        }
+    }
+
+    /// Refreshes project/session listings cleanly without re-authenticating providers or canceling active runs (Section 4).
+    public func refreshConversations() async {
+        guard !isRefreshingSessions else { return }
+        guard let backend = currentBackend else {
+            await refreshRuntimeIntent()
+            return
+        }
+        isRefreshingSessions = true
+        defer { isRefreshingSessions = false }
+        do {
+            let refreshedProjects = try await backend.listProjects()
+            if !refreshedProjects.isEmpty {
+                projects = refreshedProjects
+            }
+            if let projectID = currentProjectID ?? projects.first?.id {
+                sessions = try await backend.listSessions(projectID: projectID)
+            }
+            await refreshRuntimeIntent()
+        } catch {
+            // Preserve existing sessions on failure; surface recoverable notice
+            lastRuntimeError = error.localizedDescription
+        }
+    }
+
     /// Activa o desactiva el vigilante del buzón [GUS]. Al activarlo arranca en el
     /// backend nativo si hay sesión abierta; al desactivarlo se detiene. El ajuste
     /// vive en UserDefaults y el vigilante lo vuelve a leer en cada revisión.
@@ -1041,6 +1114,9 @@ public final class WorkbenchStore: ObservableObject {
 
         case .auxiliaryModelStatus(let status):
             addSystemEvent(status.rawValue)
+
+        case .sequenceScopeChanged(let scope):
+            activeSequenceScope = scope
             
         case .filesChanged:
             await loadFiles()
@@ -1182,6 +1258,9 @@ public final class WorkbenchStore: ObservableObject {
     
     public func removeAttachment(_ attachment: Attachment) {
         sessionState.composerAttachments.removeAll { $0.id == attachment.id }
+        Task {
+            await ChatAttachmentManager.shared.removeStagedFile(for: attachment)
+        }
     }
     
     public func saveAPIKeys(xai: String, openAI: String) async {
@@ -1719,11 +1798,14 @@ extension WorkbenchStore {
         }
 
         sessionState.activeSurface = .chat
+        let hasAttachments = !sessionState.composerAttachments.isEmpty
         if let initialPrompt {
             let trimmed = initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
+            if !trimmed.isEmpty || hasAttachments {
                 sendPrompt(trimmed)
             }
+        } else if hasAttachments {
+            sendPrompt("")
         }
         return true
     }

@@ -582,4 +582,260 @@ extension View {
     public func ocPill(height: CGFloat = 28, radius: CGFloat = OCRadius.r14, background: Color = OCColor.bgLayer1, border: Color = OCColor.borderBase, horizontalPadding: CGFloat = 9) -> some View {
         modifier(OCPillStyle(height: height, radius: radius, background: background, border: border, horizontalPadding: horizontalPadding))
     }
+    public func ocInteractivePress(scale: CGFloat = 0.97) -> some View {
+        buttonStyle(OCInteractiveButtonStyle(scale: scale))
+    }
+    public func ocSkeleton(_ isLoading: Bool) -> some View {
+        modifier(OCSkeletonModifier(isLoading: isLoading))
+    }
+}
+
+// MARK: - 2026 Motion, Haptics & Reusable State Primitives
+
+public enum OCMotion {
+    public static let snappy = Animation.spring(response: 0.25, dampingFraction: 0.82)
+    public static let smooth = Animation.spring(response: 0.34, dampingFraction: 0.85)
+    public static let gentle = Animation.spring(response: 0.44, dampingFraction: 0.88)
+
+    public static func perform(_ animation: Animation = OCMotion.smooth, reduceMotion: Bool = false, _ updates: () -> Void) {
+        if reduceMotion {
+            updates()
+        } else {
+            withAnimation(animation, updates)
+        }
+    }
+}
+
+public enum OCHaptics {
+    public static func light() {
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        #endif
+    }
+
+    public static func medium() {
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        #endif
+    }
+
+    public static func selection() {
+        #if canImport(UIKit)
+        UISelectionFeedbackGenerator().selectionChanged()
+        #endif
+    }
+
+    public static func success() {
+        #if canImport(UIKit)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        #endif
+    }
+
+    public static func warning() {
+        #if canImport(UIKit)
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        #endif
+    }
+
+    public static func error() {
+        #if canImport(UIKit)
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        #endif
+    }
+}
+
+public struct OCInteractiveButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let scale: CGFloat
+
+    public init(scale: CGFloat = 0.97) {
+        self.scale = scale
+    }
+
+    public func makeBody(configuration: ButtonStyleConfiguration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1.0)
+            .opacity(configuration.isPressed ? 0.92 : 1.0)
+            .animation(reduceMotion ? nil : OCMotion.snappy, value: configuration.isPressed)
+    }
+}
+
+public struct OCSkeletonModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let isLoading: Bool
+    @State private var phase: CGFloat = -0.8
+
+    public init(isLoading: Bool) {
+        self.isLoading = isLoading
+    }
+
+    public func body(content: Content) -> some View {
+        if isLoading {
+            content
+                .redacted(reason: .placeholder)
+                .overlay(
+                    Group {
+                        if !reduceMotion {
+                            LinearGradient(
+                                colors: [.clear, Color.white.opacity(0.14), .clear],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                            .offset(x: phase * 220)
+                            .mask(content)
+                        }
+                    }
+                )
+                .onAppear {
+                    guard !reduceMotion else { return }
+                    withAnimation(.linear(duration: 1.35).repeatForever(autoreverses: false)) {
+                        phase = 1.2
+                    }
+                }
+        } else {
+            content
+        }
+    }
+}
+
+/// Complete visual state taxonomy required across primary surfaces (Section 13).
+public enum OCVisualStateKind: String, Sendable {
+    case empty
+    case loading
+    case ready
+    case running
+    case offline
+    case error
+    case retry
+    case permissionRequired
+    case cancelled
+    case completed
+
+    public var symbol: String {
+        switch self {
+        case .empty: return "sparkles.rectangle.stack"
+        case .loading: return "hourglass"
+        case .ready: return "checkmark.circle.fill"
+        case .running: return "bolt.horizontal.circle.fill"
+        case .offline: return "wifi.slash"
+        case .error, .retry: return "exclamationmark.triangle.fill"
+        case .permissionRequired: return "hand.raised.fill"
+        case .cancelled: return "stop.circle.fill"
+        case .completed: return "checkmark.seal.fill"
+        }
+    }
+
+    public var tint: Color {
+        switch self {
+        case .empty: return IysThemePreferences.active.accent
+        case .loading, .running: return OCColor.info
+        case .ready, .completed: return OCColor.success
+        case .offline, .permissionRequired: return OCColor.warning
+        case .error, .retry: return OCColor.danger
+        case .cancelled: return OCColor.textSecondary
+        }
+    }
+}
+
+/// Human-friendly state card with optional action CTA and collapsible technical diagnostics.
+public struct OCUnifiedStateCard: View {
+    let kind: OCVisualStateKind
+    let title: String
+    let message: String
+    let technicalDetail: String?
+    let actionTitle: String?
+    let actionSymbol: String?
+    let action: (() -> Void)?
+    @State private var showTechnical = false
+
+    public init(
+        kind: OCVisualStateKind,
+        title: String,
+        message: String,
+        technicalDetail: String? = nil,
+        actionTitle: String? = nil,
+        actionSymbol: String? = "arrow.clockwise",
+        action: (() -> Void)? = nil
+    ) {
+        self.kind = kind
+        self.title = title
+        self.message = message
+        self.technicalDetail = technicalDetail
+        self.actionTitle = actionTitle
+        self.actionSymbol = actionSymbol
+        self.action = action
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: OCSpacing.md) {
+            HStack(alignment: .top, spacing: OCSpacing.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: OCRadius.r10)
+                        .fill(kind.tint.opacity(0.14))
+                        .frame(width: 40, height: 40)
+                    if kind == .loading || kind == .running {
+                        ProgressView()
+                            .tint(kind.tint)
+                    } else {
+                        Image(systemName: kind.symbol)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(kind.tint)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(OCColor.textPrimary)
+                    Text(message)
+                        .font(.system(size: 13.5))
+                        .foregroundColor(OCColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            if let actionTitle, let action {
+                Button {
+                    OCHaptics.light()
+                    action()
+                } label: {
+                    HStack(spacing: 6) {
+                        if let actionSymbol {
+                            Image(systemName: actionSymbol)
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        Text(actionTitle)
+                            .font(.system(size: 13.5, weight: .semibold))
+                    }
+                    .foregroundColor(OCColor.onAccent)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(kind.tint.gradient)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(OCInteractiveButtonStyle())
+            }
+
+            if let technicalDetail, !technicalDetail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                DisclosureGroup("Ver detalles técnicos", isExpanded: $showTechnical) {
+                    Text(technicalDetail)
+                        .font(OCTypography.codeSmall)
+                        .foregroundColor(OCColor.textFaint)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(OCSpacing.sm)
+                        .background(OCColor.bgDeep)
+                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                        .padding(.top, 4)
+                }
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundColor(OCColor.textSecondary)
+            }
+        }
+        .padding(OCSpacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .ocCard(radius: OCRadius.r14, border: kind.tint.opacity(0.28), background: OCColor.bgBase)
+    }
 }

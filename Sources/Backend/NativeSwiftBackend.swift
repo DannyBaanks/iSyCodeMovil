@@ -309,7 +309,11 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         curatedOnly: Bool = false,
         savedModelName: String? = nil
     ) async throws {
-        let remote = RemoteModelProvider(id: id, name: display)
+        let remote = RemoteModelProvider(
+            id: id,
+            name: display,
+            supportsImages: MultimodalProviderCompatibility.evaluate(providerID: id, modelID: nil, backendMode: .native).supportsImages
+        )
         try await remote.configure(ModelConfiguration(apiKey: key, baseURL: baseURL))
         let listed = await remote.availableModels
         let models = SandboxModelCatalog.orderedModelIDs(available: listed, preferred: preferred, fallback: fallback, curatedOnly: curatedOnly)
@@ -354,6 +358,8 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         // está corriendo, no hace nada). Sin sesión no hay dónde ejecutar.
         await maybeStartMailboxWatcher()
         guard let ws = workspace, let ps = persistence, let provider = modelProvider, let exec = toolExecutor else { return }
+        let activeContract = AgentContractStore.shared.activeAgentForSession
+        await exec.setActiveContract(activeContract)
         await exec.configureSharedMemory(localOnly: provider.capabilities.localOnly, conversationID: sessionID)
         let modelName = activeModelName
         if boundSessionID == sessionID, agentLoop != nil {
@@ -378,13 +384,14 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             modelProvider: provider,
             modelName: modelName,
             toolExecutor: activeExecutor,
-            systemPrompt: systemPromptText(),
+            systemPrompt: systemPromptText(contract: activeContract),
             maxTurns: 12,
             permissionHandler: { [weak self] request in
                 guard let self else {
                     return PermissionResponse(requestId: request.id, decision: .deny)
                 }
-                if await self.flowMode {
+                // Flow NEVER bypasses tools that require fresh per-operation confirmation (Section 12).
+                if await self.flowMode && !request.requiresApprovalEveryTime {
                     return PermissionResponse(requestId: request.id, decision: .allowOnce)
                 }
                 let decision = await self.waitForPermission(request)
@@ -421,9 +428,21 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         }
     }
     
-    private func systemPromptText() -> String {
-        guard let sandboxExecutor else { return GUSMobileRole.mobile.systemPrompt }
-        return sandboxExecutor.systemPrompt + "\n" + CompositeToolExecutor.layersNote
+    private func systemPromptText(contract: AgentContract? = nil) -> String {
+        let base: String
+        if let sandboxExecutor {
+            base = sandboxExecutor.systemPrompt + "\n" + CompositeToolExecutor.layersNote
+        } else {
+            base = GUSMobileRole.mobile.systemPrompt + "\n\n" +
+                "También cuentas con `python_eval` (pocketpy 2.2.0 sin acceso a OS/red) para procesar CSV, JSON, cálculos exactos y validaciones en memoria, " +
+                "y con `isymcp_status` / `isymcp_tasks` / `isymcp_respond_task` si el usuario emparejó su PC por ISyMCP (Tailscale :8797)."
+        }
+        guard let contract else { return base }
+        return contract.effectiveSystemPrompt() + "\n\n" + base
+    }
+
+    public func revokeSequenceApproval() async {
+        await agentLoop?.revokeSequenceApproval()
     }
     
     public func listProjects() async throws -> [Project] {
@@ -492,6 +511,15 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     }
     
     public func sendPrompt(_ text: String, agent: String?, model: ModelInfo?) async throws {
+        try await sendPrompt(text, multimodalParts: [], agent: agent, model: model)
+    }
+
+    public func sendPrompt(
+        _ text: String,
+        multimodalParts: [ModelMessage.ContentPart],
+        agent: String?,
+        model: ModelInfo?
+    ) async throws {
         guard let sessionID = currentSessionIDStorage else { throw WorkbenchError.noSession }
         if let requested = model?.apiModelId, providerModelIDs.contains(requested), requested != activeModelName {
             activeModelName = requested
@@ -525,7 +553,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             }
             guard let self else { return }
             do {
-                _ = try await loop.run(userInput: text)
+                _ = try await loop.run(userInput: text, multimodalParts: multimodalParts)
                 await self.returnToAppIfNeeded()
                 self.completeMailboxTurn(success: true)
             } catch is CancellationError {
@@ -807,6 +835,9 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             
         case .error(let error):
             eventContinuation?.yield(.sessionError(error.localizedDescription))
+
+        case .sequenceScopeChanged(let scope):
+            eventContinuation?.yield(.sequenceScopeChanged(scope))
             
         case .finished:
             if let sessionID = currentSessionIDStorage {

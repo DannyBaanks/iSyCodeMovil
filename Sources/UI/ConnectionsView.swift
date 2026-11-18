@@ -12,7 +12,12 @@ public struct ConnectionsView: View {
     @EnvironmentObject private var router: AppShellRouter
     @ObservedObject private var loopback = LoopbackDeviceSession.shared
     @ObservedObject private var chatgptOAuth = ChatGPTOAuthStore.shared
+    @ObservedObject private var isymcp = ISyMCPStore.shared
+    @ObservedObject private var vault = SecretVaultStore.shared
+    @ObservedObject private var recorder = ActionRecorderService.shared
     @State private var sandboxLinkInput = ""
+    @State private var isymcpServerInput = ISyMCPStore.shared.serverURLString
+    @State private var isymcpCodeInput = ""
     @State private var showSandboxPanel = false
     @State private var showPairingImporter = false
     @State private var isActivatingChatGPT = false
@@ -24,13 +29,28 @@ public struct ConnectionsView: View {
         Form {
             assistantSection
             chatGPTOAuthSection
+            vaultAndRecorderSection
+            isymcpRemoteSection
             computerSandboxSection
             loopbackSection
             mobileHostSection
         }
+        .refreshable {
+            loopback.refreshState()
+            await store.refreshRuntimeIntent()
+            await store.refreshSandboxStatus()
+            if isymcp.isPaired {
+                await isymcp.refresh()
+            }
+        }
         .navigationTitle("Conexiones")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { loopback.refreshState() }
+        .onAppear {
+            loopback.refreshState()
+            if isymcp.isPaired {
+                Task { await isymcp.refresh() }
+            }
+        }
         .sheet(isPresented: $showSandboxPanel) {
             SandboxPanelView()
                 .environmentObject(store)
@@ -158,6 +178,134 @@ public struct ConnectionsView: View {
             Text("ChatGPT Plus/Pro (OAuth)")
         } footer: {
             Text("Inicia sesión con tu cuenta ChatGPT Plus o Pro usando el flujo de dispositivo de Codex para usar los modelos reales de tu cuenta con tu suscripción semanal sin pagar API key.")
+        }
+    }
+
+    private var isymcpRemoteSection: some View {
+        Section {
+            if isymcp.isPaired {
+                LabeledContent("Estado", value: isymcp.statusSummary ?? "Emparejado")
+                LabeledContent("Compuerta Shell (PC)", value: isymcp.shellGateOpen ? "Abierta" : "Cerrada")
+                LabeledContent("Compuerta Consolas", value: isymcp.agentsGateOpen ? "Abierta" : "Cerrada")
+
+                if let taint = isymcp.taintSummary {
+                    Label("Contenido externo (taint): \(taint)", systemImage: "exclamationmark.shield.fill")
+                        .font(OCTypography.meta)
+                        .foregroundColor(OCColor.warning)
+                    Button {
+                        Task { await isymcp.clearTaint() }
+                    } label: {
+                        Label("Limpiar marca taint (Face ID)", systemImage: "faceid")
+                    }
+                    .disabled(isymcp.isBusy)
+                }
+
+                if isymcp.pendingGatesCount > 0 {
+                    Label("\(isymcp.pendingGatesCount) solicitud(es) esperando permiso en tu PC", systemImage: "hand.raised.fill")
+                        .font(OCTypography.meta)
+                        .foregroundColor(OCColor.warning)
+                }
+
+                Button {
+                    Task { await isymcp.grantOnce(capability: "shell", uses: 1) }
+                } label: {
+                    Label("Dar 1 uso de shell en PC (Face ID)", systemImage: "faceid")
+                }
+                .disabled(isymcp.isBusy)
+
+                Button {
+                    Task { await isymcp.grantOnce(capability: "agents", uses: 1) }
+                } label: {
+                    Label("Dar 1 uso de consolas TUI (Face ID)", systemImage: "faceid")
+                }
+                .disabled(isymcp.isBusy)
+
+                if !isymcp.recentTasks.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("TAREAS RECIENTES EN ISYMCP")
+                            .font(OCTypography.sectionLabel)
+                            .foregroundColor(OCColor.textFaint)
+                        ForEach(Array(isymcp.recentTasks.prefix(3).enumerated()), id: \.offset) { _, task in
+                            let title = (task["title"] as? String) ?? (task["prompt"] as? String) ?? (task["id"] as? String) ?? "Tarea"
+                            let status = (task["status"] as? String) ?? "pendiente"
+                            HStack {
+                                Text(title)
+                                    .font(.system(size: 12.5))
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(status)
+                                    .font(OCTypography.metaMono)
+                                    .foregroundColor(OCColor.textSecondary)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+
+                Button("Actualizar estado de ISyMCP") {
+                    Task { await isymcp.refresh() }
+                }
+                .disabled(isymcp.isRefreshing)
+
+                Button("Desemparejar ISyMCP", role: .destructive) {
+                    isymcp.unpair()
+                }
+            } else {
+                TextField("IP de Tailscale de tu PC (ej. 100.x.x.x:8797)", text: $isymcpServerInput)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 13.5, design: .monospaced))
+
+                TextField("Código de 6 caracteres (isymcp phone pair)", text: $isymcpCodeInput)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 14, design: .monospaced))
+
+                Button {
+                    Task { await isymcp.pair(rawServer: isymcpServerInput, code: isymcpCodeInput) }
+                } label: {
+                    HStack {
+                        Label("Emparejar ISyMCP con Face ID", systemImage: "faceid")
+                        if isymcp.isBusy {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(isymcp.isBusy || isymcpServerInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isymcpCodeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            if let err = isymcp.errorMessage {
+                Label(err, systemImage: "exclamationmark.circle")
+                    .font(OCTypography.meta)
+                    .foregroundColor(OCColor.danger)
+            }
+        } header: {
+            Text("ISyMCP en tu PC (Tailscale + Face ID)")
+        } footer: {
+            Text("Conecta con `isymcp` en tu computadora por Tailscale (:8797) usando llaves ECDSA en el Secure Enclave para autorizar shell, consolas y tareas pesadas con Face ID.")
+        }
+    }
+
+    private var vaultAndRecorderSection: some View {
+        Section {
+            LabeledContent("Credenciales en Llavero", value: "\(vault.entries.count) guardadas")
+            Button {
+                router.openSecretVault()
+            } label: {
+                Label("Administrar Llavero (Keychain + Face ID)", systemImage: "key.fill")
+            }
+
+            LabeledContent("Acciones aprendidas", value: "\(recorder.savedSessions.count) flujos")
+            Button {
+                router.openLearnAction()
+            } label: {
+                Label("Aprender acción nueva (WDA polling)", systemImage: "record.circle")
+            }
+        } header: {
+            Text("Llavero y Automatización visual")
+        } footer: {
+            Text("Las contraseñas del Llavero nunca viajan al modelo ni se exportan en `.isyagent.json`. Solo se inyectan con tu confirmación y Face ID.")
         }
     }
 

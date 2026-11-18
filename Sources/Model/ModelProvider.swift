@@ -149,12 +149,53 @@ public protocol ModelProvider: Sendable {
 
 /// Mensaje para el modelo
 public struct ModelMessage: Codable, Sendable {
+    public struct ContentPart: Codable, Sendable, Equatable {
+        public enum Kind: String, Codable, Sendable {
+            case text
+            case imageBase64
+            case documentText
+        }
+
+        public let kind: Kind
+        public let text: String?
+        public let mimeType: String?
+        public let base64Data: String?
+        public let filename: String?
+
+        public init(
+            kind: Kind,
+            text: String? = nil,
+            mimeType: String? = nil,
+            base64Data: String? = nil,
+            filename: String? = nil
+        ) {
+            self.kind = kind
+            self.text = text
+            self.mimeType = mimeType
+            self.base64Data = base64Data
+            self.filename = filename
+        }
+
+        public static func text(_ value: String) -> ContentPart {
+            ContentPart(kind: .text, text: value)
+        }
+
+        public static func image(base64: String, mimeType: String, filename: String? = nil) -> ContentPart {
+            ContentPart(kind: .imageBase64, mimeType: mimeType, base64Data: base64, filename: filename)
+        }
+
+        public static func document(filename: String, mimeType: String?, text: String) -> ContentPart {
+            ContentPart(kind: .documentText, text: text, mimeType: mimeType, filename: filename)
+        }
+    }
+
     public let role: Role
     public let content: String
     public let name: String? // for tool messages
     public let toolCallId: String? // for tool results
     public let toolCalls: [ToolCall]? // assistant tool_calls echo (history)
     public let metadata: [String: String]
+    public let multimodalParts: [ContentPart]?
     
     public enum Role: String, Codable, Sendable {
         case system, user, assistant, tool
@@ -166,7 +207,8 @@ public struct ModelMessage: Codable, Sendable {
         name: String? = nil,
         toolCallId: String? = nil,
         toolCalls: [ToolCall]? = nil,
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
+        multimodalParts: [ContentPart]? = nil
     ) {
         self.role = role
         self.content = content
@@ -174,6 +216,7 @@ public struct ModelMessage: Codable, Sendable {
         self.toolCallId = toolCallId
         self.toolCalls = toolCalls
         self.metadata = metadata
+        self.multimodalParts = multimodalParts
     }
 }
 
@@ -312,7 +355,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
     private var config: ModelConfiguration?
     private let session: URLSession
     
-    public init(id: String = "remote", name: String = "Remote API") {
+    public init(id: String = "remote", name: String = "Remote API", supportsImages: Bool = true) {
         self.id = id
         self.name = name
         self.capabilities = ModelProviderCapabilities(
@@ -321,7 +364,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
             maxTokens: 4096,
             maxContextTokens: 128000,
             supportsSystemPrompt: true,
-            supportsImages: false,
+            supportsImages: supportsImages,
             localOnly: false,
             restrictions: [
                 "Requires network connectivity",
@@ -522,6 +565,22 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         return ModelStreamChunk.ToolCallDelta(index: call.index, id: call.id, name: resolvedName, arguments: call.function?.arguments)
     }
 
+    public static func modelSupportsImages(providerID: String, model: String) -> Bool {
+        let lowerModel = model.lowercased()
+        switch providerID.lowercased() {
+        case "gus-local", "scripted":
+            return false
+        case "nvidia":
+            return lowerModel.contains("-vl") || lowerModel.contains("vision") || lowerModel.contains("neva") || lowerModel.contains("vila")
+        case "openai", "gemini", "chatgpt-oauth", "openrouter", "remote":
+            return true
+        case "xai":
+            return lowerModel.contains("grok-4") || lowerModel.contains("grok-2-vision") || lowerModel.contains("vision")
+        default:
+            return true
+        }
+    }
+
     static func openAIFunctionName(for toolName: String) -> String {
         toolName.replacingOccurrences(of: ".", with: "__")
     }
@@ -575,8 +634,59 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         let model = options.model ?? availableModels.first ?? "gpt-4o-mini"
         var body: [String: Any] = [
             "model": model,
-            "messages": messages.map { msg in
-                var m: [String: Any] = ["role": msg.role.rawValue, "content": msg.content]
+            "messages": try messages.map { msg -> [String: Any] in
+                var m: [String: Any] = ["role": msg.role.rawValue]
+                if msg.role == .user, let parts = msg.multimodalParts, !parts.isEmpty {
+                    let hasImage = parts.contains { $0.kind == .imageBase64 && $0.base64Data != nil }
+                    if hasImage {
+                        guard Self.modelSupportsImages(providerID: self.id, model: model) else {
+                            throw ModelProviderError.unsupportedFeature(
+                                "El modelo seleccionado (\(model)) no acepta imágenes. Cambia a un modelo con visión (p. ej. GPT-4o, Gemini, o NVIDIA Nemotron VL) o quita la imagen."
+                            )
+                        }
+                        var contentArray: [[String: Any]] = []
+                        if !msg.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            contentArray.append(["type": "text", "text": msg.content])
+                        }
+                        for part in parts {
+                            switch part.kind {
+                            case .text:
+                                if let t = part.text, !t.isEmpty {
+                                    contentArray.append(["type": "text", "text": t])
+                                }
+                            case .documentText:
+                                if let t = part.text, !t.isEmpty {
+                                    let header = part.filename.map { "[Archivo adjunto: \($0)]\n" } ?? ""
+                                    contentArray.append(["type": "text", "text": header + t])
+                                }
+                            case .imageBase64:
+                                if let b64 = part.base64Data, !b64.isEmpty {
+                                    let mime = part.mimeType ?? "image/jpeg"
+                                    contentArray.append([
+                                        "type": "image_url",
+                                        "image_url": ["url": "data:\(mime);base64,\(b64)"]
+                                    ])
+                                }
+                            }
+                        }
+                        m["content"] = contentArray
+                    } else {
+                        let docSegments = parts.compactMap { part -> String? in
+                            guard part.kind == .documentText || part.kind == .text, let t = part.text, !t.isEmpty else { return nil }
+                            if let fn = part.filename, part.kind == .documentText {
+                                return "[Archivo adjunto: \(fn)]\n\(t)"
+                            }
+                            return t
+                        }
+                        if docSegments.isEmpty {
+                            m["content"] = msg.content
+                        } else {
+                            m["content"] = ([msg.content] + docSegments).filter { !$0.isEmpty }.joined(separator: "\n\n")
+                        }
+                    }
+                } else {
+                    m["content"] = msg.content
+                }
                 if let name = msg.name { m["name"] = Self.openAIFunctionName(for: name) }
                 if let toolCallId = msg.toolCallId { m["tool_call_id"] = toolCallId }
                 // Echo assistant tool_calls back into history (OpenAI requires this for multi-turn tool use)

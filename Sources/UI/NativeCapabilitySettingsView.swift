@@ -8,9 +8,38 @@ struct NativeCapabilitySettingsView: View {
     @State private var configuredShortcut: ConfiguredShortcut?
     @State private var confirmShortcutLaunch = false
     @State private var statusMessage: String?
+    @State private var registeredL1Tools: [L1ToolDefinition] = []
 
     var body: some View {
         List {
+            Section {
+                LabeledContent("Motor embebido", value: PythonRuntimeService.shared.runtimeVersion)
+                LabeledContent("Capacidades L1 guardadas", value: "\(registeredL1Tools.count)")
+                ForEach(registeredL1Tools) { tool in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text(tool.name)
+                                .font(.system(size: 13.5, weight: .semibold, design: .monospaced))
+                            Spacer()
+                            Text("v\(tool.version)")
+                                .font(OCTypography.metaMono)
+                                .foregroundStyle(OCColor.textFaint)
+                        }
+                        Text(tool.description)
+                            .font(OCTypography.meta)
+                            .foregroundStyle(OCColor.textSecondary)
+                        Text("Permisos: \(tool.requiredPermissions.joined(separator: ", "))")
+                            .font(.system(size: 11))
+                            .foregroundStyle(OCColor.warning)
+                    }
+                    .padding(.vertical, 2)
+                }
+            } header: {
+                Text("Python local y capacidades L1")
+            } footer: {
+                Text("Python local ejecuta en memoria con PK_ENABLE_OS=0 y watchdog de tiempo (sin sistema de archivos ni red directa). Las L1 heredan estrictamente los permisos de sus pasos L0.")
+            }
+
             Section {
                 ForEach(GUSToolPermissionCatalog.permissions) { permission in
                     Toggle(isOn: gusPermissionBinding(for: permission)) {
@@ -113,11 +142,17 @@ struct NativeCapabilitySettingsView: View {
                 Text("El permiso se solicita solo después de tocar el botón. iSyCode decide qué eventos de tarea merecen una notificación.")
             }
         }
+        .refreshable {
+            notificationState = await LocalNotificationCapability.shared.authorizationState()
+            configuredShortcut = loadShortcut()
+            registeredL1Tools = await DynamicToolRegistry.shared.definitions()
+        }
         .navigationTitle("Capacidades nativas")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             notificationState = await LocalNotificationCapability.shared.authorizationState()
             configuredShortcut = loadShortcut()
+            registeredL1Tools = await DynamicToolRegistry.shared.definitions()
         }
     }
 

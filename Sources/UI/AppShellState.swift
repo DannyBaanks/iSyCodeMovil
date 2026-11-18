@@ -83,6 +83,8 @@ public enum RuntimeSetupTrack: String, CaseIterable, Identifiable, Sendable {
 
 public enum AppShellDestination: String, CaseIterable, Identifiable, Sendable {
     case chat
+    case builder
+    case myAgents
     case browser
     case projects
     case google
@@ -94,6 +96,8 @@ public enum AppShellDestination: String, CaseIterable, Identifiable, Sendable {
     public var title: String {
         switch self {
         case .chat: return "Chat"
+        case .builder: return "Construir"
+        case .myAgents: return "Mis agentes"
         case .browser: return "Navegador"
         case .projects: return "Proyectos"
         case .google: return "Google"
@@ -105,6 +109,8 @@ public enum AppShellDestination: String, CaseIterable, Identifiable, Sendable {
     public var symbol: String {
         switch self {
         case .chat: return "bubble.left.and.bubble.right.fill"
+        case .builder: return "hammer.fill"
+        case .myAgents: return "square.stack.3d.up.fill"
         case .browser: return "safari"
         case .projects: return "folder.fill"
         case .google: return "person.crop.circle.badge.checkmark"
@@ -126,6 +132,8 @@ public final class AppShellRouter: ObservableObject {
     @Published public var showRemotePairingSheet = false
     @Published public var showGoogleOAuthSetupSheet = false
     @Published public var showSandboxExplanationSheet = false
+    @Published public var showLearnActionSheet = false
+    @Published public var showSecretVaultSheet = false
 
     public init() {}
 
@@ -138,6 +146,16 @@ public final class AppShellRouter: ObservableObject {
     public func openConversations() {
         selectedTab = .conversations
         activeDestination = .chat
+        isSidebarOpen = false
+    }
+
+    public func openBuilder() {
+        activeDestination = .builder
+        isSidebarOpen = false
+    }
+
+    public func openMyAgents() {
+        activeDestination = .myAgents
         isSidebarOpen = false
     }
 
@@ -168,6 +186,16 @@ public final class AppShellRouter: ObservableObject {
         selectedTab = .settings
         activeDestination = .settings
         isSidebarOpen = false
+    }
+
+    public func openLearnAction() {
+        isSidebarOpen = false
+        showLearnActionSheet = true
+    }
+
+    public func openSecretVault() {
+        isSidebarOpen = false
+        showSecretVaultSheet = true
     }
 
     public func toggleSidebar() {
