@@ -57,6 +57,7 @@ public final class ChatGPTOAuthStore: ObservableObject {
     @Published public private(set) var statusMessage: String?
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var cachedModels: [String] = []
+    @Published public private(set) var lastDiscoveryError: String?
 
     private static let cachedModelsKey = "isycode.chatgpt.oauth.cachedModels"
 
@@ -72,7 +73,12 @@ public final class ChatGPTOAuthStore: ObservableObject {
 
     public static func updateCachedModels(_ models: [String]) {
         shared.cachedModels = models
+        shared.lastDiscoveryError = nil
         UserDefaults.standard.set(models, forKey: cachedModelsKey)
+    }
+
+    public static func setDiscoveryError(_ message: String?) {
+        shared.lastDiscoveryError = message
     }
 
     public nonisolated static func storedModelIDs() -> [String] {

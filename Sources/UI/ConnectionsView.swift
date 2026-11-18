@@ -15,6 +15,8 @@ public struct ConnectionsView: View {
     @State private var sandboxLinkInput = ""
     @State private var showSandboxPanel = false
     @State private var showPairingImporter = false
+    @State private var isActivatingChatGPT = false
+    @State private var chatGPTActivationFeedback: String?
 
     public init() {}
 
@@ -98,13 +100,40 @@ public struct ConnectionsView: View {
                 }
             } else if chatgptOAuth.isSignedIn {
                 Button {
+                    guard !isActivatingChatGPT else { return }
+                    isActivatingChatGPT = true
+                    chatGPTActivationFeedback = "Consultando modelos disponibles…"
                     Task {
-                        await store.startSandbox(providerID: "chatgpt-oauth", apiKey: nil)
+                        let ok = await store.startSandbox(providerID: "chatgpt-oauth", apiKey: nil)
+                        isActivatingChatGPT = false
+                        if ok {
+                            let models = ChatGPTOAuthStore.storedModelIDs()
+                            chatGPTActivationFeedback = models.isEmpty
+                                ? "Activado."
+                                : "Activado · Modelos: \(models.prefix(4).joined(separator: ", "))"
+                        } else {
+                            chatGPTActivationFeedback = store.sandboxSetupError
+                                ?? chatgptOAuth.lastDiscoveryError
+                                ?? "No se pudo activar ChatGPT OAuth."
+                        }
                     }
                 } label: {
-                    Label("Activar ChatGPT Plus/Pro (OAuth)", systemImage: "bolt.fill")
+                    HStack {
+                        Label("Activar ChatGPT Plus/Pro (OAuth)", systemImage: "bolt.fill")
+                        if isActivatingChatGPT {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(isActivatingChatGPT)
+                if let feedback = chatGPTActivationFeedback {
+                    Text(feedback)
+                        .font(OCTypography.meta)
+                        .foregroundStyle(store.sandboxSetupError != nil || chatgptOAuth.lastDiscoveryError != nil ? OCColor.danger : OCColor.success)
                 }
                 Button("Cerrar sesión ChatGPT", role: .destructive) {
+                    chatGPTActivationFeedback = nil
                     chatgptOAuth.signOut()
                 }
             } else {

@@ -39,26 +39,59 @@ public actor ChatGPTCodexProvider: @preconcurrency ModelProvider {
     }
 
     private func fetchAvailableModels(creds: (accessToken: String, accountID: String)) async throws -> [String] {
-        var req = URLRequest(url: Self.modelsEndpoint, timeoutInterval: 20)
-        req.httpMethod = "GET"
-        req.setValue("Bearer \(creds.accessToken)", forHTTPHeaderField: "Authorization")
-        if !creds.accountID.isEmpty {
-            req.setValue(creds.accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
-        }
-        req.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
+        let candidates = [
+            Self.modelsEndpoint,
+            URL(string: "https://chatgpt.com/backend-api/codex/models")!
+        ]
+        var lastError = ""
+        for endpoint in candidates {
+            var req = URLRequest(url: endpoint, timeoutInterval: 20)
+            req.httpMethod = "GET"
+            req.setValue("Bearer \(creds.accessToken)", forHTTPHeaderField: "Authorization")
+            if !creds.accountID.isEmpty {
+                req.setValue(creds.accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
+            }
+            req.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
+            req.setValue("codex_cli_rs/0.1.0", forHTTPHeaderField: "User-Agent")
+            req.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        let (data, response) = try await session.data(for: req)
-        guard let http = response as? HTTPURLResponse else {
-            throw ModelProviderError.networkError("Respuesta inválida al consultar modelos de ChatGPT Codex.")
+            let (data, response) = try await session.data(for: req)
+            guard let http = response as? HTTPURLResponse else { continue }
+            if http.statusCode == 401 || http.statusCode == 403 {
+                let body = String(data: data.prefix(300), encoding: .utf8) ?? ""
+                lastError = "HTTP \(http.statusCode): \(body)"
+                continue
+            }
+            guard (200...299).contains(http.statusCode) else {
+                let body = String(data: data.prefix(300), encoding: .utf8) ?? ""
+                lastError = "HTTP \(http.statusCode): \(body)"
+                continue
+            }
+            if let slugs = Self.extractModelSlugs(from: data), !slugs.isEmpty {
+                return slugs
+            }
+            let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
+            lastError = "Formato inesperado: \(preview)"
         }
-        if http.statusCode == 401 || http.statusCode == 403 {
-            throw ModelProviderError.authenticationFailed
-        }
-        guard (200...299).contains(http.statusCode),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let list = json["models"] as? [[String: Any]] else {
-            let msg = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
-            throw ModelProviderError.networkError("No pude listar modelos de ChatGPT Codex: \(msg)")
+        await ChatGPTOAuthStore.setDiscoveryError(lastError.isEmpty ? "Sin modelos devueltos." : lastError)
+        throw ModelProviderError.networkError("No pude listar modelos de ChatGPT Codex (\(lastError)).")
+    }
+
+    private static func extractModelSlugs(from data: Data) -> [String]? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        let list: [[String: Any]]
+        if let dict = root as? [String: Any] {
+            if let m = dict["models"] as? [[String: Any]] {
+                list = m
+            } else if let d = dict["data"] as? [[String: Any]] {
+                list = d
+            } else {
+                return nil
+            }
+        } else if let arr = root as? [[String: Any]] {
+            list = arr
+        } else {
+            return nil
         }
 
         var slugs: [String] = []
@@ -66,16 +99,15 @@ public actor ChatGPTCodexProvider: @preconcurrency ModelProvider {
             if let visibility = item["visibility"] as? String, visibility == "hide" || visibility == "hidden" {
                 continue
             }
-            if let supported = item["supported_in_api"] as? Bool, !supported {
-                continue
-            }
-            if let slug = (item["slug"] as? String) ?? (item["id"] as? String), !slug.isEmpty, !slugs.contains(slug) {
+            if let slug = (item["slug"] as? String) ?? (item["id"] as? String) ?? (item["name"] as? String),
+               !slug.isEmpty, !slugs.contains(slug) {
                 slugs.append(slug)
             }
         }
         if slugs.isEmpty {
             for item in list {
-                if let slug = (item["slug"] as? String) ?? (item["id"] as? String), !slug.isEmpty, !slugs.contains(slug) {
+                if let slug = (item["slug"] as? String) ?? (item["id"] as? String) ?? (item["name"] as? String),
+                   !slug.isEmpty, !slugs.contains(slug) {
                     slugs.append(slug)
                 }
             }
@@ -149,6 +181,7 @@ public actor ChatGPTCodexProvider: @preconcurrency ModelProvider {
                         req.setValue(creds.accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
                     }
                     req.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
+                    req.setValue("codex_cli_rs/0.1.0", forHTTPHeaderField: "User-Agent")
                     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
 
