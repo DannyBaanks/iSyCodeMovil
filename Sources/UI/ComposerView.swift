@@ -6,6 +6,7 @@ public struct ComposerView: View {
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var store: WorkbenchStore
     @StateObject private var mediaCoordinator = MultimodalComposerCoordinator()
+    @State private var draftText: String = ""
     @FocusState private var isFocused: Bool
 
     public init() {}
@@ -57,30 +58,26 @@ public struct ComposerView: View {
                     onModelTap: { sessionState.showModelPicker = true }
                 )
 
-                // Input text
-                ZStack(alignment: .topLeading) {
-                    if sessionState.composerText.isEmpty {
-                        Text(sessionState.isProcessing ? "" : composerPlaceholder)
-                            .font(OCTypography.body)
-                            .foregroundColor(OCColor.textFaint)
-                            .padding(.horizontal, OCSpacing.xs)
-                            .padding(.vertical, OCSpacing.sm)
-                    }
-
-                    TextField("", text: $sessionState.composerText, axis: .vertical)
-                        .font(OCTypography.body)
-                        .foregroundColor(OCColor.textPrimary)
-                        .focused($isFocused)
-                        .lineLimit(1...8)
-                        .submitLabel(.send)
-                        .onSubmit { handleSend() }
-                        .disabled(sessionState.isProcessing)
-                        .padding(.horizontal, OCSpacing.xs)
-                        .padding(.vertical, OCSpacing.sm)
-                }
+                // Input text — kept in local @State so keystrokes never fire
+                // ActiveSessionState.objectWillChange across the whole timeline.
+                TextField(
+                    "",
+                    text: $draftText,
+                    prompt: Text(composerPlaceholder)
+                        .foregroundColor(OCColor.textFaint),
+                    axis: .vertical
+                )
+                .font(OCTypography.body)
+                .foregroundColor(OCColor.textPrimary)
+                .focused($isFocused)
+                .lineLimit(1...8)
+                .submitLabel(.send)
+                .onSubmit { handleSend() }
+                .padding(.horizontal, OCSpacing.xs)
+                .padding(.vertical, OCSpacing.sm)
                 .frame(minHeight: 42)
 
-                DictationMicrophoneButton(targetText: $sessionState.composerText) {
+                DictationMicrophoneButton(targetText: $draftText) {
                     isFocused = true
                 }
 
@@ -127,12 +124,22 @@ public struct ComposerView: View {
         )
         .padding(.horizontal, OCSpacing.compactMargin)
         .padding(.bottom, OCSpacing.compactMargin)
-        .animation(.easeInOut(duration: 0.18), value: sessionState.composerAttachments.isEmpty)
-        .animation(.easeInOut(duration: 0.18), value: sessionState.isProcessing)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 Button("Listo") { isFocused = false }
+            }
+        }
+        .onAppear {
+            if !sessionState.composerText.isEmpty && draftText.isEmpty {
+                draftText = sessionState.composerText
+                sessionState.composerText = ""
+            }
+        }
+        .onChange(of: sessionState.composerText) { incoming in
+            if !incoming.isEmpty {
+                draftText = incoming
+                sessionState.composerText = ""
             }
         }
         .multimodalComposerSupport(
@@ -164,11 +171,13 @@ public struct ComposerView: View {
 
     private func handleSend() {
         guard !sessionState.isProcessing else { return }
-        let trimmed = sessionState.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !sessionState.composerAttachments.isEmpty else { return }
         OCHaptics.sent()
-        NotificationCenter.default.post(name: .composerSend, object: sessionState.composerText)
-        sessionState.composerText = ""
+        let outgoing = draftText
+        draftText = ""
+        isFocused = false
+        NotificationCenter.default.post(name: .composerSend, object: outgoing)
     }
 
     /// Same list the agent picker uses: the remote server's agents, else every mode.
@@ -180,7 +189,7 @@ public struct ComposerView: View {
     }
 
     private var canSend: Bool {
-        !sessionState.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !sessionState.composerAttachments.isEmpty
+        !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !sessionState.composerAttachments.isEmpty
     }
 
     private var composerPlaceholder: String {
@@ -390,7 +399,6 @@ public struct FlowPill: View {
 public struct AgentPill: View {
     let mode: AgentMode
     let onTap: () -> Void
-    @State private var isPressed = false
 
     public init(mode: AgentMode, onTap: @escaping () -> Void) {
         self.mode = mode
@@ -420,13 +428,8 @@ public struct AgentPill: View {
                             .stroke(mode.borderColor, lineWidth: 1)
                     )
             )
-            .scaleEffect(isPressed ? 0.97 : 1.0)
-            .animation(.easeInOut(duration: 0.1), value: isPressed)
         }
-        .buttonStyle(.plain)
-        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
-            isPressed = pressing
-        }, perform: {})
+        .buttonStyle(OCInteractiveButtonStyle())
         .frame(minHeight: 44) // hit target
         .contentShape(Rectangle())
     }
@@ -437,7 +440,6 @@ public struct AgentPill: View {
 public struct ModelPill: View {
     let model: ModelInfo
     let onTap: () -> Void
-    @State private var isPressed = false
 
     public init(model: ModelInfo, onTap: @escaping () -> Void) {
         self.model = model
@@ -474,13 +476,8 @@ public struct ModelPill: View {
                             .stroke(OCColor.borderMuted, lineWidth: 1)
                     )
             )
-            .scaleEffect(isPressed ? 0.97 : 1.0)
-            .animation(.easeInOut(duration: 0.1), value: isPressed)
         }
-        .buttonStyle(.plain)
-        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
-            isPressed = pressing
-        }, perform: {})
+        .buttonStyle(OCInteractiveButtonStyle())
         .frame(minHeight: 44)
         .contentShape(Rectangle())
     }

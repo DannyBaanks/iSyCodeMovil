@@ -113,6 +113,8 @@ public final class WorkbenchStore: ObservableObject {
     private var isProcessingRemote = false
     /// part id → "assistant" | "reasoning" | "user". Deltas have no type of their own.
     private var streamPartKinds: [String: String] = [:]
+    private var pendingDeltas: [String: String] = [:]
+    private var deltaFlushTask: Task<Void, Never>?
     
     public init() {}
 
@@ -186,6 +188,7 @@ public final class WorkbenchStore: ObservableObject {
         guard !isConnecting else { return }
         backendEventTask?.cancel()
         backendEventTask = nil
+        discardPendingDeltas()
         await currentBackend?.stopEventStream()
         await currentBackend?.disconnect()
         isConnecting = true
@@ -293,6 +296,7 @@ public final class WorkbenchStore: ObservableObject {
     public func disconnect() async {
         backendEventTask?.cancel()
         backendEventTask = nil
+        discardPendingDeltas()
         await currentBackend?.disconnect()
         currentBackend = nil
         activeRemotePairing = nil
@@ -614,6 +618,7 @@ public final class WorkbenchStore: ObservableObject {
             UserDefaults.standard.set(project.id, forKey: RuntimeIntentDefaults.lastProjectIDKey)
             UserDefaults.standard.set(project.name, forKey: RuntimeIntentDefaults.lastProjectNameKey)
         }
+        discardPendingDeltas()
         streamPartKinds.removeAll()
         sessionState.clearTimeline()
         // Another conversation may still be working: the composer shows Stop only when
@@ -1082,6 +1087,12 @@ public final class WorkbenchStore: ObservableObject {
     }
     
     private func handleBackendEvent(_ event: WorkbenchEvent) async {
+        if case .partDelta(let partID, let delta) = event {
+            queueAssistantDelta(partID: partID, delta: delta)
+            return
+        }
+        flushPendingDeltas()
+
         switch event {
         case .connected:
             sessionState.isProcessing = false
@@ -1100,8 +1111,8 @@ public final class WorkbenchStore: ObservableObject {
         case .partUpdated(let partID, let kind, let text, let tool, let callID, let status, let input, let output, let error):
             handlePartUpdate(partID: partID, kind: kind, text: text, tool: tool, callID: callID, status: status, input: input, output: output, error: error)
 
-        case .partDelta(let partID, let delta):
-            appendAssistantDelta(partID: partID, delta: delta)
+        case .partDelta:
+            break
             
         case .permissionAsked(let requestID, let sessionID, let tool, let command, let explanation):
             if sessionID == currentSessionID {
@@ -1169,6 +1180,11 @@ public final class WorkbenchStore: ObservableObject {
         case .sessionsChanged:
             if let projectID = currentProjectID, let backend = currentBackend {
                 sessions = (try? await backend.listSessions(projectID: projectID)) ?? []
+                if let currentID = currentSessionID,
+                   let updated = sessions.first(where: { $0.id == currentID }),
+                   sessionState.currentSession?.title != updated.title {
+                    sessionState.currentSession = updated
+                }
             }
             
         case .agentModeChanged(let mode):
@@ -1247,6 +1263,34 @@ public final class WorkbenchStore: ObservableObject {
         sessionState.timelineEvents.removeAll { $0.id == id }
     }
     
+    private func queueAssistantDelta(partID: String, delta: String) {
+        guard !delta.isEmpty else { return }
+        pendingDeltas[partID, default: ""] += delta
+        guard deltaFlushTask == nil else { return }
+        deltaFlushTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard !Task.isCancelled else { return }
+            self?.flushPendingDeltas()
+        }
+    }
+
+    private func flushPendingDeltas() {
+        deltaFlushTask?.cancel()
+        deltaFlushTask = nil
+        guard !pendingDeltas.isEmpty else { return }
+        let batch = pendingDeltas
+        pendingDeltas.removeAll(keepingCapacity: true)
+        for (partID, delta) in batch {
+            appendAssistantDelta(partID: partID, delta: delta)
+        }
+    }
+
+    private func discardPendingDeltas() {
+        deltaFlushTask?.cancel()
+        deltaFlushTask = nil
+        pendingDeltas.removeAll()
+    }
+
     private func appendAssistantDelta(partID: String, delta: String) {
         switch streamPartKinds[partID] {
         case "reasoning", "user":

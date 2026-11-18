@@ -101,7 +101,6 @@ public struct ActiveSessionView: View {
             
             surfaceContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .animation(.easeInOut(duration: 0.18), value: sessionState.activeSurface)
 
             if isCodexRemote {
                 CodexCapabilityNotice()
@@ -246,7 +245,7 @@ public struct ActiveSessionView: View {
             }
         }
         .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(OCColor.bgDeep, for: .navigationBar)
         .toolbarColorScheme(nil, for: .navigationBar)
         .sheet(isPresented: $sessionState.showAgentPicker) {
             AgentPickerSheet(selectedMode: $sessionState.agentMode, availableModes: availableModesForPicker)
@@ -257,11 +256,6 @@ public struct ActiveSessionView: View {
         .sheet(isPresented: $showSandboxPanel) {
             SandboxPanelView()
                 .environmentObject(store)
-        }
-        .sheet(isPresented: $sessionState.showAttachments) {
-            AttachmentsSheet()
-                .environmentObject(store)
-                .environmentObject(sessionState)
         }
         .sheet(item: $sessionState.pendingPermission) { event in
             PermissionView(
@@ -321,7 +315,6 @@ public struct ActiveSessionView: View {
         } message: {
             Text("End the session and return to the connection screen.")
         }
-        .animation(.easeInOut(duration: 0.2), value: store.connectionHealth)
     }
     
     private var availableModesForPicker: [AgentMode] {
@@ -386,19 +379,27 @@ private struct CodexWorkspaceFoldersUnavailableView: View {
 struct ChatSurfaceView: View {
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var store: WorkbenchStore
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrollProxy: ScrollViewProxy?
     @State private var showActivityDetail = false
     @State private var runStartedAt = Date()
     @State private var isPinnedToBottom = true
+    @State private var settleTask: Task<Void, Never>?
+    @State private var pinUpdateTask: Task<Void, Never>?
+    @State private var pendingPinTarget: Bool?
+    @State private var lastStreamScrollAt: Date = .distantPast
+    @State private var lastAutoScrollAt: Date = .distantPast
     
     var body: some View {
-        ScrollViewReader { proxy in
+        let snapshot = TimelineLayoutSnapshot.build(
+            events: sessionState.timelineEvents,
+            isProcessing: sessionState.isProcessing
+        )
+        return ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 if sessionState.isProcessing {
                     ThinkingShimmerView(
                         label: liveActivityLabel,
-                        activeStepCount: sessionState.timelineEvents.filter { $0.kind == .toolCall }.count,
+                        activeStepCount: snapshot.toolCallCount,
                         startedAt: runStartedAt
                     ) {
                         showActivityDetail = true
@@ -429,23 +430,24 @@ struct ChatSurfaceView: View {
                 // asks its content. Without it, the stacks above probe this area with an infinite
                 // height, the ScrollView measures the whole chat (every message and its markdown)
                 // to answer, and on a long chat that took over 5 s on the main thread: iOS killed
-                // the app on scene updates (0x8BADF00D, 2026-11-18, LazyStack.measureEstimates).
-                GeometryReader { _ in
+                // the app on scene updates (0x8BADF00D, 2026-11-18). Using VStack inside the
+                // bounded ScrollView keeps concrete row heights (preventing LazyVStack's scrollTo
+                // overshoot-into-blank-void bug on tall markdown responses), while GeometryReader
+                // + Equatable/cached Markdown blocks avoid re-measuring untouched rows.
+                GeometryReader { scrollGeo in
                 ZStack(alignment: .bottomTrailing) {
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
+                        VStack(alignment: .leading, spacing: 0) {
                             if sessionState.timelineEvents.isEmpty {
                                 EmptyChatView(sessionTitle: sessionState.currentSession?.title)
                             }
-                            let speakerIDs = assistantSpeakerIDs
-                            let turnEnds = assistantTurnEndPrompts
-                            ForEach(groupedTimelineItems) { item in
+                            ForEach(snapshot.items) { item in
                                 switch item {
                                 case .single(let event):
                                     TimelineEventContainer(
                                         event: event,
-                                        showsSpeaker: speakerIDs.contains(event.id),
-                                        turnPrompt: turnEnds[event.id]
+                                        showsSpeaker: snapshot.speakerIDs.contains(event.id),
+                                        turnPrompt: snapshot.turnEndPrompts[event.id]
                                     )
                                         .id(event.id)
                                 case .toolCarousel(let steps):
@@ -456,12 +458,32 @@ struct ChatSurfaceView: View {
                             Color.clear
                                 .frame(height: 1)
                                 .id("chat-bottom-anchor")
-                                .onAppear { isPinnedToBottom = true }
-                                .onDisappear { isPinnedToBottom = false }
+                                .background(
+                                    GeometryReader { anchorGeo in
+                                        Color.clear.preference(
+                                            key: ChatBottomAnchorMaxYKey.self,
+                                            value: anchorGeo.frame(in: .named("chatScroll")).maxY
+                                        )
+                                    }
+                                )
                         }
                         .padding(.horizontal, OCSpacing.contentMargin)
                         .padding(.top, OCSpacing.sm)
                         .padding(.bottom, OCSpacing.lg)
+                    }
+                    .coordinateSpace(name: "chatScroll")
+                    .onPreferenceChange(ChatBottomAnchorMaxYKey.self) { maxY in
+                        guard !sessionState.timelineEvents.isEmpty,
+                              scrollGeo.size.height > 0,
+                              maxY.isFinite else { return }
+                        let isNearBottom = maxY <= scrollGeo.size.height + 80
+                        if isNearBottom == isPinnedToBottom {
+                            pinUpdateTask?.cancel()
+                            pinUpdateTask = nil
+                            pendingPinTarget = nil
+                        } else {
+                            schedulePinUpdate(isNearBottom)
+                        }
                     }
                     .refreshable {
                         guard !sessionState.isProcessing, let current = sessionState.currentSession else { return }
@@ -472,8 +494,14 @@ struct ChatSurfaceView: View {
                     if !isPinnedToBottom && !sessionState.timelineEvents.isEmpty {
                         Button {
                             OCHaptics.light()
+                            pinUpdateTask?.cancel()
+                            pinUpdateTask = nil
+                            pendingPinTarget = nil
+                            lastAutoScrollAt = Date()
                             isPinnedToBottom = true
-                            scrollToBottom(force: true)
+                            DispatchQueue.main.async {
+                                scrollToBottom(force: true)
+                            }
                         } label: {
                             Label("Ir al final", systemImage: "arrow.down")
                                 .font(.system(size: 12, weight: .semibold))
@@ -495,26 +523,50 @@ struct ChatSurfaceView: View {
                     scrollProxy = proxy
                     settleAtBottom()
                 }
+                .onDisappear {
+                    settleTask?.cancel()
+                    settleTask = nil
+                    pinUpdateTask?.cancel()
+                    pinUpdateTask = nil
+                    pendingPinTarget = nil
+                }
                 .onChange(of: sessionState.currentSession?.id) { _ in
+                    pinUpdateTask?.cancel()
+                    pinUpdateTask = nil
+                    pendingPinTarget = nil
                     isPinnedToBottom = true
                     settleAtBottom()
                 }
-                .onChange(of: sessionState.timelineEvents.count) { _ in
+                .onChange(of: sessionState.timelineEvents.count) { count in
                     if sessionState.timelineEvents.last?.kind == .userPrompt {
+                        pinUpdateTask?.cancel()
+                        pinUpdateTask = nil
+                        pendingPinTarget = nil
                         isPinnedToBottom = true
                         scrollToBottom(force: true)
-                    } else if isPinnedToBottom {
-                        scrollToBottom()
+                    } else if isPinnedToBottom && count > 0 {
+                        settleAtBottom()
                     }
                 }
                 .onChange(of: sessionState.timelineEvents.last?.assistantText) { _ in
-                    if isPinnedToBottom { scrollToBottom() }
+                    guard isPinnedToBottom else { return }
+                    let now = Date()
+                    guard now.timeIntervalSince(lastStreamScrollAt) >= 0.15 else { return }
+                    lastStreamScrollAt = now
+                    lastAutoScrollAt = now
+                    pinUpdateTask?.cancel()
+                    pinUpdateTask = nil
+                    pendingPinTarget = nil
+                    scrollProxy?.scrollTo("chat-bottom-anchor", anchor: .bottom)
                 }
                 .onChange(of: sessionState.isProcessing) { processing in
                     if processing {
                         runStartedAt = Date()
+                        if isPinnedToBottom {
+                            settleAtBottom()
+                        }
                     } else if isPinnedToBottom {
-                        scrollToBottom()
+                        scrollToBottom(force: true)
                     }
                 }
                 .sheet(isPresented: $showActivityDetail) {
@@ -532,15 +584,46 @@ struct ChatSurfaceView: View {
         }
         return "Pensando…"
     }
+
+    /// Defer bottom-anchor visibility changes off the synchronous layout pass and coalesce
+    /// brief transitions (e.g., keyboard/scroll settling or streaming tokens) so the overlay never oscillates.
+    private func schedulePinUpdate(_ pinned: Bool) {
+        if !pinned, Date().timeIntervalSince(lastAutoScrollAt) < 0.45 {
+            return
+        }
+        if pinUpdateTask != nil && pendingPinTarget == pinned {
+            return
+        }
+        pendingPinTarget = pinned
+        pinUpdateTask?.cancel()
+        pinUpdateTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            pendingPinTarget = nil
+            pinUpdateTask = nil
+            if !pinned, Date().timeIntervalSince(lastAutoScrollAt) < 0.45 {
+                return
+            }
+            if isPinnedToBottom != pinned {
+                isPinnedToBottom = pinned
+            }
+        }
+    }
     
-    /// Opening or restoring a chat: the lazy list only knows estimated row heights at first, so
-    /// one jump to the end lands a few points short, the 1 pt anchor stays off screen and
-    /// "Ir al final" shows at the bottom of the chat. A second, unanimated jump after layout lands.
+    /// Opening or restoring a chat: give Text/Markdown one layout beat to finish settling
+    /// before aligning the bottom anchor.
     private func settleAtBottom() {
-        Task { @MainActor in
-            for delay: UInt64 in [50_000_000, 350_000_000] {
+        settleTask?.cancel()
+        guard !sessionState.timelineEvents.isEmpty else { return }
+        lastAutoScrollAt = Date()
+        pinUpdateTask?.cancel()
+        pinUpdateTask = nil
+        pendingPinTarget = nil
+        settleTask = Task { @MainActor in
+            for delay: UInt64 in [50_000_000, 250_000_000] {
                 try? await Task.sleep(nanoseconds: delay)
-                guard isPinnedToBottom, let proxy = scrollProxy else { return }
+                guard !Task.isCancelled, isPinnedToBottom, let proxy = scrollProxy else { return }
+                lastAutoScrollAt = Date()
                 proxy.scrollTo("chat-bottom-anchor", anchor: .bottom)
             }
         }
@@ -548,12 +631,13 @@ struct ChatSurfaceView: View {
 
     private func scrollToBottom(force: Bool = false) {
         guard force || isPinnedToBottom, let proxy = scrollProxy else { return }
-        if reduceMotion {
-            proxy.scrollTo("chat-bottom-anchor", anchor: .bottom)
-        } else {
-            withAnimation(.easeOut(duration: 0.2)) {
-                proxy.scrollTo("chat-bottom-anchor", anchor: .bottom)
-            }
+        lastAutoScrollAt = Date()
+        pinUpdateTask?.cancel()
+        pinUpdateTask = nil
+        pendingPinTarget = nil
+        proxy.scrollTo("chat-bottom-anchor", anchor: .bottom)
+        if force {
+            settleAtBottom()
         }
     }
 
@@ -569,77 +653,82 @@ struct ChatSurfaceView: View {
         }
     }
 
-    private var groupedTimelineItems: [TimelineRenderItem] {
-        var items: [TimelineRenderItem] = []
-        var toolRun: [TimelineEvent] = []
-        func flushRun() {
-            guard !toolRun.isEmpty else { return }
-            if toolRun.count >= 2 {
-                items.append(.toolCarousel(toolRun))
-            } else {
-                items.append(.single(toolRun[0]))
-            }
-            toolRun.removeAll()
-        }
-        for event in sessionState.timelineEvents {
-            if event.kind == .toolCall {
-                toolRun.append(event)
-            } else {
-                flushRun()
-                items.append(.single(event))
-            }
-        }
-        flushRun()
-        return items
-    }
+    private struct TimelineLayoutSnapshot {
+        let items: [TimelineRenderItem]
+        let speakerIDs: Set<String>
+        let turnEndPrompts: [String: String]
+        let toolCallCount: Int
 
-    /// The first assistant message after each prompt gets the speaker row; the rest of
-    /// that turn (text between tool calls) continues without repeating it.
-    private var assistantSpeakerIDs: Set<String> {
-        var ids = Set<String>()
-        var needsSpeaker = true
-        // An empty assistant event draws nothing unless it is the live tail, so it must
-        // not consume the turn's speaker row.
-        let liveTailID = sessionState.isProcessing
-            ? sessionState.timelineEvents.last(where: { $0.kind == .assistantText })?.id
-            : nil
-        for event in sessionState.timelineEvents {
-            switch event.kind {
-            case .userPrompt:
-                needsSpeaker = true
-            case .assistantText where needsSpeaker && (!(event.assistantText ?? "").isEmpty || event.id == liveTailID):
-                ids.insert(event.id)
-                needsSpeaker = false
-            default:
-                break
-            }
-        }
-        return ids
-    }
+        static func build(events: [TimelineEvent], isProcessing: Bool) -> TimelineLayoutSnapshot {
+            var items: [TimelineRenderItem] = []
+            var toolRun: [TimelineEvent] = []
+            var speakerIDs = Set<String>()
+            var turnEndPrompts: [String: String] = [:]
+            var toolCallCount = 0
 
-    /// The last non-empty answer of each finished turn → the prompt that started that
-    /// turn. Its copy/share/retry bar shows there only; the turn still being written
-    /// gets none until it ends.
-    private var assistantTurnEndPrompts: [String: String] {
-        var ends: [String: String] = [:]
-        var prompt = ""
-        var lastAnswerID: String?
-        for event in sessionState.timelineEvents {
-            switch event.kind {
-            case .userPrompt:
-                if let lastAnswerID { ends[lastAnswerID] = prompt }
-                prompt = event.promptText ?? ""
-                lastAnswerID = nil
-            case .assistantText where !(event.assistantText ?? "").isEmpty:
-                lastAnswerID = event.id
-            default:
-                break
+            var needsSpeaker = true
+            var currentPrompt = ""
+            var lastAnswerID: String?
+            let liveTailID = isProcessing
+                ? events.last(where: { $0.kind == .assistantText })?.id
+                : nil
+
+            func flushRun() {
+                guard !toolRun.isEmpty else { return }
+                if toolRun.count >= 2 {
+                    items.append(.toolCarousel(toolRun))
+                } else {
+                    items.append(.single(toolRun[0]))
+                }
+                toolRun.removeAll(keepingCapacity: true)
             }
+
+            for event in events {
+                if event.kind == .toolCall {
+                    toolCallCount += 1
+                    toolRun.append(event)
+                } else {
+                    flushRun()
+                    items.append(.single(event))
+                }
+
+                switch event.kind {
+                case .userPrompt:
+                    needsSpeaker = true
+                    if let lastAnswerID { turnEndPrompts[lastAnswerID] = currentPrompt }
+                    currentPrompt = event.promptText ?? ""
+                    lastAnswerID = nil
+                case .assistantText:
+                    let nonEmpty = !(event.assistantText ?? "").isEmpty
+                    if needsSpeaker && (nonEmpty || event.id == liveTailID) {
+                        speakerIDs.insert(event.id)
+                        needsSpeaker = false
+                    }
+                    if nonEmpty {
+                        lastAnswerID = event.id
+                    }
+                default:
+                    break
+                }
+            }
+            flushRun()
+            if let lastAnswerID, !isProcessing {
+                turnEndPrompts[lastAnswerID] = currentPrompt
+            }
+            return TimelineLayoutSnapshot(
+                items: items,
+                speakerIDs: speakerIDs,
+                turnEndPrompts: turnEndPrompts,
+                toolCallCount: toolCallCount
+            )
         }
-        if let lastAnswerID, !sessionState.isProcessing {
-            ends[lastAnswerID] = prompt
-        }
-        return ends
+    }
+}
+
+private struct ChatBottomAnchorMaxYKey: PreferenceKey {
+    static var defaultValue: CGFloat = .infinity
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
