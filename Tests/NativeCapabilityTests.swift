@@ -193,7 +193,8 @@ final class NativeCapabilityBrokerTests: XCTestCase {
     }
 
     func testSandboxProviderDirectoryContainsOnlyConfiguredOpenAICompatibleAdapters() {
-        XCTAssertEqual(SandboxModelProvider.all.map(\.id), ["nvidia", "xai", "openai", "gemini", "openrouter"])
+        XCTAssertEqual(SandboxModelProvider.all.map(\.id), ["nvidia", "xai", "openai", "chatgpt-oauth", "gemini", "openrouter"])
+        XCTAssertEqual(SandboxModelProvider.provider(id: "chatgpt-oauth")?.baseURL, "https://chatgpt.com/backend-api/codex")
         XCTAssertEqual(SandboxModelProvider.sandboxOptions.first?.id, "gus-local")
         XCTAssertEqual(SandboxModelProvider.provider(id: "gus-local")?.baseURL, "")
         XCTAssertTrue(SandboxModelProvider.provider(id: "gus-local")?.keyPlaceholder.isEmpty == true)

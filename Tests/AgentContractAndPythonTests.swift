@@ -17,6 +17,15 @@ final class AgentContractAndPythonTests: XCTestCase {
         XCTAssertTrue(receipt.stdout.contains("\"count\": 2"))
         XCTAssertTrue(receipt.stdout.contains("305.5"))
         XCTAssertTrue(receipt.runtimeVersion.contains("PK_ENABLE_OS=0"))
+
+        XCTAssertEqual(
+            PythonRuntimeService.normalizeForPocketPy("max(1, 2)"),
+            "max(1, 2)"
+        )
+        XCTAssertEqual(
+            PythonRuntimeService.normalizeForPocketPy("','.join(str(x) for x in [1, 2])"),
+            "','.join([str(x) for x in [1, 2]])"
+        )
     }
 
     func testPythonRuntimeBlocksOSModuleAndOpenBuiltin() async {
