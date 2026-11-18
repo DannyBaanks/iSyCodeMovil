@@ -60,16 +60,46 @@ final class MultimodalAndDictationTests: XCTestCase {
         XCTAssertNil(openAIPrep.blockedReason)
         XCTAssertEqual(openAIPrep.parts.first?.kind, .imageBase64)
 
-        // GUS local MUST block images honestly instead of pretending to inspect them
+        // GUS local cannot carry an image: no image part, no block; the model gets a note and
+        // tells the person it can't see the photo (honest, without refusing the whole message).
         let localPrep = await manager.prepareForSend(attachments: [imgAttachment], providerID: "gus-local", modelID: "qwen1.5-1.8b", backendMode: .native)
-        XCTAssertNotNil(localPrep.blockedReason)
+        XCTAssertNil(localPrep.blockedReason)
         XCTAssertTrue(localPrep.parts.isEmpty)
+        XCTAssertTrue(localPrep.fallbackPromptNotes.contains { $0.contains("ticket.jpg") && $0.contains("no recibe imágenes") })
 
-        // NVIDIA text-only vs VL model distinction
+        // NVIDIA: the name-based guess stays as a UI hint, but the image is sent for every model
+        // (Nemotron VL used to be refused because the provider flag was computed without a model).
         let nimTextOnly = MultimodalProviderCompatibility.evaluate(providerID: "nvidia", modelID: "nvidia/nemotron-3-ultra-550b-a55b", backendMode: .native)
         XCTAssertFalse(nimTextOnly.supportsImages)
+        XCTAssertTrue(nimTextOnly.canCarryImages)
         let nimVL = MultimodalProviderCompatibility.evaluate(providerID: "nvidia", modelID: "nvidia/nemotron-3.5-super-vl-120b-a12b", backendMode: .native)
         XCTAssertTrue(nimVL.supportsImages)
+        for model in ["nvidia/nemotron-3.5-super-vl-120b-a12b", "nvidia/nemotron-3-ultra-550b-a55b"] {
+            let prep = await manager.prepareForSend(attachments: [imgAttachment], providerID: "nvidia", modelID: model, backendMode: .native)
+            XCTAssertNil(prep.blockedReason, model)
+            XCTAssertEqual(prep.parts.first?.kind, .imageBase64, model)
+        }
+    }
+
+    func testRefusedImagesAreReplacedByANoteForTheModel() {
+        let messages = [
+            ModelMessage(role: .system, content: "sys"),
+            ModelMessage(role: .user, content: "¿Qué ves?", multimodalParts: [
+                .image(base64: "AAAA", mimeType: "image/jpeg", filename: "foto.jpg"),
+                .document(filename: "notas.md", mimeType: "text/markdown", text: "hola")
+            ])
+        ]
+        let replaced = RemoteModelProvider.replacingImagesWithNotes(messages)
+        XCTAssertNotNil(replaced)
+        let user = replaced?[1]
+        XCTAssertFalse(user?.multimodalParts?.contains { $0.kind == .imageBase64 } ?? false)
+        XCTAssertEqual(user?.multimodalParts?.first?.kind, .documentText, "other attachments survive")
+        XCTAssertTrue(user?.content.contains("¿Qué ves?") ?? false)
+        XCTAssertTrue(user?.content.contains("'foto.jpg'") ?? false)
+        XCTAssertTrue(user?.content.contains("no puede ver imágenes") ?? false)
+        XCTAssertNil(RemoteModelProvider.replacingImagesWithNotes([ModelMessage(role: .user, content: "solo texto")]))
+        XCTAssertTrue(RemoteModelProvider.mayBeImageRefusal(.invalidRequest("HTTP 400: image_url is not supported")))
+        XCTAssertFalse(RemoteModelProvider.mayBeImageRefusal(.authenticationFailed))
     }
 
     func testSpeechTextMergerPreservesExistingDraftCleanly() {

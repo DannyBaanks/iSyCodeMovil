@@ -38,6 +38,14 @@ public struct MultimodalCapabilityReport: Sendable, Equatable {
         self.supportsVideoBinary = supportsVideoBinary
         self.explanation = explanation
     }
+
+    /// Whether the engine can carry an image to the model at all. `supportsImages` is only a
+    /// guess from the model's name (a hint for the UI); the request is sent whenever this is
+    /// true and the model itself decides. False for on-device GUS, the offline demo and a
+    /// remote CLI backend, which have no image channel.
+    public var canCarryImages: Bool {
+        !["gus-local", "scripted", "remote-cli"].contains(providerID)
+    }
 }
 
 /// Real per-provider capability matrix grounded on the actual request serializers in `ModelProvider.swift`,
@@ -413,8 +421,12 @@ public actor ChatAttachmentManager {
         for attachment in attachments {
             switch attachment.type {
             case .image:
-                guard compat.supportsImages else {
-                    incompatibleReasons.append("'\(attachment.name)': \(compat.explanation)")
+                // Only engines with no way to carry an image (on-device GUS, the offline demo,
+                // a remote CLI backend) get a note instead: the model then tells the person it
+                // can't see the photo. Every API provider gets the image and its model decides;
+                // a name-based guess no longer refuses vision models (NVIDIA Nemotron VL).
+                guard compat.canCarryImages else {
+                    promptNotes.append("[El usuario adjuntó la imagen '\(attachment.name)', pero este motor no recibe imágenes. Díselo con claridad y ofrece alternativas.]")
                     continue
                 }
                 guard let path = attachment.path,

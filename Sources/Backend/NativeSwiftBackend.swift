@@ -391,7 +391,10 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         let remote = RemoteModelProvider(
             id: id,
             name: display,
-            supportsImages: MultimodalProviderCompatibility.evaluate(providerID: id, modelID: nil, backendMode: .native).supportsImages
+            // Every API provider can carry images; whether a model sees them is its own
+            // call (a refusal is retried with notes). Evaluating here, without the model,
+            // marked NVIDIA as image-less even with Nemotron VL selected.
+            supportsImages: true
         )
         try await remote.configure(ModelConfiguration(apiKey: key, baseURL: baseURL))
         let listed = await remote.availableModels

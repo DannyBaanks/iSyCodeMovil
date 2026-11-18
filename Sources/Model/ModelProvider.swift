@@ -451,6 +451,38 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }
 
+    /// The same conversation with every image replaced by a note, or nil when it has no
+    /// image. Used once when the server refuses a request that carries images: a text-only
+    /// model then answers, in its own words, that it can't see the photo.
+    static func replacingImagesWithNotes(_ messages: [ModelMessage]) -> [ModelMessage]? {
+        var changed = false
+        let result = messages.map { message -> ModelMessage in
+            guard let parts = message.multimodalParts,
+                  parts.contains(where: { $0.kind == .imageBase64 }) else { return message }
+            changed = true
+            let names = parts.filter { $0.kind == .imageBase64 }.map { "'\($0.filename ?? "imagen")'" }
+            let kept = parts.filter { $0.kind != .imageBase64 }
+            let note = "[El usuario adjuntó \(names.joined(separator: ", ")), pero este modelo no puede ver imágenes. Díselo con claridad y sugiere usar un modelo con visión.]"
+            return ModelMessage(
+                role: message.role,
+                content: message.content.isEmpty ? note : message.content + "\n\n" + note,
+                name: message.name,
+                toolCallId: message.toolCallId,
+                toolCalls: message.toolCalls,
+                metadata: message.metadata,
+                multimodalParts: kept.isEmpty ? nil : kept
+            )
+        }
+        return changed ? result : nil
+    }
+
+    /// A 4xx that is not auth, billing, size or a missing model: with images in the request,
+    /// most likely the model has no vision ("image_url not supported", "invalid content").
+    static func mayBeImageRefusal(_ error: ModelProviderError) -> Bool {
+        if case .invalidRequest = error { return true }
+        return false
+    }
+
     public func generate(
         messages: [ModelMessage],
         tools: [ToolDefinition]?,
@@ -461,13 +493,20 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         }
         
         let reverseNames = Self.reverseToolNameMap(from: tools)
-        let request = try buildRequest(messages: messages, tools: tools, options: options, stream: false)
+        var request = try buildRequest(messages: messages, tools: tools, options: options, stream: false)
         var attempt = 0
+        var imagesReplaced = false
         while true {
             let (data, response) = try await session.data(for: request)
             do {
                 try checkResponse(response, body: data)
             } catch let error as ModelProviderError {
+                if !imagesReplaced, Self.mayBeImageRefusal(error),
+                   let withoutImages = Self.replacingImagesWithNotes(messages) {
+                    imagesReplaced = true
+                    request = try buildRequest(messages: withoutImages, tools: tools, options: options, stream: false)
+                    continue
+                }
                 guard let delay = Self.retryDelay(after: error, attempt: attempt) else { throw error }
                 attempt += 1
                 try await Self.sleep(delay)
@@ -491,8 +530,9 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
                     }
                     
                     let reverseNames = Self.reverseToolNameMap(from: tools)
-                    let request = try buildRequest(messages: messages, tools: tools, options: options, stream: true)
+                    var request = try buildRequest(messages: messages, tools: tools, options: options, stream: true)
                     var attempt = 0
+                    var imagesReplaced = false
                     var opened: URLSession.AsyncBytes?
                     while opened == nil {
                         let (bytes, response) = try await session.bytes(for: request)
@@ -510,6 +550,12 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
                             try checkResponse(response, body: body)
                         } catch let error as ModelProviderError {
                             // Nothing was streamed yet, so retrying is invisible to the user.
+                            if !imagesReplaced, Self.mayBeImageRefusal(error),
+                               let withoutImages = Self.replacingImagesWithNotes(messages) {
+                                imagesReplaced = true
+                                request = try buildRequest(messages: withoutImages, tools: tools, options: options, stream: true)
+                                continue
+                            }
                             guard let delay = Self.retryDelay(after: error, attempt: attempt) else { throw error }
                             attempt += 1
                             try await Self.sleep(delay)
@@ -639,11 +685,8 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
                 if msg.role == .user, let parts = msg.multimodalParts, !parts.isEmpty {
                     let hasImage = parts.contains { $0.kind == .imageBase64 && $0.base64Data != nil }
                     if hasImage {
-                        guard Self.modelSupportsImages(providerID: self.id, model: model) else {
-                            throw ModelProviderError.unsupportedFeature(
-                                "El modelo seleccionado (\(model)) no acepta imágenes. Cambia a un modelo con visión (p. ej. GPT-4o, Gemini, o NVIDIA Nemotron VL) o quita la imagen."
-                            )
-                        }
+                        // No name-based refusal: the server decides. If it rejects the images,
+                        // generate()/generateStream() retry once with notes in their place.
                         var contentArray: [[String: Any]] = []
                         if !msg.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             contentArray.append(["type": "text", "text": msg.content])
