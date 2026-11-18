@@ -10,6 +10,8 @@ public struct ChatSidebarView: View {
     let onClose: () -> Void
 
     @State private var sessionToRename: Session?
+    @State private var historyExpanded = false
+    @State private var toolsExpanded = false
     @State private var renameText = ""
     @State private var sessionToDelete: Session?
     @State private var showDeleteConfirm = false
@@ -30,14 +32,24 @@ public struct ChatSidebarView: View {
                 .padding(.horizontal, OCSpacing.lg)
                 .padding(.bottom, OCSpacing.md)
 
-            Divider().overlay(OCColor.borderMuted)
+            ScrollView {
+                VStack(alignment: .leading, spacing: OCSpacing.md) {
+                    DisclosureGroup(isExpanded: $historyExpanded) {
+                        conversationsSection
+                    } label: {
+                        Label("Conversaciones", systemImage: "bubble.left.and.bubble.right")
+                            .font(.headline)
+                            .frame(minHeight: 44)
+                    }
+                    .padding(.horizontal, OCSpacing.lg)
+                    .accessibilityIdentifier("sidebar-history")
 
-            conversationsSection
+                    destinationsSection
+                }
+                .padding(.bottom, OCSpacing.lg)
+            }
+            .refreshable { await store.refreshConversations() }
 
-            Divider().overlay(OCColor.borderMuted)
-
-            destinationsSection
-                .padding(.vertical, OCSpacing.sm)
         }
         .frame(maxHeight: .infinity)
         .background(OCColor.bgBase.ignoresSafeArea())
@@ -58,9 +70,9 @@ public struct ChatSidebarView: View {
 
     private var header: some View {
         HStack {
-            Text("ISYCODE")
+            Text("ISyCode")
                 .font(.system(.callout, design: .rounded, weight: .heavy))
-                .tracking(1.6)
+                .accessibilityAddTraits(.isHeader)
                 .foregroundColor(OCColor.textPrimary)
             Spacer()
             if showsCloseButton {
@@ -79,11 +91,8 @@ public struct ChatSidebarView: View {
 
     private var newConversationButton: some View {
         Button {
-            router.openConversations()
+            router.openNewConversation()
             onClose()
-            Task {
-                _ = await store.openOrCreateConversation(preferNew: true)
-            }
         } label: {
             HStack(spacing: OCSpacing.sm) {
                 Image(systemName: "plus.bubble.fill")
@@ -103,36 +112,23 @@ public struct ChatSidebarView: View {
     }
 
     private var conversationsSection: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 4) {
-                Text("CONVERSACIONES")
-                    .font(OCTypography.sectionLabel)
+        LazyVStack(alignment: .leading, spacing: 4) {
+            if store.sessions.isEmpty {
+                Text("Tus conversaciones aparecerán aquí.")
+                    .font(.footnote)
                     .foregroundColor(OCColor.textFaint)
                     .padding(.horizontal, OCSpacing.lg)
-                    .padding(.top, OCSpacing.md)
-                    .padding(.bottom, 4)
-
-                if store.sessions.isEmpty {
-                    Text("Tus conversaciones aparecerán aquí.")
-                        .font(.footnote)
-                        .foregroundColor(OCColor.textFaint)
-                        .padding(.horizontal, OCSpacing.lg)
-                        .padding(.vertical, OCSpacing.sm)
-                } else {
-                    ForEach(store.sessions) { session in
-                        conversationRow(session)
-                    }
+                    .padding(.vertical, OCSpacing.sm)
+            } else {
+                ForEach(store.sessions) { session in
+                    conversationRow(session)
                 }
             }
-            .padding(.bottom, OCSpacing.md)
-        }
-        .refreshable {
-            await store.refreshConversations()
         }
     }
 
     private func conversationRow(_ session: Session) -> some View {
-        let isActive = router.activeDestination == .chat && sessionState.currentSession?.id == session.id
+        let isActive = router.activeDestination == .chat && !router.showsNewConversation && sessionState.currentSession?.id == session.id
         return Button {
             router.openConversations()
             onClose()
@@ -184,59 +180,45 @@ public struct ChatSidebarView: View {
 
     private var destinationsSection: some View {
         VStack(spacing: 2) {
-            Button {
-                sessionState.currentSession = nil
-                router.openConversations()
-                onClose()
-            } label: {
-                let isHomeActive = router.activeDestination == .chat && sessionState.currentSession == nil
-                HStack(spacing: OCSpacing.md) {
-                    Image(systemName: "house.fill")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(isHomeActive ? IysThemePreferences.active.accent : OCColor.iconPrimary)
-                        .frame(width: 24)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Inicio")
-                            .font(.subheadline.weight(isHomeActive ? .semibold : .medium))
-                            .foregroundColor(OCColor.textPrimary)
-                        Text("Conversar, Construir, Agentes")
-                            .font(.caption2)
-                            .foregroundColor(OCColor.textFaint)
-                    }
-                    Spacer()
+            destinationButton(.myAgents, title: "Mis agentes", subtitle: nil)
+            destinationButton(.builder, title: "Crear agente", subtitle: nil)
+
+            DisclosureGroup(isExpanded: $toolsExpanded) {
+                actionRow(title: "Flujos grabados", symbol: "record.circle", tint: OCColor.iconPrimary) {
+                    router.openLearnAction()
                 }
-                .padding(.horizontal, OCSpacing.md)
-                .padding(.vertical, 8)
-                .frame(minHeight: 44)
-                .background(isHomeActive ? IysThemePreferences.active.accent.opacity(0.12) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
-                .contentShape(Rectangle())
+                actionRow(title: "Llavero", symbol: "key", tint: OCColor.iconPrimary) {
+                    router.openSecretVault()
+                }
+                destinationButton(.browser, title: "Navegador", subtitle: nil)
+                destinationButton(.projects, title: "Proyectos", subtitle: nil)
+                destinationButton(.google, title: "Google Workspace", subtitle: nil)
+            } label: {
+                Label("Herramientas", systemImage: "wrench.and.screwdriver")
+                    .font(.subheadline.weight(.medium))
+                    .frame(minHeight: 44)
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("sidebar-dest-home")
+            .padding(.horizontal, OCSpacing.md)
+            .accessibilityIdentifier("sidebar-tools")
 
-            destinationButton(.builder, title: "Construir agente", subtitle: "Plantillas y capacidades")
-            destinationButton(.myAgents, title: "Mis agentes", subtitle: "Contratos y pruebas")
-
-            // Were two 31–35 pt pills; now rows like the rest (44 pt targets, HIG).
-            actionRow(title: "Aprender acción", symbol: "record.circle", tint: IysThemePreferences.active.accent) {
-                router.openLearnAction()
+            actionRow(title: "Memoria", symbol: "books.vertical", tint: OCColor.iconPrimary) {
+                router.openGoogle(subtab: .memory)
             }
-            actionRow(title: "Llavero", symbol: "key.fill", tint: OCColor.warning) {
-                router.openSecretVault()
+            actionRow(title: "Actividad", symbol: "clock", tint: OCColor.iconPrimary) {
+                router.showActivitySheet = true
             }
-
-            destinationButton(.browser, title: "Navegador", subtitle: "Web integrada")
-            destinationButton(.google, title: "Google", subtitle: "Correo, agenda, Drive")
-            destinationButton(.projects, title: "Proyectos", subtitle: nil)
-            destinationButton(.connections, title: "Conexiones", subtitle: "iPhone, PC e ISyMCP")
+            destinationButton(.connections, title: "Conexiones", subtitle: nil)
+            actionRow(title: "Modelos", symbol: "cpu", tint: OCColor.iconPrimary) {
+                let runtime = store.runtimeSnapshot
+                router.openRuntimeSetup(track: runtime.isLocal ? .local : .connected, providerID: runtime.providerID)
+            }
             destinationButton(.settings, title: "Ajustes", subtitle: nil)
         }
         .padding(.horizontal, OCSpacing.sm)
     }
 
     private func destinationButton(_ destination: AppShellDestination, title: String, subtitle: String?) -> some View {
-        let isActive = router.activeDestination == destination
+        let isActive = router.activeDestination == destination && (destination != .google || router.googleSubtab == .google)
         return Button {
             switch destination {
             case .chat: router.openConversations()
@@ -275,6 +257,7 @@ public struct ChatSidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
         .accessibilityIdentifier("sidebar-dest-\(destination.rawValue)")
     }
 
@@ -346,7 +329,7 @@ public struct ChatLandingView: View {
     @ObservedObject private var contractStore = AgentContractStore.shared
     @ObservedObject private var isymcpStore = ISyMCPStore.shared
     @ObservedObject private var loopback = LoopbackDeviceSession.shared
-    @State private var draft = ""
+    @State private var showStartError = false
     @State private var sending = false
     @State private var showSystemDetails = false
     @State private var showGUSAssistant = false
@@ -372,9 +355,9 @@ public struct ChatLandingView: View {
 
                     conversationActions
 
-                    compactSystemStatusCard(runtime: runtime)
+                    if showTools { compactSystemStatusCard(runtime: runtime) }
 
-                    suggestedPromptsSection
+                    if router.landingDraft.isEmpty { suggestedPromptsSection }
                 }
                 .padding(.horizontal, OCSpacing.contentMargin)
                 .padding(.top, OCSpacing.md)
@@ -441,6 +424,11 @@ public struct ChatLandingView: View {
                 }
             }
         }
+        .alert("No se pudo abrir la conversación", isPresented: $showStartError) {
+            Button("Volver al borrador") { isInputFocused = true }
+        } message: {
+            Text("Tu mensaje sigue en el compositor. Revisa la conexión y vuelve a enviarlo.")
+        }
         .sheet(isPresented: $showGUSAssistant) {
             GUSContextualSheet()
                 .environmentObject(router)
@@ -484,12 +472,12 @@ public struct ChatLandingView: View {
                 Text("Agente activo: \(agent.name)")
                     .font(.footnote.weight(.semibold))
                     .foregroundColor(OCColor.textPrimary)
-                Text("\(agent.enabledL0Tools.count) L0 · \(agent.l1Tools.count) L1 · \(agent.preferredBackend.shortLabel)")
+                Text("\(agent.enabledL0Tools.count + agent.l1Tools.count) herramientas · \(agent.preferredBackend.shortLabel)")
                     .font(.caption2)
                     .foregroundColor(OCColor.textFaint)
             }
             Spacer()
-            Button("Cambiar") {
+            Button("Desactivar") {
                 contractStore.activeAgentForSession = nil
             }
             .font(.caption.weight(.semibold))
@@ -499,12 +487,9 @@ public struct ChatLandingView: View {
         .ocCard(radius: OCRadius.r12, border: Color(hex: agent.accentHex).opacity(0.4))
     }
 
-    /// Two primary actions side by side (same height), then the secondary tools as one
-    /// grouped list. Five equally weighted cards with five colored borders gave the
-    /// screen no hierarchy, and "Aprender acción" wrapping made its card taller.
     private var conversationActions: some View {
         VStack(alignment: .leading, spacing: OCSpacing.md) {
-            if let session = store.sessions.first {
+            if let session = store.sessions.max(by: { $0.timestamp < $1.timestamp }) {
                 secondaryActionRow(
                     title: "Retomar conversación",
                     subtitle: session.title,
@@ -513,7 +498,10 @@ public struct ChatLandingView: View {
                     id: "home-action-chat"
                 ) {
                     OCHaptics.light()
-                    Task { await store.selectSession(session) }
+                    Task {
+                        await store.selectSession(session)
+                        router.openConversations()
+                    }
                 }
             }
 
@@ -708,7 +696,8 @@ public struct ChatLandingView: View {
         VStack(alignment: .leading, spacing: OCSpacing.sm) {
             ForEach(suggestedPrompts, id: \.text) { item in
                 Button {
-                    sendPrompt(item.text)
+                    router.landingDraft = item.text
+                    isInputFocused = true
                 } label: {
                     HStack(spacing: OCSpacing.md) {
                         Image(systemName: item.icon)
@@ -723,9 +712,8 @@ public struct ChatLandingView: View {
                     }
                     .padding(.horizontal, OCSpacing.md)
                     .padding(.vertical, 10)
-                    .background(OCColor.bgBase.opacity(0.65))
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(sending)
@@ -769,7 +757,7 @@ public struct ChatLandingView: View {
     }
 
     private var composerBar: some View {
-        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = router.landingDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasAttachments = !store.sessionState.composerAttachments.isEmpty
         let canSend = !trimmed.isEmpty || hasAttachments
         let runtime = store.runtimeSnapshot
@@ -807,7 +795,7 @@ public struct ChatLandingView: View {
                     }
                 )
 
-                TextField("Pregunta lo que quieras…", text: $draft, axis: .vertical)
+                TextField("Pregunta lo que quieras…", text: $router.landingDraft, axis: .vertical)
                     .focused($isInputFocused)
                     .lineLimit(1...6)
                     .font(.subheadline)
@@ -817,7 +805,7 @@ public struct ChatLandingView: View {
                     .onSubmit { send() }
                     .accessibilityIdentifier("chat-landing-input")
 
-                DictationMicrophoneButton(targetText: $draft) {
+                DictationMicrophoneButton(targetText: $router.landingDraft) {
                     isInputFocused = true
                 }
 
@@ -865,10 +853,9 @@ public struct ChatLandingView: View {
     }
 
     private func send() {
-        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = router.landingDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasAttachments = !store.sessionState.composerAttachments.isEmpty
         guard (!trimmed.isEmpty || hasAttachments), !sending else { return }
-        draft = ""
         sendPrompt(trimmed.isEmpty ? "Analiza los archivos adjuntos." : trimmed)
     }
 
@@ -876,8 +863,14 @@ public struct ChatLandingView: View {
         guard !sending else { return }
         sending = true
         isInputFocused = false
+        let originalDraft = router.landingDraft
         Task {
-            _ = await store.openOrCreateConversation(preferNew: true, initialPrompt: prompt)
+            if await store.openOrCreateConversation(preferNew: true, initialPrompt: prompt) {
+                router.showsNewConversation = false
+                if router.landingDraft == originalDraft { router.landingDraft = "" }
+            } else {
+                showStartError = true
+            }
             sending = false
         }
     }

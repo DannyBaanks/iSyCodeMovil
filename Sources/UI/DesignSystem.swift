@@ -668,12 +668,19 @@ public struct OCFlowLayout: Layout {
     }
 }
 
+public enum OCNavigation {
+    public static let drawerWidth: CGFloat = 320
+    public static let dismissGutter: CGFloat = 48
+    public static let edgeActivation: CGFloat = 24
+}
+
 // MARK: - 2026 Motion, Haptics & Reusable State Primitives
 
 /// One curve for every movement, at three lengths. Muse (and most Lottie work) moves almost
 /// everything with the same cubic, ease-in-out (0.17, 0, 0.83, 1); when all motion shares a
 /// curve the app reads as calm instead of busy. Springs were three different feels.
 public enum OCMotion {
+    public static let drawer = Animation.timingCurve(0.20, 0.75, 0.25, 1, duration: 0.25)
     public static let curve = (x1: 0.17, y1: 0.0, x2: 0.83, y2: 1.0)
     public static func timed(_ duration: Double) -> Animation {
         .timingCurve(curve.x1, curve.y1, curve.x2, curve.y2, duration: duration)

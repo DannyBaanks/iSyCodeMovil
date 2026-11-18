@@ -9,11 +9,13 @@ public struct AppShellView: View {
     @EnvironmentObject private var assistant: AssistantStore
     @EnvironmentObject private var router: AppShellRouter
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var compactPath = NavigationPath()
     @State private var dragOffset: CGFloat = 0
 
     public init() {}
 
-    private let sidebarWidth: CGFloat = 292
+
 
     public var body: some View {
         Group {
@@ -48,6 +50,9 @@ public struct AppShellView: View {
             LearnActionRecorderSheet()
                 .environmentObject(router)
         }
+        .sheet(isPresented: $router.showActivitySheet) {
+            AgentActivityDetailSheet(events: sessionState.timelineEvents)
+        }
         .sheet(isPresented: $router.showSecretVaultSheet) {
             SecretVaultSheet()
         }
@@ -65,16 +70,25 @@ public struct AppShellView: View {
     }
 
     private var compactShell: some View {
+        GeometryReader { geometry in
+            let width = min(OCNavigation.drawerWidth, max(0, geometry.size.width - OCNavigation.dismissGutter))
+            drawer(width: width)
+        }
+    }
+
+    private func drawer(width sidebarWidth: CGFloat) -> some View {
         ZStack(alignment: .leading) {
-            NavigationStack {
+            NavigationStack(path: $compactPath) {
                 destinationContent(showsSidebarButton: true)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .disabled(router.isSidebarOpen)
+            .accessibilityHidden(router.isSidebarOpen)
 
             if router.isSidebarOpen {
                 Color.black.opacity(0.42)
                     .ignoresSafeArea()
+                    .accessibilityHidden(true)
                     .onTapGesture { router.closeSidebar() }
                     .transition(.opacity)
             }
@@ -86,34 +100,41 @@ public struct AppShellView: View {
                 .frame(width: sidebarWidth)
                 .offset(x: router.isSidebarOpen ? min(0, dragOffset) : (-sidebarWidth + min(sidebarWidth, dragOffset)))
                 .shadow(color: Color.black.opacity(0.35), radius: 14, x: 4, y: 0)
-                .transition(.move(edge: .leading))
+                .accessibilityAddTraits(.isModal)
+                .accessibilityAction(.escape) { router.closeSidebar() }
+                .transition(reduceMotion ? .identity : .move(edge: .leading))
             }
         }
         .simultaneousGesture(edgeSwipeGesture)
-        .animation(.easeOut(duration: 0.22), value: router.isSidebarOpen)
+        .animation(reduceMotion ? nil : OCMotion.drawer, value: router.isSidebarOpen)
+        .onChange(of: router.isSidebarOpen) { if $0 { OCHaptics.light() } }
+        .onChange(of: router.activeDestination) { _ in compactPath = NavigationPath() }
     }
 
     private var edgeSwipeGesture: some Gesture {
         DragGesture(minimumDistance: 16, coordinateSpace: .local)
             .onChanged { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
                 if router.isSidebarOpen {
                     if value.translation.width < 0 {
                         dragOffset = value.translation.width
                     }
-                } else if value.startLocation.x < 32 && value.translation.width > 0 {
+                } else if compactPath.isEmpty && value.startLocation.x < OCNavigation.edgeActivation && value.translation.width > 0 {
                     dragOffset = value.translation.width
                 }
             }
             .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else {
+                    dragOffset = 0
+                    return
+                }
                 let threshold: CGFloat = 72
                 if router.isSidebarOpen {
                     if value.translation.width < -threshold {
                         router.closeSidebar()
                     }
-                } else if value.startLocation.x < 32 && value.translation.width > threshold {
-                    withAnimation(.easeOut(duration: 0.22)) {
-                        router.isSidebarOpen = true
-                    }
+                } else if compactPath.isEmpty && value.startLocation.x < OCNavigation.edgeActivation && value.translation.width > threshold {
+                    router.isSidebarOpen = true
                 }
                 dragOffset = 0
             }
@@ -145,7 +166,7 @@ public struct AppShellView: View {
     private func destinationBody(showsSidebarButton: Bool) -> some View {
         switch router.activeDestination {
         case .chat:
-            if sessionState.currentSession != nil {
+            if sessionState.currentSession != nil && !router.showsNewConversation {
                 ActiveSessionView(onOpenSidebar: showsSidebarButton ? { router.toggleSidebar() } : nil)
             } else {
                 ChatLandingView(onOpenSidebar: { router.toggleSidebar() })
@@ -243,7 +264,7 @@ public struct ConversationsTabView: View {
 
     public var body: some View {
         Group {
-            if sessionState.currentSession != nil {
+            if sessionState.currentSession != nil && !router.showsNewConversation {
                 ActiveSessionView()
             } else {
                 ChatLandingView(onOpenSidebar: { router.toggleSidebar() })

@@ -18,7 +18,7 @@ public struct UnifiedSettingsView: View {
 
     public var body: some View {
         List {
-            Section("Motor de IA") {
+            Section("Asistente y modelos") {
                 HStack(spacing: OCSpacing.md) {
                     Image(systemName: runtime.readiness.symbol)
                         .foregroundColor(runtime.readiness.tone.semanticColor)
@@ -42,14 +42,14 @@ public struct UnifiedSettingsView: View {
                         providerID: runtime.providerID
                     )
                 } label: {
-                    Label("Cambiar motor o API key", systemImage: "cpu")
+                    Label("Elegir cómo responde el asistente", systemImage: "cpu")
                 }
                 .accessibilityIdentifier("settings-change-runtime")
 
                 NavigationLink {
                     APIKeysView()
                 } label: {
-                    Label("Proveedores y claves en Keychain", systemImage: "key.fill")
+                    Label("Servicios y claves de acceso", systemImage: "key.fill")
                 }
 
                 NavigationLink {
@@ -59,7 +59,7 @@ public struct UnifiedSettingsView: View {
                 }
             }
 
-            Section("Google Workspace (OAuth)") {
+            Section("Cuenta de Google") {
                 HStack {
                     Image(systemName: googleState.symbol)
                         .foregroundColor(googleState.tone.semanticColor)
@@ -77,7 +77,7 @@ public struct UnifiedSettingsView: View {
                 Button {
                     router.showGoogleOAuthSetupSheet = true
                 } label: {
-                    Label("Configurar cliente OAuth iOS y permisos", systemImage: "person.crop.circle.badge.checkmark")
+                    Label("Configurar acceso a Google", systemImage: "person.crop.circle.badge.checkmark")
                 }
                 .accessibilityIdentifier("settings-google-oauth")
             }
@@ -137,7 +137,7 @@ public struct UnifiedSettingsView: View {
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Modo desarrollador")
-                        Text("Muestra el registro técnico, endpoints y detalles de tools.")
+                        Text("Muestra los registros, las direcciones de conexión y los detalles de las herramientas.")
                             .font(OCTypography.meta)
                             .foregroundColor(OCColor.textSecondary)
                     }
@@ -152,7 +152,7 @@ public struct UnifiedSettingsView: View {
                     LabeledContent("Estado de conexión", value: store.connectionStatus.isEmpty ? "—" : store.connectionStatus)
                 }
 
-                Button("Abrir pantalla de bienvenida", role: .none) {
+                Button("Desconectar y volver a la bienvenida", role: .none) {
                     store.hasCompletedOnboarding = false
                     Task { await store.disconnect() }
                 }

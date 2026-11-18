@@ -135,6 +135,10 @@ public final class AppShellRouter: ObservableObject {
     @Published public var showLearnActionSheet = false
     @Published public var showSecretVaultSheet = false
 
+    @Published public var showsNewConversation = false
+    @Published public var showActivitySheet = false
+    @Published public var landingDraft = ""
+
     public init() {}
 
     public func openHome() {
@@ -143,7 +147,13 @@ public final class AppShellRouter: ObservableObject {
         isSidebarOpen = false
     }
 
+    public func openNewConversation() {
+        openConversations()
+        showsNewConversation = true
+    }
+
     public func openConversations() {
+        showsNewConversation = false
         selectedTab = .conversations
         activeDestination = .chat
         isSidebarOpen = false
@@ -199,15 +209,11 @@ public final class AppShellRouter: ObservableObject {
     }
 
     public func toggleSidebar() {
-        withAnimation(.easeOut(duration: 0.22)) {
-            isSidebarOpen.toggle()
-        }
+        isSidebarOpen.toggle()
     }
 
     public func closeSidebar() {
-        withAnimation(.easeOut(duration: 0.2)) {
-            isSidebarOpen = false
-        }
+        isSidebarOpen = false
     }
 
     public func openRuntimeSetup(track: RuntimeSetupTrack, providerID: String? = nil) {
