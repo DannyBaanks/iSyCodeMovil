@@ -47,7 +47,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     private var modelProvider: (any ModelProvider)?
     private var activeModelName: String?
     private var providerID = "scripted"
-    private var providerDisplay = "Scripted Demo"
+    private var providerDisplay = "Demo"
     private var providerModelIDs = ["scripted-1"]
     public private(set) var isDualSmolActive = false
     public var usesLiveModel: Bool { providerID != "scripted" }
@@ -371,7 +371,7 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         modelProvider = provider
         activeModelName = provider.availableModels.first
         providerID = "scripted"
-        providerDisplay = "Scripted Demo"
+        providerDisplay = "Demo"
         providerModelIDs = provider.availableModels
         isDualSmolActive = false
         invalidateLoops()
@@ -878,7 +878,11 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     }
     
     public func availableProviders() async throws -> ProviderListResult {
-        let models: [String: [String: Any]] = Dictionary(uniqueKeysWithValues: providerModelIDs.map { ($0, [String: Any]()) })
+        // The offline demo's model id ("scripted-1") reached the composer pill as
+        // "Scripted Demo · Scr…d-1"; give it a name a person understands.
+        let models: [String: [String: Any]] = Dictionary(uniqueKeysWithValues: providerModelIDs.map { id in
+            (id, providerID == "scripted" ? ["displayName": "Sin conexión"] : [String: Any]())
+        })
         var allProviders = [ProviderInfo(id: providerID, name: providerDisplay, models: models)]
         var connected = [providerID]
         if providerID != "chatgpt-oauth", ChatGPTOAuthStore.hasStoredTokens() {

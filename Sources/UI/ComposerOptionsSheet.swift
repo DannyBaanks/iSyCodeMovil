@@ -73,9 +73,12 @@ private struct ComposerOptionsSheet: View {
 
                 VStack(alignment: .leading, spacing: OCSpacing.md) {
                     sectionTitle("Cómo trabaja")
-                    if availableModes.count > 1 {
+                    // Four short modes fit a segmented control; "Personalizado" was cut to
+                    // "Personal…" on the iPhone, so it stays in the full agent picker.
+                    let segmentModes = availableModes.filter { $0 != .custom }
+                    if segmentModes.count > 1 {
                         Picker("Modo", selection: $agentMode) {
-                            ForEach(availableModes) { mode in
+                            ForEach(segmentModes) { mode in
                                 Text(mode.displayName).tag(mode)
                             }
                         }
