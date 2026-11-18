@@ -91,11 +91,14 @@ final class ParallelConversationsTests: XCTestCase {
         // Same kind of workspace the backend builds per conversation (Application Support).
         let workspaceA = try IOSWorkspace(rootName: ConversationSandboxes.folderName(for: "test-A-\(UUID().uuidString)"))
         let workspaceB = try IOSWorkspace(rootName: ConversationSandboxes.folderName(for: "test-B-\(UUID().uuidString)"))
+        // IOSWorkspace is an actor: read the roots once, outside `defer`.
+        let rootA = await workspaceA.rootURL
+        let rootB = await workspaceB.rootURL
         defer {
-            try? FileManager.default.removeItem(at: workspaceA.rootURL)
-            try? FileManager.default.removeItem(at: workspaceB.rootURL)
+            try? FileManager.default.removeItem(at: rootA)
+            try? FileManager.default.removeItem(at: rootB)
         }
-        try FileManager.default.createDirectory(at: workspaceA.rootURL.appendingPathComponent("repo"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: rootA.appendingPathComponent("repo"), withIntermediateDirectories: true)
 
         let a = SimpleWorkspaceToolExecutor(
             workspace: workspaceA,
