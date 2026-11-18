@@ -141,7 +141,7 @@ public struct AgentContext: Sendable {
     public let systemPrompt: String?
     public let maxTurns: Int
     public let permissionHandler: (@Sendable (PermissionRequest) async -> PermissionResponse)?
-    
+
     public init(
         conversationId: String,
         workspace: any Workspace,
@@ -202,6 +202,10 @@ public struct PermissionResponse: Codable, Sendable {
         case deny
         case decline
         case cancel
+        /// Una sola aprobación de alcance para el turno vigente: cubre la secuencia
+        /// acotada de operaciones WDA (iphone_*) de esa tarea. No es "siempre": expira
+        /// al terminar el turno y nunca cubre otras herramientas destructivas.
+        case allowSequence
     }
     
     public init(requestId: String, decision: Decision) {
@@ -234,6 +238,16 @@ public actor AgentLoop {
     private var eventHandler: (@Sendable (AgentLoopEvent) async -> Void)?
     private var isRunning = false
     private var alwaysAllowedTools: Set<String> = []
+    /// Aprobación por secuencia WDA vigente en este run (Fase 2): una sola aprobación
+    /// al inicio del turno que cubre las herramientas iphone_* de esa tarea. Se activa
+    /// solo con una decisión .allowSequence y se borra al terminar el run.
+    private var sequenceApprovalActive = false
+
+    /// La aprobación por secuencia solo cubre herramientas WDA (iphone_*) del turno vigente.
+    /// Nunca cubre otras herramientas destructivas (archivos, correo, etc.).
+    static func isSequenceCovered(toolName: String, sequenceActive: Bool) -> Bool {
+        sequenceActive && toolName.hasPrefix("iphone_")
+    }
     
     public init(context: AgentContext) {
         self.context = context
@@ -250,7 +264,11 @@ public actor AgentLoop {
             throw AgentError.toolError("AgentLoop already running")
         }
         isRunning = true
-        defer { isRunning = false }
+        sequenceApprovalActive = false
+        defer {
+            isRunning = false
+            sequenceApprovalActive = false
+        }
         
         // Cargar o crear conversación
         if currentConversation == nil {
@@ -326,10 +344,14 @@ public actor AgentLoop {
                 )
             }
             
+            // El esfuerzo de razonamiento se lee en vivo en cada turno desde el ajuste
+            // único (ReasoningEffortSetting): así el selector del picker aplica en el
+            // siguiente mensaje sin reinstalar el loop ni cambiar de sesión.
             let options = GenerationOptions(
                 model: context.modelName,
                 temperature: 0.7,
-                maxTokens: Self.maxOutputTokens
+                maxTokens: Self.maxOutputTokens,
+                reasoningEffort: ReasoningEffortSetting.current
             )
             
             let response = try await completeTurn(
@@ -376,9 +398,14 @@ public actor AgentLoop {
                         payload: ["tool": toolCall.name, "arguments": toolCall.arguments.map { "\($0.key)=\($0.value)" }.joined(separator: ", ")]
                     ))
                     
+                    // Una aprobación por secuencia vigente cubre las operaciones WDA de
+                    // este turno sin volver a preguntar (Fase 2). No cubre otras herramientas.
+                    let coveredBySequence = Self.isSequenceCovered(toolName: toolCall.name, sequenceActive: sequenceApprovalActive)
+
                     // Destructive tools are fail-closed unless explicitly allowed.
                     if let tool = turnTools.first(where: { $0.name == toolCall.name }),
                        tool.capabilities.isDestructive,
+                       !coveredBySequence,
                        (tool.capabilities.requiresApprovalEveryTime || !alwaysAllowedTools.contains(tool.name)) {
                         try Task.checkCancellation()
 
@@ -482,7 +509,30 @@ public actor AgentLoop {
                         case .allowAlways:
                             alwaysAllowedTools.insert(tool.name)
                             toolApproval = .allowAlways
+
+                        case .allowSequence:
+                            // Una sola aprobación de alcance para este turno: a partir de
+                            // aquí, las herramientas iphone_* de esta tarea ya no preguntan.
+                            // No cubre otras herramientas y expira al terminar el run.
+                            sequenceApprovalActive = true
+                            toolApproval = .allowOnce
+                            try await context.persistence.appendEvent(AgentEvent(
+                                conversationId: context.conversationId,
+                                type: .stateChange,
+                                payload: ["state": "sequence_approval_granted", "tool": tool.name]
+                            ))
                         }
+                    }
+
+                    if coveredBySequence {
+                        // Cubierta por la aprobación por secuencia de este turno: ejecutar
+                        // sin volver a preguntar. Queda en el registro de auditoría.
+                        toolApproval = .allowOnce
+                        try await context.persistence.appendEvent(AgentEvent(
+                            conversationId: context.conversationId,
+                            type: .stateChange,
+                            payload: ["state": "sequence_approval_used", "tool": toolCall.name]
+                        ))
                     }
 
                     try Task.checkCancellation()

@@ -39,7 +39,8 @@ public struct TimelineEventContainer: View {
                 onAllow: { store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .allowOnce) },
                 onDeny: { store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: event.permissionTool?.hasPrefix("Codex") == true ? .decline : .deny) },
                 onPersistent: { store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .allowAlways) },
-                onCodexCancel: { store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .cancel) }
+                onCodexCancel: { store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .cancel) },
+                onSequence: { store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .allowSequence) }
             )
         case .question:
             QuestionView(
@@ -1010,17 +1011,21 @@ public struct PermissionView: View {
     let onDeny: () -> Void
     let onPersistent: () -> Void
     let onCodexCancel: (() -> Void)?
+    /// Una sola aprobación de alcance para el turno (solo herramientas iphone_*).
+    /// Nil cuando el llamador no la ofrece.
+    let onSequence: (() -> Void)?
     @EnvironmentObject private var store: WorkbenchStore
     @State private var showTechnicalDetails = false
 
     private var storeUsesFreshApproval: Bool { store.backendMode == .native }
 
-    public init(event: TimelineEvent, onAllow: @escaping () -> Void, onDeny: @escaping () -> Void, onPersistent: @escaping () -> Void, onCodexCancel: (() -> Void)? = nil) {
+    public init(event: TimelineEvent, onAllow: @escaping () -> Void, onDeny: @escaping () -> Void, onPersistent: @escaping () -> Void, onCodexCancel: (() -> Void)? = nil, onSequence: (() -> Void)? = nil) {
         self.event = event
         self.onAllow = onAllow
         self.onDeny = onDeny
         self.onPersistent = onPersistent
         self.onCodexCancel = onCodexCancel
+        self.onSequence = onSequence
     }
 
     public var body: some View {
@@ -1121,6 +1126,32 @@ public struct PermissionView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("permission-deny")
+                }
+
+                // Una sola aprobación de alcance para el turno: solo para herramientas
+                // WDA (iphone_*). Cubre abrir, tocar, escribir y enviar en esta tarea;
+                // al terminar el turno vuelve a pedir permiso. No es "siempre".
+                if let onSequence, event.permissionTool?.hasPrefix("iphone_") == true {
+                    Button(action: onSequence) {
+                        Text("Permitir secuencia WDA por esta tarea")
+                            .font(OCTypography.control)
+                            .foregroundColor(OCColor.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(OCColor.bgLayer1)
+                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: OCRadius.r10)
+                                    .stroke(OCColor.borderBase, lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("permission-allow-sequence")
+
+                    Text("Una sola aprobación para abrir, tocar, escribir y enviar en esta tarea. Al terminar vuelve a pedir permiso; no cubre otras herramientas.")
+                        .font(OCTypography.meta)
+                        .foregroundColor(OCColor.textFaint)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if isLimitedRemote {

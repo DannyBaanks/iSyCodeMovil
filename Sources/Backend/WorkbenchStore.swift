@@ -788,6 +788,21 @@ public final class WorkbenchStore: ObservableObject {
         }
     }
     
+    /// Activa o desactiva el vigilante del buzón [GUS]. Al activarlo arranca en el
+    /// backend nativo si hay sesión abierta; al desactivarlo se detiene. El ajuste
+    /// vive en UserDefaults y el vigilante lo vuelve a leer en cada revisión.
+    public func setMailboxWatcherEnabled(_ enabled: Bool) {
+        GUSMailboxWatcher.isEnabled = enabled
+        Task { [weak self] in
+            guard let backend = self?.currentBackend as? NativeSwiftBackend else { return }
+            if enabled {
+                await backend.maybeStartMailboxWatcher()
+            } else {
+                await backend.stopMailboxWatcher()
+            }
+        }
+    }
+
     public func setModel(_ model: ModelInfo) {
         sessionState.selectedModel = model
         let modelIdentifier = model.apiModelId ?? model.name

@@ -180,7 +180,7 @@ public actor ChatGPTCodexProvider: @preconcurrency ModelProvider {
                     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
 
-                    let (payload, reverseMap) = try Self.buildPayload(model: model, messages: messages, tools: tools)
+                    let (payload, reverseMap) = try Self.buildPayload(model: model, messages: messages, tools: tools, options: options)
                     req.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
                     let (bytes, response) = try await session.bytes(for: req)
@@ -258,7 +258,8 @@ public actor ChatGPTCodexProvider: @preconcurrency ModelProvider {
     private static func buildPayload(
         model: String,
         messages: [ModelMessage],
-        tools: [ToolDefinition]?
+        tools: [ToolDefinition]?,
+        options: GenerationOptions
     ) throws -> ([String: Any], [String: String]) {
         var systemParts: [String] = []
         var inputItems: [[String: Any]] = []
@@ -320,6 +321,14 @@ public actor ChatGPTCodexProvider: @preconcurrency ModelProvider {
             "store": false,
             "stream": true
         ]
+
+        // Esfuerzo de razonamiento pedido en el chat (Responses API: reasoning.effort).
+        // Auto (o sin ajuste) omite el campo y el endpoint decide. Queda en el flight
+        // recorder para verificar en el log si la request lo llevó.
+        if let effort = options.reasoningEffort, let value = effort.apiValue {
+            body["reasoning"] = ["effort": value]
+            GUSFlightRecorder.shared.record("reasoning_effort", ["provider": "chatgpt-oauth", "model": model, "effort": value])
+        }
 
         if let tools, !tools.isEmpty {
             var encodedTools: [[String: Any]] = []

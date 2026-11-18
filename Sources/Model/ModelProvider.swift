@@ -210,14 +210,18 @@ public struct GenerationOptions: Codable, Sendable {
     public let topP: Double?
     public let stopSequences: [String]?
     public let seed: Int?
-    
+    /// Esfuerzo de razonamiento pedido por el usuario. `nil` o `.auto` = no se envía
+    /// ningún campo de reasoning a ningún proveedor (comportamiento anterior).
+    public let reasoningEffort: ReasoningEffort?
+
     public init(
         model: String? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         topP: Double? = nil,
         stopSequences: [String]? = nil,
-        seed: Int? = nil
+        seed: Int? = nil,
+        reasoningEffort: ReasoningEffort? = nil
     ) {
         self.model = model
         self.temperature = temperature
@@ -225,6 +229,52 @@ public struct GenerationOptions: Codable, Sendable {
         self.topP = topP
         self.stopSequences = stopSequences
         self.seed = seed
+        self.reasoningEffort = reasoningEffort
+    }
+}
+
+/// Esfuerzo de razonamiento (selector Auto / Bajo / Medio / Alto del chat).
+/// `auto` significa "el proveedor decide" y nunca envía ningún campo: es el default
+/// y preserva el comportamiento anterior en todos los proveedores.
+public enum ReasoningEffort: String, Codable, Sendable, CaseIterable {
+    case auto
+    case low
+    case medium
+    case high
+
+    /// Valor que viaja en la request (`reasoning_effort` / `reasoning.effort`).
+    /// `auto` no tiene valor: se omite el campo.
+    public var apiValue: String? {
+        switch self {
+        case .auto: return nil
+        case .low: return "low"
+        case .medium: return "medium"
+        case .high: return "high"
+        }
+    }
+
+    public var displayName: String {
+        switch self {
+        case .auto: return "Auto"
+        case .low: return "Bajo"
+        case .medium: return "Medio"
+        case .high: return "Alto"
+        }
+    }
+}
+
+/// Ajuste único de esfuerzo de razonamiento, persistido en UserDefaults.
+/// Lo lee el loop del agente al construir cada request; la UI del picker de modelo lo escribe.
+public enum ReasoningEffortSetting {
+    public static let defaultsKey = "isycode.reasoningEffort"
+
+    public static var current: ReasoningEffort {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: defaultsKey),
+                  let effort = ReasoningEffort(rawValue: raw) else { return .auto }
+            return effort
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey) }
     }
 }
 
@@ -495,6 +545,21 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         if id.hasPrefix("gpt-5") { return !id.contains("chat") }
         return id.hasPrefix("o1") || id.hasPrefix("o3") || id.hasPrefix("o4")
     }
+
+    /// Decide si `reasoning_effort` viaja en la request de chat/completions.
+    /// Solo para los proveedores que lo aceptan (NVIDIA NIM, OpenAI, OpenRouter).
+    /// En api.openai.com solo para modelos de razonamiento conocidos: a cualquier otro
+    /// modelo OpenAI le rechaza el parámetro con 400. En NIM y OpenRouter el campo es
+    /// parte de su superficie compatible con OpenAI y lo aplica el modelo de razonamiento.
+    /// Cualquier otro host (xAI, Gemini, Ollama, genéricos) nunca lo recibe.
+    static func shouldSendReasoningEffort(host: String?, model: String) -> Bool {
+        guard let host = host?.lowercased() else { return false }
+        if host == "api.openai.com" { return isOpenAIReasoningModel(model) }
+        return host == "integrate.api.nvidia.com"
+            || host.hasSuffix(".integrate.api.nvidia.com")
+            || host == "openrouter.ai"
+            || host.hasSuffix(".openrouter.ai")
+    }
     
     private func buildRequest(messages: [ModelMessage], tools: [ToolDefinition]?, options: GenerationOptions, stream: Bool) throws -> URLRequest {
         guard let config = config, let url = endpoint("/chat/completions") else {
@@ -548,6 +613,18 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         }
         if let stop = options.stopSequences { body["stop"] = stop }
         if let seed = options.seed { body["seed"] = seed }
+
+        // Esfuerzo de razonamiento pedido en el chat. Auto (o sin ajuste) nunca envía
+        // el campo. Queda registrado en el flight recorder para verificar en el log
+        // si la request lo llevó o por qué se omitió.
+        if let effort = options.reasoningEffort, let value = effort.apiValue {
+            if Self.shouldSendReasoningEffort(host: url.host, model: model) {
+                body["reasoning_effort"] = value
+                GUSFlightRecorder.shared.record("reasoning_effort", ["provider": name, "model": model, "effort": value])
+            } else {
+                GUSFlightRecorder.shared.record("reasoning_effort_omitido", ["provider": name, "model": model, "effort": value])
+            }
+        }
         
         if let tools = tools {
             body["tools"] = tools.map { tool in

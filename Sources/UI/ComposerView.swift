@@ -587,6 +587,7 @@ public struct ModelPickerSheet: View {
     @Binding var selectedModel: ModelInfo?
     let models: [ModelInfo]
     @State private var searchText = ""
+    @State private var reasoningEffort: ReasoningEffort = ReasoningEffortSetting.current
 
     public init(selectedModel: Binding<ModelInfo?>, models: [ModelInfo] = ModelInfo.demoModels) {
         self._selectedModel = selectedModel
@@ -600,6 +601,22 @@ public struct ModelPickerSheet: View {
                     modelEmptyState
                 } else {
                     List {
+                        Section {
+                            Picker("Razonamiento", selection: $reasoningEffort) {
+                                ForEach(ReasoningEffort.allCases, id: \.self) { effort in
+                                    Text(effort.displayName).tag(effort)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            Text("Auto no envía ningún ajuste. Bajo, Medio y Alto piden ese esfuerzo al modelo; solo viaja a proveedores que lo aceptan (NVIDIA NIM, OpenAI, OpenRouter y Codex). Aplica en el siguiente mensaje.")
+                                .font(OCTypography.meta)
+                                .foregroundColor(OCColor.textSecondary)
+                        } header: {
+                            Text("Razonamiento")
+                                .font(OCTypography.sectionLabel)
+                                .foregroundColor(OCColor.textFaint)
+                                .textCase(nil)
+                        }
                         ForEach(groupedModels.keys.sorted(), id: \.self) { provider in
                             Section(header: ProviderHeader(provider: provider)) {
                                 ForEach(groupedModels[provider] ?? []) { model in
@@ -629,6 +646,7 @@ public struct ModelPickerSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .onChange(of: reasoningEffort) { ReasoningEffortSetting.current = $0 }
     }
 
     private var modelEmptyState: some View {

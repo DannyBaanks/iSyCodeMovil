@@ -126,13 +126,13 @@ public actor LocalIphoneController {
             let bundleID = Self.resolveBundleID(try string("app", in: arguments))
             let then = try thenMode(in: arguments)
             try await wda.launchApp(bundleID: bundleID)
-            return try await finishAction(then: then)
+            return try await finishAction(then: then, note: "App: \(bundleID)")
 
         case "iphone_terminate_app":
             let bundleID = Self.resolveBundleID(try string("app", in: arguments))
             let then = try thenMode(in: arguments)
             try await wda.terminateApp(bundleID: bundleID)
-            return try await finishAction(then: then)
+            return try await finishAction(then: then, note: "App: \(bundleID)")
 
         default:
             throw LocalIphoneError.unsupported("La herramienta \(tool) no está disponible en el controlador local.")
@@ -227,11 +227,29 @@ public actor LocalIphoneController {
         "twitter": "com.atebits.Tweetie2",
         "x": "com.atebits.Tweetie2",
         "tailscale": "io.tailscale.ipn.ios",
-        "localdevvpn": "com.stoss.LocalDevVPN"
+        "localdevvpn": "com.stoss.LocalDevVPN",
+        // Verificado en el iPhone real (17 nov 2026): com.openai.chat abre ChatGPT;
+        // com.openai.chatgpt no existe (iOS dice que no está instalada con ese ID).
+        "chatgpt": "com.openai.chat"
     ]
 
-    private static func resolveBundleID(_ raw: String) -> String {
+    /// Bundle IDs que el modelo (o el usuario) puede pasar y que son incorrectos.
+    /// Se corrigen antes que cualquier otra regla: un ID con puntos normalmente se
+    /// devuelve tal cual, y sin esta tabla com.openai.chatgpt llegaría a WDA y fallaría.
+    private static let bundleIDCorrections: [String: String] = [
+        "com.openai.chatgpt": "com.openai.chat"
+    ]
+
+    // TODO(claude/grok/gemini): NO inventar sus Bundle ID. WDA en modo local no puede
+    // enumerar las apps instaladas (iphone_list_apps no está disponible), así que no hay
+    // forma de verificarlos desde aquí. Para añadir uno: abre la app en el iPhone, lee su
+    // Bundle ID con iphone_status ("App al frente") y añádelo a bundleAliases con ese ID
+    // exacto. Sin esa comprobación, el alias no existe y el nombre se devuelve tal cual.
+    static func resolveBundleID(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let corrected = bundleIDCorrections[trimmed] {
+            return corrected
+        }
         if trimmed.contains(".") {
             return trimmed
         }
@@ -244,8 +262,11 @@ public actor LocalIphoneController {
         return bundleAliases[normalized] ?? trimmed
     }
 
-    private func finishAction(then: String) async throws -> String {
-        guard then == "elements" else { return "Listo." }
+    private func finishAction(then: String, note: String? = nil) async throws -> String {
+        guard then == "elements" else {
+            if let note { return "Listo. \(note)" }
+            return "Listo."
+        }
         try await Task.sleep(nanoseconds: 600_000_000)
         return try await listElements(arguments: [:])
     }

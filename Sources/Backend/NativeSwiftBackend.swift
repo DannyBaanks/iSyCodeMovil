@@ -28,6 +28,10 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     private var runningTask: Task<Void, Never>?
     private var permissionWaiters: [String: CheckedContinuation<PermissionResponse.Decision, Never>] = [:]
     public var flowMode = false
+    /// Acuse de recibo del turno del buzón [GUS] (una sola vez): lo pone
+    /// deliverMailboxTask y lo resuelve el Task de sendPrompt al terminar el turno.
+    /// Nil en turnos normales del usuario.
+    private var mailboxTurnCompletion: ((Bool) -> Void)?
     private var mayHaveLeftAppInTurn = false
     private var connectionStatusStorage = "native runtime"
     private var currentSessionIDStorage: String?
@@ -346,6 +350,9 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     /// The loop persists under the session the UI opened. A backend-wide id
     /// made `session.idle` miss the open session, so the composer never left Stop.
     private func installLoop(sessionID: String) async {
+        // El vigilante del buzón [GUS] arranca con la sesión (idempotente: si ya
+        // está corriendo, no hace nada). Sin sesión no hay dónde ejecutar.
+        await maybeStartMailboxWatcher()
         guard let ws = workspace, let ps = persistence, let provider = modelProvider, let exec = toolExecutor else { return }
         await exec.configureSharedMemory(localOnly: provider.capabilities.localOnly, conversationID: sessionID)
         let modelName = activeModelName
@@ -520,9 +527,11 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             do {
                 _ = try await loop.run(userInput: text)
                 await self.returnToAppIfNeeded()
+                self.completeMailboxTurn(success: true)
             } catch is CancellationError {
                 return
             } catch {
+                self.completeMailboxTurn(success: false)
                 guard self.currentSessionIDStorage == sessionAtStart else { return }
                 self.eventContinuation?.yield(.sessionError(error.localizedDescription))
             }
@@ -558,6 +567,63 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     public func replyPermission(requestID: String, decision: PermissionResponse.Decision) async throws {
         guard let waiter = permissionWaiters.removeValue(forKey: requestID) else { return }
         waiter.resume(returning: decision)
+    }
+
+    // MARK: - Buzón [GUS] (loop GUS ↔ Muse, Fase 3)
+
+    /// Arranca el vigilante del buzón [GUS] si el usuario lo activó en Ajustes.
+    /// Idempotente: si ya está corriendo, no hace nada.
+    public func maybeStartMailboxWatcher() async {
+        guard GUSMailboxWatcher.isEnabled else { return }
+        await GUSMailboxWatcher.shared.startPolling { [weak self] task, body in
+            guard let self else { return }
+            await self.deliverMailboxTask(task, body: body)
+        }
+    }
+
+    public func stopMailboxWatcher() async {
+        await GUSMailboxWatcher.shared.stopPolling()
+    }
+
+    /// Resuelve el acuse de recibo del turno del buzón (una sola vez). Nil en turnos normales.
+    private func completeMailboxTurn(success: Bool) {
+        guard let completion = mailboxTurnCompletion else { return }
+        mailboxTurnCompletion = nil
+        completion(success)
+    }
+
+    /// Entrega una tarea pendiente del buzón [GUS] como un turno del agente.
+    /// Marca `en curso` al tomarla y `hecho` solo si el turno terminó bien; si falla
+    /// o no se puede entregar, queda `en curso` y el vigilante la reintenta cuando se
+    /// vuelve obsoleta (el buzón es la fuente de verdad). No entrega si ya hay un
+    /// turno en marcha o no hay sesión abierta: la tarea sigue pendiente en el buzón.
+    private func deliverMailboxTask(_ task: GUSMailboxWatcher.MailboxTask, body: String) async {
+        guard runningTask == nil, currentSessionIDStorage != nil else { return }
+        do {
+            try await GUSMailboxWatcher.shared.mark(
+                taskID: task.id, state: .enCurso, recipient: task.recipient,
+                note: "GUS tomó la tarea \(task.id)."
+            )
+        } catch {
+            GUSFlightRecorder.shared.record("gus.mailbox.mark_error", ["task": task.id, "error": error.localizedDescription])
+            return
+        }
+        mailboxTurnCompletion = { [weak self] success in
+            guard let self, success else { return }
+            Task {
+                try? await GUSMailboxWatcher.shared.mark(
+                    taskID: task.id, state: .hecho, recipient: task.recipient,
+                    note: "Hecho: turno completado."
+                )
+            }
+        }
+        let text = "[Buzón GUS · tarea \(task.id)]\n\(body)"
+        do {
+            try await sendPrompt(text, agent: nil, model: nil)
+        } catch {
+            mailboxTurnCompletion = nil
+            GUSFlightRecorder.shared.record("gus.mailbox.deliver_error", ["task": task.id, "error": error.localizedDescription])
+        }
     }
     
     public func loadHistory(sessionID: String) async throws -> [TimelineEvent] {

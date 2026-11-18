@@ -66,6 +66,30 @@ final class LocalIphoneControllerTests: XCTestCase {
         XCTAssertEqual(calls, ["pageSource"])
     }
 
+    func testBundleIDAliasesResolveChatGPTToTheRealID() async throws {
+        let wda = RecordingWda()
+        let controller = LocalIphoneController(wda: wda, elementReader: StubElementReader())
+
+        // Nombre y el ID incorrecto histórico llegan al mismo ID real.
+        let byName = try await controller.call(tool: "iphone_launch_app", arguments: ["app": "chatgpt"])
+        let byWrongID = try await controller.call(tool: "iphone_launch_app", arguments: ["app": "com.openai.chatgpt"])
+        XCTAssertTrue(byName.contains("com.openai.chat"))
+        XCTAssertTrue(byWrongID.contains("com.openai.chat"))
+        XCTAssertFalse(byWrongID.contains("com.openai.chatgpt"))
+        let calls = await wda.recordedCalls()
+        XCTAssertEqual(calls, ["launchApp(com.openai.chat)", "launchApp(com.openai.chat)"])
+    }
+
+    func testResolveBundleIDTable() {
+        XCTAssertEqual(LocalIphoneController.resolveBundleID("chatgpt"), "com.openai.chat")
+        XCTAssertEqual(LocalIphoneController.resolveBundleID("com.openai.chatgpt"), "com.openai.chat")
+        XCTAssertEqual(LocalIphoneController.resolveBundleID("com.openai.chat"), "com.openai.chat")
+        XCTAssertEqual(LocalIphoneController.resolveBundleID("safari"), "com.apple.mobilesafari")
+        XCTAssertEqual(LocalIphoneController.resolveBundleID("com.example.app"), "com.example.app")
+        // Sin alias conocido, el nombre se devuelve tal cual (no se inventa un ID).
+        XCTAssertEqual(LocalIphoneController.resolveBundleID("claude"), "claude")
+    }
+
     func testControlModeResolutionTable() {
         let cases: [(IphoneControlMode?, [String], Bool, IphoneControlMode?)] = [
             (nil, [], false, nil),

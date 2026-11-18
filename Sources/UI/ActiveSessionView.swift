@@ -258,6 +258,9 @@ public struct ActiveSessionView: View {
                 },
                 onCodexCancel: {
                     store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .cancel)
+                },
+                onSequence: {
+                    store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .allowSequence)
                 }
             )
             .presentationDetents([.medium, .large])

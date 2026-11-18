@@ -252,6 +252,41 @@ public enum GoogleParsers {
                            date: header("Date"), snippet: string(object, "snippet"))
     }
 
+    /// Texto plano del cuerpo de un mensaje (format=full). Busca la primera parte
+    /// text/plain en el árbol MIME y decodifica su base64url; si no hay cuerpo,
+    /// devuelve el snippet. Nunca devuelve HTML.
+    public static func messageBody(_ data: Data) -> String {
+        let object = root(data)
+        if let text = plainTextBody(object["payload"] as? JSON), !text.isEmpty { return text }
+        return string(object, "snippet")
+    }
+
+    private static func plainTextBody(_ part: JSON?) -> String? {
+        guard let part else { return nil }
+        let mime = string(part, "mimeType")
+        if mime == "text/plain" {
+            if let body = part["body"] as? JSON {
+                let encoded = string(body, "data")
+                if !encoded.isEmpty, let decoded = decodeBase64URL(encoded) { return decoded }
+            }
+            return nil
+        }
+        if mime.hasPrefix("multipart/") {
+            for sub in objects(part, "parts") {
+                if let text = plainTextBody(sub), !text.isEmpty { return text }
+            }
+        }
+        return nil
+    }
+
+    /// Base64 con alfabeto URL-safe y sin relleno, como lo devuelve Gmail.
+    static func decodeBase64URL(_ value: String) -> String? {
+        var base64 = value.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while base64.count % 4 != 0 { base64 += "=" }
+        guard let data = Data(base64Encoded: base64) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
     public static func events(_ data: Data) -> [EventSummary] { events(objects(root(data), "items")) }
 
     static func events(_ items: [JSON]) -> [EventSummary] {
@@ -388,6 +423,12 @@ public struct GoogleClient: Sendable {
     public func sendMail(to: String, subject: String, body: String) async throws {
         try await call(url("gmail.googleapis.com", "/gmail/v1/users/me/messages/send"), method: "POST",
                        json: ["raw": AssistantCatalog.encodeGmailRaw(to: to, subject: subject, body: body)])
+    }
+
+    /// Cuerpo en texto plano de un mensaje (format=full). Sin cuerpo, devuelve el snippet.
+    public func mailBody(id: String) async throws -> String {
+        let data = try await call(url("gmail.googleapis.com", "/gmail/v1/users/me/messages/\(id)", [("format", "full")]))
+        return GoogleParsers.messageBody(data)
     }
 
     // Calendar
