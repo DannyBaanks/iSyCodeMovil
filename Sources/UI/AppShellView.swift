@@ -9,6 +9,7 @@ public struct AppShellView: View {
     @EnvironmentObject private var assistant: AssistantStore
     @EnvironmentObject private var router: AppShellRouter
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dragOffset: CGFloat = 0
 
     public init() {}
@@ -90,7 +91,10 @@ public struct AppShellView: View {
             }
         }
         .simultaneousGesture(edgeSwipeGesture)
-        .animation(.easeOut(duration: 0.22), value: router.isSidebarOpen)
+        .animation(reduceMotion ? nil : OCMotion.expoOut(), value: router.isSidebarOpen)
+        .onChange(of: router.isSidebarOpen) { _ in
+            OCHaptics.drawer()
+        }
     }
 
     private var edgeSwipeGesture: some Gesture {
@@ -111,7 +115,7 @@ public struct AppShellView: View {
                         router.closeSidebar()
                     }
                 } else if value.startLocation.x < 32 && value.translation.width > threshold {
-                    withAnimation(.easeOut(duration: 0.22)) {
+                    withAnimation(reduceMotion ? nil : OCMotion.expoOut()) {
                         router.isSidebarOpen = true
                     }
                 }

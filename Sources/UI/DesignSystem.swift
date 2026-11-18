@@ -77,6 +77,35 @@ public enum IysTheme: String, CaseIterable, Identifiable {
         }
     }
 
+    public var accentGradientStops: [Gradient.Stop] {
+        switch self {
+        case .console:
+            return [
+                Gradient.Stop(color: .iys(dark: "FF6B7F", light: "E84A66"), location: 0.00),
+                Gradient.Stop(color: .iys(dark: "F2556E", light: "DC3A58"), location: 0.25),
+                Gradient.Stop(color: accent, location: 0.50),
+                Gradient.Stop(color: .iys(dark: "D63452", light: "B92241"), location: 0.75),
+                Gradient.Stop(color: .iys(dark: "BA2443", light: "9E1935"), location: 1.00)
+            ]
+        case .premium:
+            return [
+                Gradient.Stop(color: .iys(dark: "B983FF", light: "9661E5"), location: 0.00),
+                Gradient.Stop(color: .iys(dark: "AA6FF2", light: "884FD6"), location: 0.25),
+                Gradient.Stop(color: accent, location: 0.50),
+                Gradient.Stop(color: .iys(dark: "8243CC", light: "6830B0"), location: 0.75),
+                Gradient.Stop(color: .iys(dark: "6B2FB3", light: "552296"), location: 1.00)
+            ]
+        }
+    }
+
+    public var accentGradient: LinearGradient {
+        LinearGradient(
+            stops: accentGradientStops,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
     public var userSurface: Color {
         switch self {
         case .console: return .iys(dark: "E94560", light: "D12F4E", darkOpacity: 0.16, lightOpacity: 0.10)
@@ -675,12 +704,38 @@ public struct OCFlowLayout: Layout {
 /// curve the app reads as calm instead of busy. Springs were three different feels.
 public enum OCMotion {
     public static let curve = (x1: 0.17, y1: 0.0, x2: 0.83, y2: 1.0)
+    public static let materialStandard = (x1: 0.40, y1: 0.0, x2: 0.20, y2: 1.0)
+    public static let expoOutCurve = (x1: 0.19, y1: 1.0, x2: 0.22, y2: 1.0)
+    public static let softOutCurve = (x1: 0.22, y1: 1.0, x2: 0.36, y2: 1.0)
+    public static let overshootCurve = (x1: 0.19, y1: 0.0, x2: 0.15, y2: 1.11)
+
     public static func timed(_ duration: Double) -> Animation {
         .timingCurve(curve.x1, curve.y1, curve.x2, curve.y2, duration: duration)
     }
     public static let snappy = timed(0.2)
     public static let smooth = timed(0.3)
     public static let gentle = timed(0.45)
+
+    public static func shimmerSweep(_ duration: Double = 1.096) -> Animation {
+        .timingCurve(materialStandard.x1, materialStandard.y1, materialStandard.x2, materialStandard.y2, duration: duration)
+    }
+
+    public static func expoOut(_ duration: Double = 0.30) -> Animation {
+        .timingCurve(expoOutCurve.x1, expoOutCurve.y1, expoOutCurve.x2, expoOutCurve.y2, duration: duration)
+    }
+
+    public static func softOut(_ duration: Double = 0.28) -> Animation {
+        .timingCurve(softOutCurve.x1, softOutCurve.y1, softOutCurve.x2, softOutCurve.y2, duration: duration)
+    }
+
+    public static func overshoot(_ duration: Double = 0.30) -> Animation {
+        .timingCurve(overshootCurve.x1, overshootCurve.y1, overshootCurve.x2, overshootCurve.y2, duration: duration)
+    }
+
+    public static let springSelection: Animation = .spring(response: 0.29, dampingFraction: 0.75)
+    public static let springSnappy: Animation = .spring(response: 0.25, dampingFraction: 0.89)
+    public static let springOverscroll: Animation = .spring(response: 0.24, dampingFraction: 0.55)
+    public static let springSoft: Animation = .spring(response: 0.53, dampingFraction: 0.89)
 
     public static func perform(_ animation: Animation = OCMotion.smooth, reduceMotion: Bool = false, _ updates: () -> Void) {
         if reduceMotion {
@@ -746,6 +801,51 @@ public enum OCHaptics {
         play([(0.0, 0.8, 0.8), (0.09, 0.6, 0.8), (0.18, 0.8, 0.8)], fallback: warning)
     }
 
+    /// Soft continuous pulse for sidebar drawer open/close.
+    public static func drawer() {
+        #if canImport(CoreHaptics) && canImport(UIKit)
+        let event = CHHapticEvent(
+            eventType: .hapticContinuous,
+            parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.38),
+                CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.08)
+            ],
+            relativeTime: 0,
+            duration: 0.11
+        )
+        let curve = CHHapticParameterCurve(
+            parameterID: .hapticIntensityControl,
+            controlPoints: [
+                CHHapticParameterCurve.ControlPoint(relativeTime: 0.0, value: 0.0),
+                CHHapticParameterCurve.ControlPoint(relativeTime: 0.015, value: 1.0),
+                CHHapticParameterCurve.ControlPoint(relativeTime: 0.045, value: 0.65),
+                CHHapticParameterCurve.ControlPoint(relativeTime: 0.11, value: 0.0)
+            ],
+            relativeTime: 0
+        )
+        guard OCHapticPlayer.shared.playPattern(events: [event], parameterCurves: [curve]) else {
+            return light()
+        }
+        #else
+        light()
+        #endif
+    }
+
+    /// Ascending double tap when a gesture is accepted.
+    public static func gestureAccepted() {
+        play([(0.0, 0.66, 0.28), (0.075, 1.0, 0.42)], fallback: light)
+    }
+
+    /// Four-tap organic trickle rhythm at 90 ms intervals.
+    public static func trickle() {
+        play([
+            (0.0, 0.70, 0.20),
+            (0.09, 0.80, 0.25),
+            (0.18, 1.00, 0.25),
+            (0.27, 1.00, 0.30)
+        ], fallback: selection)
+    }
+
     /// (time s, intensity 0...1, sharpness 0...1) transients.
     private static func play(_ taps: [(Double, Float, Float)], fallback: () -> Void) {
         #if canImport(CoreHaptics) && canImport(UIKit)
@@ -764,16 +864,22 @@ final class OCHapticPlayer {
 
     /// False when the device has no Core Haptics or the pattern failed (the caller falls back).
     func play(_ taps: [(Double, Float, Float)]) -> Bool {
+        let events = taps.map { time, intensity, sharpness in
+            CHHapticEvent(eventType: .hapticTransient, parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
+                CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness)
+            ], relativeTime: time)
+        }
+        return playPattern(events: events)
+    }
+
+    /// Plays transient or continuous Core Haptics events with optional parameter curves.
+    func playPattern(events: [CHHapticEvent], parameterCurves: [CHHapticParameterCurve] = []) -> Bool {
         guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return false }
         do {
             let engine = try runningEngine()
-            let events = taps.map { time, intensity, sharpness in
-                CHHapticEvent(eventType: .hapticTransient, parameters: [
-                    CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
-                    CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness)
-                ], relativeTime: time)
-            }
-            try engine.makePlayer(with: CHHapticPattern(events: events, parameters: [])).start(atTime: CHHapticTimeImmediate)
+            let pattern = try CHHapticPattern(events: events, parameterCurves: parameterCurves)
+            try engine.makePlayer(with: pattern).start(atTime: CHHapticTimeImmediate)
             return true
         } catch {
             self.engine = nil
@@ -814,6 +920,7 @@ public struct OCSkeletonModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isLoading: Bool
     @State private var phase: CGFloat = -0.8
+    @State private var isAppeared = false
 
     public init(isLoading: Bool) {
         self.isLoading = isLoading
@@ -825,7 +932,7 @@ public struct OCSkeletonModifier: ViewModifier {
                 .redacted(reason: .placeholder)
                 .overlay(
                     Group {
-                        if !reduceMotion {
+                        if !reduceMotion && isAppeared {
                             LinearGradient(
                                 colors: [.clear, Color.white.opacity(0.14), .clear],
                                 startPoint: .leading,
@@ -837,13 +944,43 @@ public struct OCSkeletonModifier: ViewModifier {
                     }
                 )
                 .onAppear {
+                    isAppeared = true
                     guard !reduceMotion else { return }
-                    withAnimation(.linear(duration: 1.35).repeatForever(autoreverses: false)) {
+                    phase = -0.8
+                    withAnimation(OCMotion.shimmerSweep(1.35).repeatForever(autoreverses: false)) {
                         phase = 1.2
+                    }
+                }
+                .onDisappear {
+                    isAppeared = false
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        phase = -0.8
                     }
                 }
         } else {
             content
+        }
+    }
+}
+
+public extension View {
+    @ViewBuilder
+    func ocBlurReplaceTransition() -> some View {
+        if #available(iOS 17.0, *) {
+            self.transition(.blurReplace)
+        } else {
+            self.transition(.opacity.combined(with: .scale(scale: 0.96)))
+        }
+    }
+
+    @ViewBuilder
+    func ocSymbolReplace() -> some View {
+        if #available(iOS 17.0, *) {
+            self.contentTransition(.symbolEffect(.replace))
+        } else {
+            self.contentTransition(.opacity)
         }
     }
 }

@@ -804,9 +804,11 @@ private struct UIKitCameraPickerRepresentable: UIViewControllerRepresentable {
 // MARK: - Asynchronous Speech-to-Text Dictation Button & Live Status Bar
 
 public struct DictationMicrophoneButton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var speech = SpeechDictationService.shared
     @Binding var targetText: String
     var onFocusRequested: (() -> Void)?
+    @State private var isHaloPulsing = false
 
     public init(targetText: Binding<String>, onFocusRequested: (() -> Void)? = nil) {
         self._targetText = targetText
@@ -816,7 +818,6 @@ public struct DictationMicrophoneButton: View {
     public var body: some View {
         Menu {
             Button {
-                OCHaptics.medium()
                 startOrStop()
             } label: {
                 Label(
@@ -843,17 +844,33 @@ public struct DictationMicrophoneButton: View {
             }
         } label: {
             ZStack {
+                if speech.state.isRecording {
+                    Circle()
+                        .stroke(OCColor.danger.opacity(reduceMotion ? 0.35 : (isHaloPulsing ? 0.14 : 0.42)), lineWidth: 2)
+                        .frame(width: 34, height: 34)
+                        .scaleEffect(reduceMotion ? 1.12 : (isHaloPulsing ? 1.28 : 1.02))
+                        .onAppear {
+                            guard !reduceMotion else { return }
+                            isHaloPulsing = false
+                            withAnimation(.easeInOut(duration: 0.95).repeatForever(autoreverses: true)) {
+                                isHaloPulsing = true
+                            }
+                        }
+                        .onDisappear {
+                            isHaloPulsing = false
+                        }
+                }
                 Circle()
                     .fill(speech.state.isRecording ? OCColor.danger.opacity(0.18) : OCColor.bgLayer1)
                     .frame(width: 34, height: 34)
                 Image(systemName: speech.state.isRecording ? "waveform.circle.fill" : "mic.fill")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(speech.state.isRecording ? OCColor.danger : OCColor.iconPrimary)
+                    .ocSymbolReplace()
             }
             .frame(width: 40, height: 40)
             .contentShape(Rectangle())
         } primaryAction: {
-            OCHaptics.medium()
             startOrStop()
         }
         .accessibilityLabel(speech.state.isRecording ? "Detener dictado y transcribir" : "Dictar con micrófono")
@@ -863,16 +880,61 @@ public struct DictationMicrophoneButton: View {
 
     private func startOrStop() {
         if speech.state.isRecording {
+            OCHaptics.medium()
             speech.stopAndTranscribe()
             return
         }
         guard !speech.state.isTranscribing else { return }
+        OCHaptics.gestureAccepted()
         Task {
             await speech.startRecording { transcript in
                 targetText = SpeechTextMerger.merge(existing: targetText, transcript: transcript)
-                OCHaptics.success()
+                OCHaptics.done()
                 onFocusRequested?()
             }
+        }
+    }
+}
+
+private struct VoiceWaveformBars: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let level: Float
+
+    private static let phaseOffsets: [Double] = [0.0, 0.21, 0.42, 0.63, 0.84]
+    private static let staticRatios: [CGFloat] = [0.35, 0.65, 1.0, 0.65, 0.35]
+    private let barWidth: CGFloat = 3
+    private let barSpacing: CGFloat = 3
+    private let minHeight: CGFloat = 4
+    private let maxHeight: CGFloat = 20
+
+    var body: some View {
+        let clampedLevel = CGFloat(min(max(level, 0), 1))
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { context in
+            let heights: [CGFloat] = if reduceMotion {
+                Self.staticRatios.map { ratio in
+                    let scaled = 0.25 + (0.45 + 0.30 * clampedLevel) * ratio
+                    return minHeight + (maxHeight - minHeight) * min(max(scaled, 0), 1)
+                }
+            } else {
+                Self.phaseOffsets.enumerated().map { idx, offset in
+                    let t = context.date.timeIntervalSinceReferenceDate
+                    let wave = 0.5 + 0.5 * sin((t * 7.5) + offset * .pi * 2.0)
+                    let envelope = 0.28 + 0.72 * clampedLevel
+                    let centerWeight: CGFloat = idx == 2 ? 1.0 : (idx == 1 || idx == 3 ? 0.88 : 0.74)
+                    let normalized = min(max(envelope * (0.35 + 0.65 * CGFloat(wave)) * centerWeight, 0), 1)
+                    return minHeight + (maxHeight - minHeight) * normalized
+                }
+            }
+
+            HStack(alignment: .center, spacing: barSpacing) {
+                ForEach(Array(heights.enumerated()), id: \.offset) { _, height in
+                    Capsule()
+                        .fill(OCColor.danger)
+                        .frame(width: barWidth, height: height)
+                }
+            }
+            .frame(height: maxHeight)
+            .accessibilityHidden(true)
         }
     }
 }
@@ -883,124 +945,138 @@ public struct DictationLiveStatusBar: View {
 
     public init() {}
 
-    public var body: some View {
+    private var statePhaseKey: Int {
         switch speech.state {
-        case .idle:
-            EmptyView()
-        case .requestingPermissions:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Solicitando permiso de micrófono y voz…")
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundColor(OCColor.textSecondary)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(OCColor.bgLayer1)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
-
-        case .recording(let elapsed, let level):
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(OCColor.danger)
-                    .frame(width: 10, height: 10)
-                    .scaleEffect(reduceMotion ? 1.0 : (0.9 + CGFloat(level) * 0.45))
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Grabando voz · \(formatElapsed(elapsed))")
-                        .font(.system(size: 12.5, weight: .bold))
-                        .foregroundColor(OCColor.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                    Text("\(speech.selectedLocale.shortTag) · \(speech.currentAvailability().badgeText)")
-                        .font(.system(size: 11))
-                        .foregroundColor(OCColor.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                }
-
-                Spacer(minLength: 4)
-
-                Button("Cancelar") {
-                    OCHaptics.light()
-                    speech.cancel()
-                }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(OCColor.textSecondary)
-                .buttonStyle(.plain)
-                .fixedSize(horizontal: true, vertical: false)
-
-                Button {
-                    OCHaptics.success()
-                    speech.stopAndTranscribe()
-                } label: {
-                    Label("Detener", systemImage: "stop.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(IysThemePreferences.active.accent))
-                        .foregroundColor(OCColor.onAccent)
-                }
-                .buttonStyle(.plain)
-                .fixedSize(horizontal: true, vertical: false)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(OCColor.danger.opacity(0.10))
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-            .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.danger.opacity(0.35), lineWidth: 1))
-
-        case .transcribing:
-            HStack(spacing: 10) {
-                ProgressView().controlSize(.small)
-                Text("Transcribiendo dictado (\(speech.selectedLocale.shortTag))…")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundColor(OCColor.textPrimary)
-                Spacer()
-                Button("Cancelar") {
-                    speech.cancel()
-                }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(OCColor.textSecondary)
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(OCColor.bgLayer1)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-
-        case .error(let reason):
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "mic.slash.fill")
-                    .font(.system(size: 13))
-                    .foregroundColor(OCColor.warning)
-                Text(reason)
-                    .font(.system(size: 12))
-                    .foregroundColor(OCColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer()
-                #if canImport(UIKit)
-                if reason.localizedCaseInsensitiveContains("Ajustes"),
-                   let url = URL(string: UIApplication.openSettingsURLString) {
-                    Button("Ajustes") { UIApplication.shared.open(url) }
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                #endif
-                Button {
-                    speech.clearError()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(OCColor.textFaint)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(OCColor.warning.opacity(0.10))
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+        case .idle: return 0
+        case .requestingPermissions: return 1
+        case .recording: return 2
+        case .transcribing: return 3
+        case .error: return 4
         }
+    }
+
+    public var body: some View {
+        Group {
+            switch speech.state {
+            case .idle:
+                EmptyView()
+            case .requestingPermissions:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Solicitando permiso de micrófono y voz…")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundColor(OCColor.textSecondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(OCColor.bgLayer1)
+                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                .ocBlurReplaceTransition()
+
+            case .recording(let elapsed, let level):
+                HStack(spacing: 10) {
+                    VoiceWaveformBars(level: level)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Grabando voz · \(formatElapsed(elapsed))")
+                            .font(.system(size: 12.5, weight: .bold))
+                            .foregroundColor(OCColor.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                        Text("\(speech.selectedLocale.shortTag) · \(speech.currentAvailability().badgeText)")
+                            .font(.system(size: 11))
+                            .foregroundColor(OCColor.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    Button("Cancelar") {
+                        OCHaptics.light()
+                        speech.cancel()
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(OCColor.textSecondary)
+                    .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                    Button {
+                        OCHaptics.success()
+                        speech.stopAndTranscribe()
+                    } label: {
+                        Label("Detener", systemImage: "stop.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(IysThemePreferences.active.accent))
+                            .foregroundColor(OCColor.onAccent)
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(OCColor.danger.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.danger.opacity(0.35), lineWidth: 1))
+                .ocBlurReplaceTransition()
+
+            case .transcribing:
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Transcribiendo dictado (\(speech.selectedLocale.shortTag))…")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundColor(OCColor.textPrimary)
+                    Spacer()
+                    Button("Cancelar") {
+                        speech.cancel()
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(OCColor.textSecondary)
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(OCColor.bgLayer1)
+                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                .ocBlurReplaceTransition()
+
+            case .error(let reason):
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "mic.slash.fill")
+                        .font(.system(size: 13))
+                        .foregroundColor(OCColor.warning)
+                    Text(reason)
+                        .font(.system(size: 12))
+                        .foregroundColor(OCColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    #if canImport(UIKit)
+                    if reason.localizedCaseInsensitiveContains("Ajustes"),
+                       let url = URL(string: UIApplication.openSettingsURLString) {
+                        Button("Ajustes") { UIApplication.shared.open(url) }
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    #endif
+                    Button {
+                        speech.clearError()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(OCColor.textFaint)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(OCColor.warning.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                .ocBlurReplaceTransition()
+            }
+        }
+        .animation(reduceMotion ? nil : OCMotion.expoOut(0.22), value: statePhaseKey)
     }
 
     private func formatElapsed(_ seconds: Int) -> String {
