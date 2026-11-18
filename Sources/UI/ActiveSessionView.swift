@@ -432,10 +432,15 @@ struct ChatSurfaceView: View {
                                 EmptyChatView(sessionTitle: sessionState.currentSession?.title)
                             }
                             let speakerIDs = assistantSpeakerIDs
+                            let turnEnds = assistantTurnEndPrompts
                             ForEach(groupedTimelineItems) { item in
                                 switch item {
                                 case .single(let event):
-                                    TimelineEventContainer(event: event, showsSpeaker: speakerIDs.contains(event.id))
+                                    TimelineEventContainer(
+                                        event: event,
+                                        showsSpeaker: speakerIDs.contains(event.id),
+                                        turnPrompt: turnEnds[event.id]
+                                    )
                                         .id(event.id)
                                 case .toolCarousel(let steps):
                                     ToolStepsCarouselView(steps: steps, agentColor: sessionState.agentMode.color)
@@ -583,6 +588,31 @@ struct ChatSurfaceView: View {
             }
         }
         return ids
+    }
+
+    /// The last non-empty answer of each finished turn → the prompt that started that
+    /// turn. Its copy/share/retry bar shows there only; the turn still being written
+    /// gets none until it ends.
+    private var assistantTurnEndPrompts: [String: String] {
+        var ends: [String: String] = [:]
+        var prompt = ""
+        var lastAnswerID: String?
+        for event in sessionState.timelineEvents {
+            switch event.kind {
+            case .userPrompt:
+                if let lastAnswerID { ends[lastAnswerID] = prompt }
+                prompt = event.promptText ?? ""
+                lastAnswerID = nil
+            case .assistantText where !(event.assistantText ?? "").isEmpty:
+                lastAnswerID = event.id
+            default:
+                break
+            }
+        }
+        if let lastAnswerID, !sessionState.isProcessing {
+            ends[lastAnswerID] = prompt
+        }
+        return ends
     }
 }
 

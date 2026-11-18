@@ -5,11 +5,14 @@ import SwiftUI
 public struct TimelineEventContainer: View {
     let event: TimelineEvent
     let showsSpeaker: Bool
+    /// Set on the last answer of a finished turn: the prompt "Reintentar" sends again.
+    let turnPrompt: String?
     @EnvironmentObject private var store: WorkbenchStore
 
-    public init(event: TimelineEvent, showsSpeaker: Bool = true) {
+    public init(event: TimelineEvent, showsSpeaker: Bool = true, turnPrompt: String? = nil) {
         self.event = event
         self.showsSpeaker = showsSpeaker
+        self.turnPrompt = turnPrompt
     }
 
     private var agentColor: Color {
@@ -24,7 +27,7 @@ public struct TimelineEventContainer: View {
         case .userPrompt:
             UserPromptView(event: event, agentColor: agentColor)
         case .assistantText:
-            AssistantTextView(event: event, showsSpeaker: showsSpeaker)
+            AssistantTextView(event: event, showsSpeaker: showsSpeaker, turnPrompt: turnPrompt)
         case .toolCall, .toolResult:
             ToolCallView(event: event, agentColor: agentColor)
         case .diff:
@@ -76,7 +79,9 @@ public struct UserPromptView: View {
     /// "Tú" label and no clock on every message. Alignment already says who wrote it.
     public var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
-            Spacer(minLength: 48)
+            // Bubble at most ~80% of the column (294 of 358 pt on a 390 pt iPhone), between
+            // ChatGPT's 275 and Claude's 318 measured on the same phone.
+            Spacer(minLength: 64)
 
             VStack(alignment: .trailing, spacing: OCSpacing.base) {
                 if let text = event.promptText {
@@ -116,11 +121,15 @@ public struct AssistantTextView: View {
     /// Only the first assistant message of a turn carries the speaker row; the rest of
     /// the turn reads as one continuous answer.
     let showsSpeaker: Bool
+    let turnPrompt: String?
     @EnvironmentObject private var sessionState: ActiveSessionState
+    @EnvironmentObject private var store: WorkbenchStore
+    @State private var copied = false
 
-    public init(event: TimelineEvent, showsSpeaker: Bool = true) {
+    public init(event: TimelineEvent, showsSpeaker: Bool = true, turnPrompt: String? = nil) {
         self.event = event
         self.showsSpeaker = showsSpeaker
+        self.turnPrompt = turnPrompt
     }
 
     private var isLiveTail: Bool {
@@ -166,12 +175,62 @@ public struct AssistantTextView: View {
                     .foregroundColor(OCColor.textPrimary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if turnPrompt != nil, !isLiveTail, !text.isEmpty {
+                    actionBar(text: text)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 2)
         .padding(.top, showsSpeaker ? OCSpacing.md : OCSpacing.xs)
         .padding(.bottom, OCSpacing.xs)
+    }
+
+    /// Copy, share and retry under the last answer of a finished turn, as in Claude
+    /// (6 × 32×44) and ChatGPT (5 × 30×32): small icons, 44 pt tall targets.
+    private func actionBar(text: String) -> some View {
+        HStack(spacing: 0) {
+            Button {
+                UIPasteboard.general.string = text
+                OCHaptics.light()
+                copied = true
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    copied = false
+                }
+            } label: {
+                actionIcon(copied ? "checkmark" : "doc.on.doc")
+            }
+            .accessibilityLabel(copied ? "Copiado" : "Copiar respuesta")
+
+            ShareLink(item: text) {
+                actionIcon("square.and.arrow.up")
+            }
+            .accessibilityLabel("Compartir respuesta")
+
+            if let turnPrompt, !turnPrompt.isEmpty {
+                Button {
+                    OCHaptics.light()
+                    store.sendPrompt(turnPrompt)
+                } label: {
+                    actionIcon("arrow.clockwise")
+                }
+                .disabled(sessionState.isProcessing)
+                .accessibilityLabel("Reintentar")
+                .accessibilityHint("Vuelve a enviar tu mensaje")
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, -8)
+    }
+
+    private func actionIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.footnote.weight(.medium))
+            .foregroundColor(OCColor.iconMuted)
+            .frame(width: 36, height: 44)
+            .contentShape(Rectangle())
     }
 }
 
@@ -387,7 +446,9 @@ public struct ToolCallCollapsedView: View {
                 .animation(.easeInOut(duration: 0.18), value: event.isExpanded)
                 .accessibilityHidden(true)
         }
-        .padding(.horizontal, OCSpacing.lg)
+        // Aligned with the answer's text and unframed, like Claude's tool rows; 44 pt stays
+        // the touch target even though nothing is drawn around it.
+        .padding(.horizontal, event.toolState == .permission ? OCSpacing.md : 2)
         .frame(minHeight: 44)
         .background(event.toolState == .permission ? OCColor.warning.opacity(0.08) : Color.clear)
         .contentShape(Rectangle())
@@ -728,7 +789,6 @@ public struct ToolCallView: View {
                 agentColor: agentColor,
                 onExpand: { sessionState.toggleToolExpansion(id: event.id) }
             )
-            .background(OCColor.bgLayer1)
             .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12, style: .continuous))
 
             if event.isExpanded {
