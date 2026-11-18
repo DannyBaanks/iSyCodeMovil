@@ -344,6 +344,7 @@ public struct ChatLandingView: View {
     @State private var showGUSAssistant = false
     @StateObject private var mediaCoordinator = MultimodalComposerCoordinator()
     @FocusState private var isInputFocused: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let onOpenSidebar: () -> Void
 
     public init(onOpenSidebar: @escaping () -> Void) {
@@ -499,74 +500,85 @@ public struct ChatLandingView: View {
     /// screen no hierarchy, and "Aprender acción" wrapping made its card taller.
     private var primaryThreeActionsGrid: some View {
         VStack(spacing: OCSpacing.md) {
-            HStack(spacing: OCSpacing.sm) {
-                primaryActionCard(
-                    title: "Conversar",
-                    subtitle: "Modelos y herramientas",
-                    symbol: "bubble.left.and.bubble.right.fill",
-                    tint: IysThemePreferences.active.accent,
-                    id: "home-action-chat"
-                ) {
-                    OCHaptics.light()
-                    if let first = store.sessions.first {
-                        Task { await store.selectSession(first) }
-                    } else {
-                        isInputFocused = true
-                    }
-                }
-
-                primaryActionCard(
-                    title: "Construir",
-                    subtitle: "Crea un agente nuevo",
-                    symbol: "hammer.fill",
-                    tint: OCColor.info,
-                    id: "home-action-build"
-                ) {
-                    OCHaptics.light()
-                    router.openBuilder()
-                }
+            // At accessibility text sizes two columns hyphenate "Conver-sar": stack them.
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: OCSpacing.sm) { primaryCards }
+            } else {
+                HStack(spacing: OCSpacing.sm) { primaryCards }
+                    // Both cards take the taller one's height.
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            // Both cards take the taller one's height.
-            .fixedSize(horizontal: false, vertical: true)
 
-            VStack(spacing: 0) {
-                secondaryActionRow(
-                    title: "Mis agentes",
-                    subtitle: contractStore.agents.isEmpty
-                        ? "Administra tus agentes y contratos"
-                        : "\(contractStore.agents.count) \(contractStore.agents.count == 1 ? "agente listo" : "agentes listos")",
-                    symbol: "square.stack.3d.up.fill",
-                    tint: OCColor.success,
-                    id: "home-action-agents"
-                ) {
-                    OCHaptics.light()
-                    router.openMyAgents()
-                }
-                Divider().overlay(OCColor.borderMuted).padding(.leading, 52)
-                secondaryActionRow(
-                    title: "Aprender acción",
-                    subtitle: "Graba un flujo en el iPhone",
-                    symbol: "record.circle",
-                    tint: OCColor.danger,
-                    id: "home-action-learn"
-                ) {
-                    OCHaptics.medium()
-                    router.openLearnAction()
-                }
-                Divider().overlay(OCColor.borderMuted).padding(.leading, 52)
-                secondaryActionRow(
-                    title: "Llavero",
-                    subtitle: "Claves protegidas con Face ID",
-                    symbol: "key.fill",
-                    tint: OCColor.warning,
-                    id: "home-action-vault"
-                ) {
-                    OCHaptics.light()
-                    router.openSecretVault()
-                }
-            }
-            .ocCard(radius: OCRadius.r14, border: OCColor.borderMuted, background: OCColor.bgBase)
+            secondaryActionsGroup
         }
+    }
+
+    @ViewBuilder private var primaryCards: some View {
+            primaryActionCard(
+                title: "Conversar",
+                subtitle: "Modelos y herramientas",
+                symbol: "bubble.left.and.bubble.right.fill",
+                tint: IysThemePreferences.active.accent,
+                id: "home-action-chat"
+            ) {
+                OCHaptics.light()
+                if let first = store.sessions.first {
+                    Task { await store.selectSession(first) }
+                } else {
+                    isInputFocused = true
+                }
+            }
+
+            primaryActionCard(
+                title: "Construir",
+                subtitle: "Crea un agente nuevo",
+                symbol: "hammer.fill",
+                tint: OCColor.info,
+                id: "home-action-build"
+            ) {
+                OCHaptics.light()
+                router.openBuilder()
+            }
+    }
+
+private var secondaryActionsGroup: some View {
+        VStack(spacing: 0) {
+            secondaryActionRow(
+                title: "Mis agentes",
+                subtitle: contractStore.agents.isEmpty
+                    ? "Administra tus agentes y contratos"
+                    : "\(contractStore.agents.count) \(contractStore.agents.count == 1 ? "agente listo" : "agentes listos")",
+                symbol: "square.stack.3d.up.fill",
+                tint: OCColor.success,
+                id: "home-action-agents"
+            ) {
+                OCHaptics.light()
+                router.openMyAgents()
+            }
+            Divider().overlay(OCColor.borderMuted).padding(.leading, 52)
+            secondaryActionRow(
+                title: "Aprender acción",
+                subtitle: "Graba un flujo en el iPhone",
+                symbol: "record.circle",
+                tint: OCColor.danger,
+                id: "home-action-learn"
+            ) {
+                OCHaptics.medium()
+                router.openLearnAction()
+            }
+            Divider().overlay(OCColor.borderMuted).padding(.leading, 52)
+            secondaryActionRow(
+                title: "Llavero",
+                subtitle: "Claves protegidas con Face ID",
+                symbol: "key.fill",
+                tint: OCColor.warning,
+                id: "home-action-vault"
+            ) {
+                OCHaptics.light()
+                router.openSecretVault()
+            }
+        }
+        .ocCard(radius: OCRadius.r14, border: OCColor.borderMuted, background: OCColor.bgBase)
     }
 
     /// A list row (icon, title, subtitle, chevron) for tools used less often than
@@ -624,7 +636,7 @@ public struct ChatLandingView: View {
                 Image(systemName: symbol)
                     .font(.callout.weight(.semibold))
                     .foregroundColor(tint)
-                    .frame(width: 38, height: 38)
+                    .frame(minWidth: 38, minHeight: 38)
                     .background(RoundedRectangle(cornerRadius: OCRadius.r10).fill(tint.opacity(0.16)))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
