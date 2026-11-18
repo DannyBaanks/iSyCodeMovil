@@ -115,6 +115,8 @@ public struct UnifiedSettingsView: View {
                 }
             }
 
+            ConversationSandboxesSection()
+
             Section("Avanzado") {
                 Toggle(isOn: Binding(
                     get: { GUSMailboxWatcher.isEnabled },

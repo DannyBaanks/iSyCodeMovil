@@ -52,8 +52,32 @@ jobs:
       - name: Install CMake
         run: brew install cmake
 
+      # llama.cpp is pinned (LLAMA_COMMIT in the script), so the XCFramework only changes
+      # with the script or the Xcode toolchain. Rebuilding it took ~7-11 min per job.
+      - name: Xcode version for the llama.cpp cache key
+        id: xcode
+        run: echo "version=$(xcodebuild -version | tr '\n' '-' | tr ' ' '_')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore llama.cpp iOS XCFramework
+        id: llama-cache
+        uses: actions/cache@v4
+        with:
+          path: .build/llama
+          key: llama-xcframework-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('scripts/build-llama-xcframework.sh') }}
+
       - name: Build pinned llama.cpp iOS XCFramework
+        if: steps.llama-cache.outputs.cache-hit != 'true'
         run: bash scripts/build-llama-xcframework.sh
+
+      - name: Verify llama.cpp XCFramework revision
+        run: |
+          set -euo pipefail
+          expected=$(sed -n 's/^readonly LLAMA_COMMIT="\(.*\)"$/\1/p' scripts/build-llama-xcframework.sh)
+          test -n "$expected"
+          test -d .build/llama/llama.xcframework
+          actual=$(cat .build/llama/SOURCE_COMMIT)
+          echo "llama.cpp XCFramework: $actual (cache hit: ${{ steps.llama-cache.outputs.cache-hit || 'false' }})"
+          test "$actual" = "$expected"
       
       - name: Generate Xcode project
         run: xcodegen generate
@@ -155,8 +179,32 @@ jobs:
       - name: Install CMake
         run: brew install cmake
 
+      # llama.cpp is pinned (LLAMA_COMMIT in the script), so the XCFramework only changes
+      # with the script or the Xcode toolchain. Rebuilding it took ~7-11 min per job.
+      - name: Xcode version for the llama.cpp cache key
+        id: xcode
+        run: echo "version=$(xcodebuild -version | tr '\n' '-' | tr ' ' '_')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore llama.cpp iOS XCFramework
+        id: llama-cache
+        uses: actions/cache@v4
+        with:
+          path: .build/llama
+          key: llama-xcframework-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('scripts/build-llama-xcframework.sh') }}
+
       - name: Build pinned llama.cpp iOS XCFramework
+        if: steps.llama-cache.outputs.cache-hit != 'true'
         run: bash scripts/build-llama-xcframework.sh
+
+      - name: Verify llama.cpp XCFramework revision
+        run: |
+          set -euo pipefail
+          expected=$(sed -n 's/^readonly LLAMA_COMMIT="\(.*\)"$/\1/p' scripts/build-llama-xcframework.sh)
+          test -n "$expected"
+          test -d .build/llama/llama.xcframework
+          actual=$(cat .build/llama/SOURCE_COMMIT)
+          echo "llama.cpp XCFramework: $actual (cache hit: ${{ steps.llama-cache.outputs.cache-hit || 'false' }})"
+          test "$actual" = "$expected"
 
       - name: Generate Xcode project
         run: xcodegen generate
