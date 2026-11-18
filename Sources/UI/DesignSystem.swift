@@ -2,6 +2,9 @@ import SwiftUI
 #if canImport(UIKit)
 import UIKit
 #endif
+#if canImport(CoreHaptics)
+import CoreHaptics
+#endif
 
 // MARK: - Appearance (automatic dark mode)
 
@@ -667,10 +670,17 @@ public struct OCFlowLayout: Layout {
 
 // MARK: - 2026 Motion, Haptics & Reusable State Primitives
 
+/// One curve for every movement, at three lengths. Muse (and most Lottie work) moves almost
+/// everything with the same cubic, ease-in-out (0.17, 0, 0.83, 1); when all motion shares a
+/// curve the app reads as calm instead of busy. Springs were three different feels.
 public enum OCMotion {
-    public static let snappy = Animation.spring(response: 0.25, dampingFraction: 0.82)
-    public static let smooth = Animation.spring(response: 0.34, dampingFraction: 0.85)
-    public static let gentle = Animation.spring(response: 0.44, dampingFraction: 0.88)
+    public static let curve = (x1: 0.17, y1: 0.0, x2: 0.83, y2: 1.0)
+    public static func timed(_ duration: Double) -> Animation {
+        .timingCurve(curve.x1, curve.y1, curve.x2, curve.y2, duration: duration)
+    }
+    public static let snappy = timed(0.2)
+    public static let smooth = timed(0.3)
+    public static let gentle = timed(0.45)
 
     public static func perform(_ animation: Animation = OCMotion.smooth, reduceMotion: Bool = false, _ updates: () -> Void) {
         if reduceMotion {
@@ -717,7 +727,72 @@ public enum OCHaptics {
         UINotificationFeedbackGenerator().notificationOccurred(.error)
         #endif
     }
+
+    // MARK: Designed patterns (Core Haptics)
+    // Muse ships an AHAP per moment (prompt sent, each reaction). Three moments matter here.
+
+    /// The message left: a firm tap and a soft echo.
+    public static func sent() {
+        play([(0.0, 0.7, 0.6), (0.07, 0.35, 0.3)], fallback: light)
+    }
+
+    /// The agent finished: two gentle rising taps.
+    public static func done() {
+        play([(0.0, 0.35, 0.4), (0.11, 0.6, 0.55)], fallback: success)
+    }
+
+    /// The agent needs the person (permission, question): three quick, sharper taps.
+    public static func attention() {
+        play([(0.0, 0.8, 0.8), (0.09, 0.6, 0.8), (0.18, 0.8, 0.8)], fallback: warning)
+    }
+
+    /// (time s, intensity 0...1, sharpness 0...1) transients.
+    private static func play(_ taps: [(Double, Float, Float)], fallback: () -> Void) {
+        #if canImport(CoreHaptics) && canImport(UIKit)
+        guard OCHapticPlayer.shared.play(taps) else { return fallback() }
+        #else
+        fallback()
+        #endif
+    }
 }
+
+#if canImport(CoreHaptics) && canImport(UIKit)
+/// Keeps one haptic engine alive and restarts it after the system stops or resets it.
+final class OCHapticPlayer {
+    static let shared = OCHapticPlayer()
+    private var engine: CHHapticEngine?
+
+    /// False when the device has no Core Haptics or the pattern failed (the caller falls back).
+    func play(_ taps: [(Double, Float, Float)]) -> Bool {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return false }
+        do {
+            let engine = try runningEngine()
+            let events = taps.map { time, intensity, sharpness in
+                CHHapticEvent(eventType: .hapticTransient, parameters: [
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness)
+                ], relativeTime: time)
+            }
+            try engine.makePlayer(with: CHHapticPattern(events: events, parameters: [])).start(atTime: CHHapticTimeImmediate)
+            return true
+        } catch {
+            self.engine = nil
+            return false
+        }
+    }
+
+    private func runningEngine() throws -> CHHapticEngine {
+        if let engine { return engine }
+        let engine = try CHHapticEngine()
+        engine.isAutoShutdownEnabled = true
+        engine.resetHandler = { [weak self] in self?.engine = nil }
+        engine.stoppedHandler = { [weak self] _ in self?.engine = nil }
+        try engine.start()
+        self.engine = engine
+        return engine
+    }
+}
+#endif
 
 public struct OCInteractiveButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

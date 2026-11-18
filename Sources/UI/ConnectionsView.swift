@@ -22,18 +22,43 @@ public struct ConnectionsView: View {
     @State private var showPairingImporter = false
     @State private var isActivatingChatGPT = false
     @State private var chatGPTActivationFeedback: String?
+    @AppStorage("connections.showAdvanced") private var showAdvanced = false
 
     public init() {}
 
+    /// Something technical is already in use: keep its section on screen so its status and
+    /// controls never hide behind "Avanzado".
+    private var advancedInUse: Bool {
+        isymcp.isPaired || store.sandboxLink != nil || loopback.loopbackVPNActive
+    }
+
+    // Everyday sections first; the computer, sandbox, VPN and host pairing (IPs, codes,
+    // plist files) sit behind "Avanzado" — they were the heaviest part for most people.
     public var body: some View {
         Form {
             assistantSection
             chatGPTOAuthSection
             vaultAndRecorderSection
-            isymcpRemoteSection
-            computerSandboxSection
-            loopbackSection
-            mobileHostSection
+            if showAdvanced || advancedInUse {
+                isymcpRemoteSection
+                computerSandboxSection
+                loopbackSection
+                mobileHostSection
+            }
+            if !advancedInUse {
+                Section {
+                    Button {
+                        withAnimation(OCMotion.smooth) { showAdvanced.toggle() }
+                    } label: {
+                        Label(showAdvanced ? "Ocultar opciones avanzadas" : "Opciones avanzadas",
+                              systemImage: showAdvanced ? "chevron.up" : "gearshape.2")
+                    }
+                } footer: {
+                    if !showAdvanced {
+                        Text("Conectar tu computadora (ISyMCP, sandbox) o la VPN local. No hace falta para conversar.")
+                    }
+                }
+            }
         }
         .refreshable {
             loopback.refreshState()

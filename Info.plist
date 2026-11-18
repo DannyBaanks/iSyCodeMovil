@@ -56,15 +56,15 @@
 		<true/>
 	</dict>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Face ID protege las llaves del Secure Enclave usadas para aprobar acciones remotas en ISyMCP y tu Llavero.</string>
+	<string>iSyCode usa Face ID para que solo tú apruebes acciones en tu computadora y abras tu Llavero.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>ISyCode Móvil usa la cámara únicamente cuando eliges Tomar fotografía para adjuntar una imagen al asistente.</string>
+	<string>iSyCode usa la cámara solo cuando tomas una foto para enviársela al asistente.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>ISyCode Móvil usa el micrófono únicamente cuando tocas el botón de dictado por voz para grabar un mensaje.</string>
+	<string>iSyCode usa el micrófono solo mientras dictas un mensaje.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>ISyCode Móvil usa el reconocimiento de voz de Apple para convertir tu dictado en texto editable antes de enviarlo.</string>
+	<string>iSyCode convierte tu voz en texto para que lo revises antes de enviarlo.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Connect to the IysCode server running on your computer over your local network.</string>
+	<string>iSyCode busca tu computadora en tu red para conectarse a ella cuando lo pides.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_remotepairing._tcp</string>

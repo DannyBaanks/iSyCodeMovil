@@ -48,7 +48,14 @@ public struct ComposerView: View {
 
             // Input area
             HStack(alignment: .bottom, spacing: OCSpacing.xs) {
-                ComposerPlusMenuButton(coordinator: mediaCoordinator)
+                ComposerOptionsButton(
+                    coordinator: mediaCoordinator,
+                    agentMode: $sessionState.agentMode,
+                    flowMode: $sessionState.flowMode,
+                    availableModes: availableModes,
+                    modelName: sessionState.selectedModel?.name,
+                    onModelTap: { sessionState.showModelPicker = true }
+                )
 
                 // Input text
                 ZStack(alignment: .topLeading) {
@@ -159,9 +166,17 @@ public struct ComposerView: View {
         guard !sessionState.isProcessing else { return }
         let trimmed = sessionState.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !sessionState.composerAttachments.isEmpty else { return }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        OCHaptics.sent()
         NotificationCenter.default.post(name: .composerSend, object: sessionState.composerText)
         sessionState.composerText = ""
+    }
+
+    /// Same list the agent picker uses: the remote server's agents, else every mode.
+    private var availableModes: [AgentMode] {
+        if store.backendMode == .remote, !store.availableAgents.isEmpty {
+            return store.availableAgents.compactMap { AgentMode(rawValue: $0) }
+        }
+        return AgentMode.allCases
     }
 
     private var canSend: Bool {
@@ -309,17 +324,21 @@ public struct ComposerControlRow: View {
                     ModelPillPlaceholder(onTap: onModelTap)
                 }
             } else {
-                AgentPill(mode: agentMode, onTap: onAgentTap)
-
-            // Model pill
-            if let model = selectedModel {
-                ModelPill(model: model, onTap: onModelTap)
-            } else {
-                ModelPillPlaceholder(onTap: onModelTap)
+                // Only the model is always visible. Mode and Flow live in the "+" sheet and show
+                // up here only while they differ from the default, so the person still sees them.
+                if let model = selectedModel {
+                    ModelPill(model: model, onTap: onModelTap)
+                } else {
+                    ModelPillPlaceholder(onTap: onModelTap)
+                }
+                if agentMode != .build {
+                    AgentPill(mode: agentMode, onTap: onAgentTap)
+                }
             }
-            }
 
-            FlowPill(isActive: $flowMode)
+            if flowMode {
+                FlowPill(isActive: $flowMode)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
     }
