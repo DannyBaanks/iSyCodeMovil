@@ -282,39 +282,47 @@ public struct OCRadius {
 // MARK: - Typography Tokens
 
 public struct OCTypography {
+    // Every token is a Dynamic Type text style, so it follows the size the person picks in
+    // Settings > Display & Text Size. Sizes at the default setting: body 17, callout 16,
+    // subheadline 15, footnote 13, caption 12, caption2 11.
+    // Monospaced is reserved for code, diffs and file paths. Prose, labels, status and
+    // pills use the system face; numbers that tick (times, durations, counts) use
+    // monospaced digits so they do not jitter.
+
     // Font families
     public static let ui = Font.system(.body, design: .default)
     public static let mono = Font.system(.body, design: .monospaced)
     private static var bodyDesign: Font.Design { IysThemePreferences.active.usesMonospacedBody ? .monospaced : .default }
 
     // Style definitions
-    public static var navTitle: Font { Font.system(size: 15, weight: .semibold, design: bodyDesign) }
-    public static let navSubtitle    = Font.system(size: 10.5, weight: .regular, design: .monospaced)
-    public static var body: Font { Font.system(size: 15, weight: .regular, design: IysThemePreferences.active.usesMonospacedBody ? .monospaced : .default) }
-    public static var bodyStrong: Font { Font.system(size: 15, weight: .semibold, design: bodyDesign) }
-    public static var userPrompt: Font { Font.system(size: 15, weight: .medium, design: IysThemePreferences.active.usesMonospacedBody ? .monospaced : .default) }
-    public static let meta           = Font.system(size: 11, weight: .regular, design: .default)
-    public static let metaMono       = Font.system(size: 10.5, weight: .regular, design: .monospaced)
-    public static var control: Font { Font.system(size: 12, weight: .medium, design: bodyDesign) }
-    public static let controlMono    = Font.system(size: 11, weight: .medium, design: .monospaced)
-    public static let code           = Font.system(size: 12.5, weight: .regular, design: .monospaced)
-    public static let codeSmall      = Font.system(size: 11.5, weight: .regular, design: .monospaced)
-    public static let sectionLabel   = Font.system(size: 11, weight: .semibold, design: .default)
-    public static var rowPrimary: Font { Font.system(size: 14.5, weight: .semibold, design: bodyDesign) }
-    public static let rowSecondary   = Font.system(size: 10.5, weight: .regular, design: .monospaced)
-    public static let pillLabel      = Font.system(size: 11, weight: .medium, design: .monospaced)
-    public static let modelPillLabel = Font.system(size: 10.5, weight: .regular, design: .monospaced)
-    public static let toolLabel      = Font.system(size: 12, weight: .medium, design: .monospaced)
-    public static let toolDetail     = Font.system(size: 11.5, weight: .regular, design: .monospaced)
-    public static let diffHeader     = Font.system(size: 11.5, weight: .regular, design: .monospaced)
-    public static let diffLineNum    = Font.system(size: 10.5, weight: .regular, design: .monospaced)
-    public static let diffCode       = Font.system(size: 12.5, weight: .regular, design: .monospaced)
-    public static let fileRow        = Font.system(size: 12.5, weight: .regular, design: .monospaced)
-    public static let permissionTitle = Font.system(size: 14, weight: .semibold, design: .default)
-    public static let permissionBody  = Font.system(size: 12.5, weight: .regular, design: .default)
-    public static let questionChoice  = Font.system(size: 14, weight: .regular, design: .default)
-    public static let todoText        = Font.system(size: 12.5, weight: .regular, design: .default)
-    public static let todoMeta        = Font.system(size: 10.5, weight: .regular, design: .monospaced)
+    public static var navTitle: Font { Font.system(.subheadline, design: bodyDesign, weight: .semibold) }
+    public static let navSubtitle    = Font.system(.caption2, design: .default, weight: .regular)
+    public static var body: Font { Font.system(.callout, design: bodyDesign, weight: .regular) }
+    public static var bodyStrong: Font { Font.system(.callout, design: bodyDesign, weight: .semibold) }
+    public static var userPrompt: Font { Font.system(.callout, design: bodyDesign, weight: .regular) }
+    public static let meta           = Font.system(.caption2, design: .default, weight: .regular)
+    /// Kept for existing call sites: times, durations and counts. System face, fixed-width digits.
+    public static let metaMono       = Font.system(.caption2, design: .default, weight: .regular).monospacedDigit()
+    public static var control: Font { Font.system(.caption, design: bodyDesign, weight: .medium) }
+    public static let controlMono    = Font.system(.caption2, design: .monospaced, weight: .medium)
+    public static let code           = Font.system(.footnote, design: .monospaced, weight: .regular)
+    public static let codeSmall      = Font.system(.caption, design: .monospaced, weight: .regular)
+    public static let sectionLabel   = Font.system(.caption2, design: .default, weight: .semibold)
+    public static var rowPrimary: Font { Font.system(.subheadline, design: bodyDesign, weight: .semibold) }
+    public static let rowSecondary   = Font.system(.caption2, design: .default, weight: .regular)
+    public static let pillLabel      = Font.system(.caption2, design: .default, weight: .medium)
+    public static let modelPillLabel = Font.system(.caption2, design: .default, weight: .regular)
+    public static let toolLabel      = Font.system(.footnote, design: .default, weight: .medium)
+    public static let toolDetail     = Font.system(.caption, design: .default, weight: .regular)
+    public static let diffHeader     = Font.system(.caption, design: .monospaced, weight: .regular)
+    public static let diffLineNum    = Font.system(.caption2, design: .monospaced, weight: .regular)
+    public static let diffCode       = Font.system(.footnote, design: .monospaced, weight: .regular)
+    public static let fileRow        = Font.system(.footnote, design: .monospaced, weight: .regular)
+    public static let permissionTitle = Font.system(.subheadline, design: .default, weight: .semibold)
+    public static let permissionBody  = Font.system(.footnote, design: .default, weight: .regular)
+    public static let questionChoice  = Font.system(.subheadline, design: .default, weight: .regular)
+    public static let todoText        = Font.system(.footnote, design: .default, weight: .regular)
+    public static let todoMeta        = Font.system(.caption2, design: .default, weight: .regular).monospacedDigit()
 }
 
 // MARK: - Shadow / Elevation

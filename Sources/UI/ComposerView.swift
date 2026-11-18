@@ -206,7 +206,6 @@ public struct SendStopButton: View {
             }
         }
         .disabled(isProcessing ? false : !canSend)
-        .opacity(isProcessing || canSend ? 1 : 0.4)
         .frame(width: 44, height: 44)
         .fixedSize(horizontal: true, vertical: false)
         .contentShape(Rectangle())
@@ -215,12 +214,15 @@ public struct SendStopButton: View {
         .animation(.easeInOut(duration: 0.15), value: canSend)
     }
 
+    /// Disabled reads as disabled: a neutral gray disc, not a faded accent that looks
+    /// like it is still the thing to press.
     private var backgroundColor: Color {
-        isProcessing ? agentColor.opacity(0.9) : IysThemePreferences.active.accent
+        if isProcessing { return agentColor.opacity(0.9) }
+        return canSend ? IysThemePreferences.active.accent : OCColor.bgLayer2
     }
 
     private var iconColor: Color {
-        OCColor.onAccent
+        isProcessing || canSend ? OCColor.onAccent : OCColor.iconMuted
     }
 
     private var iconName: String {

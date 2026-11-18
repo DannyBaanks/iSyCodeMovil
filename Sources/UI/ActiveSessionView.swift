@@ -31,6 +31,15 @@ public struct ActiveSessionView: View {
         return "En pausa"
     }
 
+    /// Color only for states that ask for attention; calm states stay neutral so the
+    /// header never reads as an error.
+    private var sessionStatusTint: Color? {
+        if sessionState.pendingPermission != nil || sessionState.pendingQuestion != nil { return OCColor.warning }
+        if store.backendMode == .remote && store.connectionHealth == .disconnected { return OCColor.danger }
+        if sessionState.isProcessing { return IysThemePreferences.active.accent }
+        return nil
+    }
+
     private var availableSurfaces: [WorkSurface] {
         if isGrokRemote { return [.chat] }
         if isCodexRemote { return [.chat, .files] }
@@ -72,7 +81,7 @@ public struct ActiveSessionView: View {
             }
             if store.backendMode == .native && !store.sandboxUsesLiveModel {
                 Text("Esto es el guion de demo, no un modelo remoto. Puedes elegir NVIDIA, xAI, OpenAI, Gemini u OpenRouter desde Proveedores.")
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.footnote)
                     .foregroundColor(OCColor.warning)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -169,9 +178,10 @@ public struct ActiveSessionView: View {
                 SessionNavTitle(
                     title: sessionState.currentSession?.title ?? "Sesión",
                     subtitle: sessionState.currentProject?.name ?? "Proyecto",
-                    status: sessionStatusLabel
+                    status: sessionStatusLabel,
+                    statusTint: sessionStatusTint
                 )
-                .frame(maxWidth: 220)
+                .frame(maxWidth: 240)
             }
             
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -184,22 +194,6 @@ public struct ActiveSessionView: View {
                                 .font(.system(size: 16, weight: .medium))
                         }
                         .accessibilityLabel("Nueva conversación")
-                    }
-
-                    if availableSurfaces.count > 1 {
-                        Menu {
-                            ForEach(availableSurfaces) { surface in
-                                Button {
-                                    sessionState.activeSurface = surface
-                                } label: {
-                                    Label(surface.title, systemImage: surface.icon)
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "square.grid.2x2")
-                                .font(.system(size: 16, weight: .medium))
-                        }
-                        .accessibilityLabel("Cambiar vista")
                     }
 
                     if sessionState.activeSurface == .files && !isCodexRemote && !isGrokRemote {
@@ -218,11 +212,36 @@ public struct ActiveSessionView: View {
                         .accessibilityLabel("Actualizar cambios")
                     }
                     
-                    Button { showDisconnectConfirm = true } label: {
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .font(.system(size: 17))
+                    // Un solo menú en vez de dos íconos sueltos: cambiar de vista es
+                    // poco frecuente y desconectar no debe estar a un toque al lado del título.
+                    Menu {
+                        if availableSurfaces.count > 1 {
+                            Section("Vista") {
+                                ForEach(availableSurfaces) { surface in
+                                    Button {
+                                        sessionState.activeSurface = surface
+                                    } label: {
+                                        if sessionState.activeSurface == surface {
+                                            Label(surface.title, systemImage: "checkmark")
+                                        } else {
+                                            Label(surface.title, systemImage: surface.icon)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Button(role: .destructive) {
+                            showDisconnectConfirm = true
+                        } label: {
+                            Label("Desconectar", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                    } label: {
+                        Label("Más opciones", systemImage: "ellipsis.circle")
+                            .labelStyle(.iconOnly)
+                            .font(.body)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
-                    .accessibilityLabel("Desconectar")
                 }
             }
         }
@@ -391,16 +410,20 @@ struct ChatSurfaceView: View {
                         store.revokeActiveSequenceApproval()
                     }
                 }
-                ChatActivityBar(
-                    isProcessing: sessionState.isProcessing,
-                    needsApproval: sessionState.pendingPermission != nil,
-                    needsAnswer: sessionState.pendingQuestion != nil,
-                    agentMode: sessionState.agentMode,
-                    modelName: sessionState.selectedModel?.name
-                )
-                .padding(.horizontal, OCSpacing.contentMargin)
-                .padding(.top, OCSpacing.sm)
-                .padding(.bottom, OCSpacing.xs)
+                // Solo cuando el agente espera algo de la persona. "Listo para seguir"
+                // repetía lo que ya dicen el subtítulo del header y el chip del compositor.
+                if sessionState.pendingPermission != nil || sessionState.pendingQuestion != nil {
+                    ChatActivityBar(
+                        isProcessing: sessionState.isProcessing,
+                        needsApproval: sessionState.pendingPermission != nil,
+                        needsAnswer: sessionState.pendingQuestion != nil,
+                        agentMode: sessionState.agentMode,
+                        modelName: sessionState.selectedModel?.name
+                    )
+                    .padding(.horizontal, OCSpacing.contentMargin)
+                    .padding(.top, OCSpacing.sm)
+                    .padding(.bottom, OCSpacing.xs)
+                }
 
                 ZStack(alignment: .bottomTrailing) {
                     ScrollView {
@@ -408,10 +431,11 @@ struct ChatSurfaceView: View {
                             if sessionState.timelineEvents.isEmpty {
                                 EmptyChatView(sessionTitle: sessionState.currentSession?.title)
                             }
+                            let speakerIDs = assistantSpeakerIDs
                             ForEach(groupedTimelineItems) { item in
                                 switch item {
                                 case .single(let event):
-                                    TimelineEventContainer(event: event)
+                                    TimelineEventContainer(event: event, showsSpeaker: speakerIDs.contains(event.id))
                                         .id(event.id)
                                 case .toolCarousel(let steps):
                                     ToolStepsCarouselView(steps: steps, agentColor: sessionState.agentMode.color)
@@ -535,6 +559,30 @@ struct ChatSurfaceView: View {
         }
         flushRun()
         return items
+    }
+
+    /// The first assistant message after each prompt gets the speaker row; the rest of
+    /// that turn (text between tool calls) continues without repeating it.
+    private var assistantSpeakerIDs: Set<String> {
+        var ids = Set<String>()
+        var needsSpeaker = true
+        // An empty assistant event draws nothing unless it is the live tail, so it must
+        // not consume the turn's speaker row.
+        let liveTailID = sessionState.isProcessing
+            ? sessionState.timelineEvents.last(where: { $0.kind == .assistantText })?.id
+            : nil
+        for event in sessionState.timelineEvents {
+            switch event.kind {
+            case .userPrompt:
+                needsSpeaker = true
+            case .assistantText where needsSpeaker && (!(event.assistantText ?? "").isEmpty || event.id == liveTailID):
+                ids.insert(event.id)
+                needsSpeaker = false
+            default:
+                break
+            }
+        }
+        return ids
     }
 }
 
@@ -1422,6 +1470,8 @@ struct SessionNavTitle: View {
     let title: String
     let subtitle: String
     var status: String = ""
+    /// nil = a calm state (idle, demo, on this iPhone), drawn like the subtitle.
+    var statusTint: Color? = nil
 
     var body: some View {
         VStack(alignment: .center, spacing: 1) {
@@ -1429,18 +1479,24 @@ struct SessionNavTitle: View {
                 .font(OCTypography.navTitle)
                 .foregroundColor(OCColor.textPrimary)
                 .lineLimit(1)
-            Text(subtitle)
+            subtitleLine
                 .font(OCTypography.navSubtitle)
-                .foregroundColor(OCColor.textFaint)
                 .lineLimit(1)
-            if !status.isEmpty {
-                Text(status)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(IysThemePreferences.active.accent)
-                    .lineLimit(1)
-            }
+                .truncationMode(.head)
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// Two lines instead of three: "project · status", status colored only when it asks
+    /// for attention.
+    private var subtitleLine: Text {
+        let base = Text(subtitle).foregroundColor(OCColor.textFaint)
+        guard !status.isEmpty else { return base }
+        return base
+            + Text(" · ").foregroundColor(OCColor.textFaint)
+            + Text(status)
+                .fontWeight(statusTint == nil ? .regular : .semibold)
+                .foregroundColor(statusTint ?? OCColor.textFaint)
     }
 }
 
