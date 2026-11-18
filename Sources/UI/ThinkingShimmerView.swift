@@ -6,14 +6,13 @@ public struct ThinkingShimmerView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let label: String
     let activeStepCount: Int
-    let startedAt: Date
+    let startedAt: Date?
     let onTap: () -> Void
-    @State private var phase: CGFloat = -0.6
 
     public init(
         label: String,
         activeStepCount: Int = 0,
-        startedAt: Date = Date(),
+        startedAt: Date? = nil,
         onTap: @escaping () -> Void = {}
     ) {
         self.label = label
@@ -31,30 +30,12 @@ public struct ThinkingShimmerView: View {
                 Circle()
                     .fill(IysThemePreferences.active.accent)
                     .frame(width: 8, height: 8)
-                    .opacity(reduceMotion ? 1.0 : (phase > 0 ? 0.45 : 1.0))
 
                 Text(label)
-                    .font(.system(size: 13.5, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundColor(OCColor.textPrimary)
-                    .lineLimit(1)
-                    .overlay(
-                        Group {
-                            if !reduceMotion {
-                                LinearGradient(
-                                    colors: [.clear, .white.opacity(0.45), .clear],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                                .offset(x: phase * 180)
-                                .mask(
-                                    Text(label)
-                                        .font(.system(size: 13.5, weight: .semibold))
-                                        .lineLimit(1)
-                                )
-                            }
-                        }
-                    )
-
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
                 Spacer(minLength: 4)
 
                 if activeStepCount > 0 {
@@ -66,31 +47,30 @@ public struct ThinkingShimmerView: View {
                         .background(Capsule().fill(OCColor.agentBuildSoft))
                 }
 
-                TimelineView(.periodic(from: startedAt, by: 1.0)) { context in
-                    let secs = max(0, Int(context.date.timeIntervalSince(startedAt)))
-                    Text("\(secs)s")
+                if let startedAt {
+                    Text(startedAt, style: .timer)
                         .font(OCTypography.metaMono)
-                        .foregroundColor(OCColor.textFaint)
+                        .foregroundColor(OCColor.textSecondary)
                         .monospacedDigit()
+                        .fixedSize()
+                        .accessibilityHidden(true)
                 }
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(OCColor.textFaint)
             }
+            .frame(minHeight: 44)
             .padding(.horizontal, OCSpacing.contentMargin)
-            .padding(.vertical, 9)
+            .padding(.vertical, OCSpacing.xs)
             .background(OCColor.bgBase.opacity(0.92))
             .overlay(Rectangle().frame(height: 0.5).foregroundColor(OCColor.borderMuted), alignment: .bottom)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) {
-                phase = 1.2
-            }
-        }
+        .accessibilityHint("Muestra las herramientas de este turno")
+        .accessibilityIdentifier("chat-turn-activity")
+        .animation(reduceMotion ? nil : OCMotion.smooth, value: activeStepCount)
     }
 }
 
@@ -108,19 +88,10 @@ public struct AgentActivityDetailSheet: View {
             List {
                 let recentTools = events.filter { $0.kind == .toolCall }.suffix(20)
                 if recentTools.isEmpty {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                            .tint(IysThemePreferences.active.accent)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Analizando tu solicitud")
-                                .font(.system(size: 14.5, weight: .semibold))
-                                .foregroundColor(OCColor.textPrimary)
-                            Text("El asistente está preparando su plan y eligiendo herramientas.")
-                                .font(OCTypography.meta)
-                                .foregroundColor(OCColor.textSecondary)
-                        }
-                    }
-                    .padding(.vertical, 4)
+                    Label("Este turno aún no registra herramientas.", systemImage: "clock")
+                        .font(.subheadline)
+                        .foregroundColor(OCColor.textSecondary)
+                        .padding(.vertical, OCSpacing.sm)
                 } else {
                     ForEach(Array(recentTools.reversed())) { step in
                         VStack(alignment: .leading, spacing: 6) {
@@ -164,7 +135,7 @@ public struct AgentActivityDetailSheet: View {
                     }
                 }
             }
-            .navigationTitle("Proceso en vivo")
+            .navigationTitle("Actividad de este turno")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

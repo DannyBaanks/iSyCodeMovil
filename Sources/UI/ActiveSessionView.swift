@@ -381,7 +381,6 @@ struct ChatSurfaceView: View {
     @EnvironmentObject private var store: WorkbenchStore
     @State private var scrollProxy: ScrollViewProxy?
     @State private var showActivityDetail = false
-    @State private var runStartedAt = Date()
     @State private var isPinnedToBottom = true
     @State private var settleTask: Task<Void, Never>?
     @State private var pinUpdateTask: Task<Void, Never>?
@@ -398,9 +397,9 @@ struct ChatSurfaceView: View {
             VStack(spacing: 0) {
                 if sessionState.isProcessing {
                     ThinkingShimmerView(
-                        label: liveActivityLabel,
+                        label: liveActivityLabel(in: snapshot.turnEvents),
                         activeStepCount: snapshot.toolCallCount,
-                        startedAt: runStartedAt
+                        startedAt: snapshot.turnEvents.first?.timestamp
                     ) {
                         showActivityDetail = true
                     }
@@ -447,7 +446,8 @@ struct ChatSurfaceView: View {
                                     TimelineEventContainer(
                                         event: event,
                                         showsSpeaker: snapshot.speakerIDs.contains(event.id),
-                                        turnPrompt: snapshot.turnEndPrompts[event.id]
+                                        turnPrompt: snapshot.turnEndPrompts[event.id],
+                                        isLiveTail: snapshot.liveTailID == event.id
                                     )
                                         .id(event.id)
                                 case .toolCarousel(let steps):
@@ -561,7 +561,6 @@ struct ChatSurfaceView: View {
                 }
                 .onChange(of: sessionState.isProcessing) { processing in
                     if processing {
-                        runStartedAt = Date()
                         if isPinnedToBottom {
                             settleAtBottom()
                         }
@@ -570,19 +569,26 @@ struct ChatSurfaceView: View {
                     }
                 }
                 .sheet(isPresented: $showActivityDetail) {
-                    AgentActivityDetailSheet(events: sessionState.timelineEvents)
+                    AgentActivityDetailSheet(events: Array(snapshot.turnEvents))
                 }
             }
         }
     }
 
-    private var liveActivityLabel: String {
+    private func liveActivityLabel(in turn: ArraySlice<TimelineEvent>) -> String {
         if sessionState.pendingPermission != nil { return "Esperando tu permiso…" }
         if sessionState.pendingQuestion != nil { return "Esperando tu respuesta…" }
-        if let activeTool = sessionState.timelineEvents.last(where: { $0.kind == .toolCall && $0.toolState == .running }) {
+        if let activeTool = turn.last(where: { $0.kind == .toolCall && $0.toolState == .running }) {
             return "\(ToolCallCollapsedView.displayTitle(for: activeTool.toolName))…"
         }
-        return "Pensando…"
+        if let last = turn.last {
+            switch last.kind {
+            case .assistantText where !(last.assistantText ?? "").isEmpty: return "Escribiendo respuesta"
+            case .thinking: return "Razonando"
+            default: break
+            }
+        }
+        return "Turno en curso"
     }
 
     /// Defer bottom-anchor visibility changes off the synchronous layout pass and coalesce
@@ -657,6 +663,8 @@ struct ChatSurfaceView: View {
         let items: [TimelineRenderItem]
         let speakerIDs: Set<String>
         let turnEndPrompts: [String: String]
+        let liveTailID: String?
+        let turnEvents: ArraySlice<TimelineEvent>
         let toolCallCount: Int
 
         static func build(events: [TimelineEvent], isProcessing: Bool) -> TimelineLayoutSnapshot {
@@ -664,14 +672,13 @@ struct ChatSurfaceView: View {
             var toolRun: [TimelineEvent] = []
             var speakerIDs = Set<String>()
             var turnEndPrompts: [String: String] = [:]
+            var turnStart = events.endIndex
             var toolCallCount = 0
 
             var needsSpeaker = true
             var currentPrompt = ""
             var lastAnswerID: String?
-            let liveTailID = isProcessing
-                ? events.last(where: { $0.kind == .assistantText })?.id
-                : nil
+            let liveTailID = isProcessing && events.last?.kind == .assistantText ? events.last?.id : nil
 
             func flushRun() {
                 guard !toolRun.isEmpty else { return }
@@ -683,7 +690,7 @@ struct ChatSurfaceView: View {
                 toolRun.removeAll(keepingCapacity: true)
             }
 
-            for event in events {
+            for (index, event) in events.enumerated() {
                 if event.kind == .toolCall {
                     toolCallCount += 1
                     toolRun.append(event)
@@ -694,9 +701,11 @@ struct ChatSurfaceView: View {
 
                 switch event.kind {
                 case .userPrompt:
+                    turnStart = index
+                    toolCallCount = 0
                     needsSpeaker = true
                     if let lastAnswerID { turnEndPrompts[lastAnswerID] = currentPrompt }
-                    currentPrompt = event.promptText ?? ""
+                    currentPrompt = (event.attachments ?? []).isEmpty ? event.promptText ?? "" : ""
                     lastAnswerID = nil
                 case .assistantText:
                     let nonEmpty = !(event.assistantText ?? "").isEmpty
@@ -719,6 +728,8 @@ struct ChatSurfaceView: View {
                 items: items,
                 speakerIDs: speakerIDs,
                 turnEndPrompts: turnEndPrompts,
+                liveTailID: liveTailID,
+                turnEvents: events[turnStart...],
                 toolCallCount: toolCallCount
             )
         }
