@@ -326,6 +326,7 @@ public struct ToolCallCollapsedView: View {
     let event: TimelineEvent
     let agentColor: Color
     let onExpand: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     public init(event: TimelineEvent, agentColor: Color, onExpand: @escaping () -> Void) {
         self.event = event
@@ -353,19 +354,26 @@ public struct ToolCallCollapsedView: View {
                 .frame(width: 20)
                 .accessibilityHidden(true)
 
-            HStack(spacing: 5) {
+            // At accessibility text sizes one line cannot hold title + path: stack them
+            // and let the title wrap instead of truncating to "Editando archi…".
+            let titleAndDetail = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+                : AnyLayout(HStackLayout(spacing: 5))
+            titleAndDetail {
                 Text(toolTitle)
                     .font(OCTypography.toolLabel)
                     .foregroundColor(OCColor.textPrimary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
                     .layoutPriority(1)
                 if let detail = toolDetail {
                     Text(detail)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundColor(OCColor.textFaint)
+                        .lineLimit(1)
                         .truncationMode(.middle)
                 }
             }
-            .lineLimit(1)
+            .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? OCSpacing.base : 0)
 
             Spacer(minLength: OCSpacing.xs)
 
