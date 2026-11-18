@@ -252,7 +252,14 @@ jobs:
             xcrun simctl ui "$UDID" content_size "${REST#*:}"
             xcrun simctl terminate "$UDID" dev.iyscode.movil || true
             xcrun simctl launch "$UDID" dev.iyscode.movil "--readme-screenshot=chat"
-            sleep 3
+            # A content_size change makes the first frame slower; wait longer and log
+            # whether the app is still alive, so a blank capture says hang vs crash.
+            sleep 6
+            if xcrun simctl spawn "$UDID" launchctl list | grep -q dev.iyscode.movil; then
+              echo "review/$NAME: app running"
+            else
+              echo "::warning::review/$NAME: app NOT running (crashed?)"
+            fi
             xcrun simctl io "$UDID" screenshot "docs/screenshots/review/$NAME.png"
             sips -Z 1600 "docs/screenshots/review/$NAME.png"
           done

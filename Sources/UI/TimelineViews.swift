@@ -356,24 +356,18 @@ public struct ToolCallCollapsedView: View {
 
             // At accessibility text sizes one line cannot hold title + path: stack them
             // and let the title wrap instead of truncating to "Editando archi…".
-            let titleAndDetail = dynamicTypeSize.isAccessibilitySize
-                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
-                : AnyLayout(HStackLayout(spacing: 5))
-            titleAndDetail {
-                Text(toolTitle)
-                    .font(OCTypography.toolLabel)
-                    .foregroundColor(OCColor.textPrimary)
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
-                    .layoutPriority(1)
-                if let detail = toolDetail {
-                    Text(detail)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(OCColor.textFaint)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    titleText.lineLimit(3)
+                    detailText
+                }
+                .padding(.vertical, OCSpacing.base)
+            } else {
+                HStack(spacing: 5) {
+                    titleText.lineLimit(1).layoutPriority(1)
+                    detailText
                 }
             }
-            .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? OCSpacing.base : 0)
 
             Spacer(minLength: OCSpacing.xs)
 
@@ -397,6 +391,22 @@ public struct ToolCallCollapsedView: View {
         .frame(minHeight: 44)
         .background(event.toolState == .permission ? OCColor.warning.opacity(0.08) : Color.clear)
         .contentShape(Rectangle())
+    }
+
+    private var titleText: some View {
+        Text(toolTitle)
+            .font(OCTypography.toolLabel)
+            .foregroundColor(OCColor.textPrimary)
+    }
+
+    @ViewBuilder private var detailText: some View {
+        if let detail = toolDetail {
+            Text(detail)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(OCColor.textFaint)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
     }
 
     @ViewBuilder private var statusMark: some View {
