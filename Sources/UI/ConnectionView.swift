@@ -7,6 +7,8 @@ public struct ConnectionView: View {
     @State private var showSandboxSheet = false
     @State private var sandboxInitialTrack: RuntimeSetupTrack = .local
     @State private var showDesktopLink = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showHostPairing = false
     @FocusState private var fieldFocused: Bool
     
     public init() {}
@@ -16,37 +18,41 @@ public struct ConnectionView: View {
             OCColor.bgDeep.ignoresSafeArea()
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 0) {
-                Spacer(minLength: 36)
-                
-                HStack(spacing: 14) {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(IysThemePreferences.active.accent)
-                        .overlay {
-                            Text("IS")
-                                .font(.system(size: 16, weight: .heavy, design: .rounded))
-                                .foregroundColor(OCColor.onAccent)
-                        }
-                        .frame(width: 48, height: 48)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("ISYCODE")
-                            .font(.system(size: 22, weight: .heavy, design: .rounded))
-                            .tracking(1.6)
-                            .foregroundColor(OCColor.textPrimary)
-                        Text("Móvil · el escritorio en el bolsillo")
-                            .font(.system(size: 12))
-                            .foregroundColor(OCColor.textSecondary)
+                VStack(alignment: .leading, spacing: OCSpacing.md) {
+                    Text("ISyCode")
+                        .font(.largeTitle.bold())
+                        .foregroundColor(OCColor.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Conversa con GUS o crea un agente para una tarea tuya.")
+                        .font(.body)
+                        .foregroundColor(OCColor.textSecondary)
+                    Button {
+                        store.hasCompletedOnboarding = true
+                    } label: {
+                        Label("Entrar a ISyCode", systemImage: "arrow.right")
+                            .font(.headline)
+                            .padding(.vertical, OCSpacing.sm)
+                            .frame(maxWidth: .infinity, minHeight: 48)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(IysThemePreferences.active.accent)
+                    .foregroundColor(OCColor.onAccent)
+                    .accessibilityIdentifier("onboarding-enter-home")
                 }
-                
-                Spacer().frame(height: 22)
+                .padding(.vertical, OCSpacing.lg)
+
+                Text("Conectar un asistente")
+                    .font(.headline)
+                    .foregroundColor(OCColor.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.vertical, OCSpacing.sm)
 
                 door(
                     icon: "desktopcomputer",
                     title: "Ver el agente de mi computadora",
                     subtitle: "Pega el enlace de OpenCode. La terminal de la computadora se queda abierta."
                 ) {
-                    withAnimation(.easeInOut(duration: 0.2)) { showDesktopLink.toggle() }
+                    withAnimation(reduceMotion ? nil : OCMotion.snappy) { showDesktopLink.toggle() }
                 }
 
                 if showDesktopLink {
@@ -96,10 +102,10 @@ public struct ConnectionView: View {
                     } label: {
                         Text("Pegar")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(Color.white.opacity(0.55))
+                            .foregroundColor(OCColor.textSecondary)
                             .padding(.horizontal, 10)
                             .frame(height: 28)
-                            .overlay(Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1))
+                            .overlay(Rectangle().stroke(OCColor.borderBase, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, 8)
@@ -108,7 +114,7 @@ public struct ConnectionView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(.white)
+                    .foregroundColor(OCColor.textPrimary)
                     .focused($fieldFocused)
                     .submitLabel(.go)
                     .onSubmit { connect() }
@@ -149,7 +155,7 @@ public struct ConnectionView: View {
                 door(
                     icon: "iphone",
                     title: "Hablar con GUS en este iPhone",
-                    subtitle: "Sin internet. El modelo vive localmente en tu dispositivo."
+                    subtitle: "Descarga el modelo y después conversa sin conexión."
                 ) {
                     sandboxInitialTrack = .local
                     showSandboxSheet = true
@@ -158,42 +164,20 @@ public struct ConnectionView: View {
 
                 door(
                     icon: "cloud",
-                    title: "Conectar proveedor en la nube",
-                    subtitle: "Usa NVIDIA NIM, xAI, OpenAI, Gemini o OpenRouter con tu API key."
+                    title: "Usar un modelo en la nube",
+                    subtitle: "Conecta una cuenta compatible con su clave de acceso."
                 ) {
                     sandboxInitialTrack = .connected
                     showSandboxSheet = true
                 }
                 .padding(.top, 12)
 
-                Button {
-                    store.hasCompletedOnboarding = true
-                } label: {
-                    HStack {
-                        Text("Ir al Centro de trabajo")
-                            .font(.system(size: 14.5, weight: .semibold))
-                        Spacer()
-                        Image(systemName: "arrow.right")
-                    }
-                    .foregroundColor(OCColor.textPrimary)
-                    .padding(14)
-                    .background(OCColor.bgLayer1)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
+                DisclosureGroup("Vincular un equipo con PIN", isExpanded: $showHostPairing) {
+                    MobileHostPairingSection()
                 }
-                .buttonStyle(.plain)
-                .padding(.top, 12)
-                .accessibilityIdentifier("onboarding-enter-home")
+                .font(.subheadline)
+                .padding(.vertical, OCSpacing.md)
 
-                Text("El PIN del host de iSyCode ya funciona. Las conversaciones llegan con el escritorio.")
-                    .font(.system(size: 13))
-                    .foregroundColor(OCColor.textFaint)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 22)
-                    .padding(.bottom, 10)
-
-                MobileHostPairingSection()
-                
                 Spacer()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -249,11 +233,11 @@ public struct ConnectionView: View {
                     .frame(width: 44, height: 44)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundColor(OCColor.textPrimary)
                         .multilineTextAlignment(.leading)
                     Text(subtitle)
-                        .font(.system(size: 13))
+                        .font(.subheadline)
                         .foregroundColor(OCColor.textSecondary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -262,10 +246,8 @@ public struct ConnectionView: View {
                 Image(systemName: "chevron.right")
                     .foregroundColor(OCColor.textFaint)
             }
-            .padding(14)
-            .background(OCColor.bgBase)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-            .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderBase, lineWidth: 1))
+            .padding(.vertical, OCSpacing.sm)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -289,16 +271,16 @@ public struct ConnectionView: View {
         Text(text)
             .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .tracking(1.2)
-            .foregroundColor(Color.white.opacity(0.42))
+            .foregroundColor(OCColor.textSecondary)
             .padding(.bottom, 8)
     }
     
     private func commandBox(_ command: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text("$")
-                .foregroundColor(Color.white.opacity(0.38))
+                .foregroundColor(OCColor.textSecondary)
             Text(command)
-                .foregroundColor(.white)
+                .foregroundColor(OCColor.textPrimary)
                 .textSelection(.enabled)
             Spacer(minLength: 0)
         }
@@ -395,10 +377,10 @@ struct ReconnectSheet: View {
                     } label: {
                         Text("Copiar")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(Color.white.opacity(0.55))
+                            .foregroundColor(OCColor.textSecondary)
                             .padding(.horizontal, 10)
                             .frame(height: 28)
-                            .overlay(Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1))
+                            .overlay(Rectangle().stroke(OCColor.borderBase, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, 8)
@@ -423,10 +405,10 @@ struct ReconnectSheet: View {
                     } label: {
                         Text("Pegar")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(Color.white.opacity(0.55))
+                            .foregroundColor(OCColor.textSecondary)
                             .padding(.horizontal, 10)
                             .frame(height: 28)
-                            .overlay(Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1))
+                            .overlay(Rectangle().stroke(OCColor.borderBase, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, 8)
@@ -435,7 +417,7 @@ struct ReconnectSheet: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(.white)
+                    .foregroundColor(OCColor.textPrimary)
                     .focused($fieldFocused)
                     .submitLabel(.go)
                     .onSubmit { connect() }
@@ -490,16 +472,16 @@ struct ReconnectSheet: View {
         Text(text)
             .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .tracking(1.2)
-            .foregroundColor(Color.white.opacity(0.42))
+            .foregroundColor(OCColor.textSecondary)
             .padding(.bottom, 8)
     }
     
     private func commandBox(_ command: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text("$")
-                .foregroundColor(Color.white.opacity(0.38))
+                .foregroundColor(OCColor.textSecondary)
             Text(command)
-                .foregroundColor(.white)
+                .foregroundColor(OCColor.textPrimary)
                 .textSelection(.enabled)
             Spacer(minLength: 0)
         }
@@ -550,7 +532,7 @@ struct SandboxKeySheet: View {
                 }
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .tracking(1.2)
-                    .foregroundColor(Color.white.opacity(0.42))
+                    .foregroundColor(OCColor.textSecondary)
                     .padding(.bottom, 8)
 
                 Picker("Proveedor", selection: $selectedProviderID) {
@@ -566,14 +548,14 @@ struct SandboxKeySheet: View {
                 } else if let provider = SandboxModelProvider.provider(id: selectedProviderID) {
                     Text(provider.description)
                         .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(Color.white.opacity(0.55))
+                        .foregroundColor(OCColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.bottom, 10)
                     SecureField(hasKey ? "clave guardada; pega otra para reemplazarla" : provider.keyPlaceholder, text: $key)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(.white)
+                    .foregroundColor(OCColor.textPrimary)
                     .focused($fieldFocused)
                     .padding(12)
                     .background(OCColor.bgBase)
