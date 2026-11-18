@@ -18,6 +18,31 @@ public enum ChatMarkdownBlock: Equatable, Sendable {
 /// Splits Markdown into blocks. Pure and forgiving: a message that is still streaming (an unclosed code fence, a
 /// half-written list) always yields something sensible instead of failing.
 public enum ChatMarkdownParser {
+    private final class CachedBlocksBox: NSObject {
+        let blocks: [ChatMarkdownBlock]
+        init(_ blocks: [ChatMarkdownBlock]) { self.blocks = blocks }
+    }
+
+    private static let blockCache: NSCache<NSString, CachedBlocksBox> = {
+        let cache = NSCache<NSString, CachedBlocksBox>()
+        cache.countLimit = 256
+        return cache
+    }()
+
+    /// Cached entry point for SwiftUI views so repeated renders of finished messages
+    /// do not re-split and re-scan Markdown on the main thread.
+    public static func cachedParse(_ markdown: String) -> [ChatMarkdownBlock] {
+        let key = markdown as NSString
+        if let hit = blockCache.object(forKey: key) {
+            return hit.blocks
+        }
+        let parsed = parse(markdown)
+        if markdown.utf8.count <= 65_536 {
+            blockCache.setObject(CachedBlocksBox(parsed), forKey: key)
+        }
+        return parsed
+    }
+
     public static func parse(_ markdown: String) -> [ChatMarkdownBlock] {
         let normalized = markdown
             .replacingOccurrences(of: "\r\n", with: "\n")

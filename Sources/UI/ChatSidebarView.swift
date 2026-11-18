@@ -79,10 +79,10 @@ public struct ChatSidebarView: View {
 
     private var newConversationButton: some View {
         Button {
+            router.openConversations()
+            onClose()
             Task {
                 _ = await store.openOrCreateConversation(preferNew: true)
-                router.openConversations()
-                onClose()
             }
         } label: {
             HStack(spacing: OCSpacing.sm) {
@@ -134,10 +134,10 @@ public struct ChatSidebarView: View {
     private func conversationRow(_ session: Session) -> some View {
         let isActive = router.activeDestination == .chat && sessionState.currentSession?.id == session.id
         return Button {
+            router.openConversations()
+            onClose()
             Task {
                 await store.selectSession(session)
-                router.openConversations()
-                onClose()
             }
         } label: {
             HStack(spacing: OCSpacing.sm) {

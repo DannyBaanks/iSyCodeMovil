@@ -85,11 +85,14 @@ public struct UserPromptView: View {
 
             VStack(alignment: .trailing, spacing: OCSpacing.base) {
                 if let text = event.promptText {
-                    MarkdownText(content: text, emphasisColor: agentColor)
-                        .font(OCTypography.userPrompt)
-                        .foregroundColor(OCColor.textPrimary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                    MarkdownText(
+                        content: text,
+                        emphasisColor: agentColor,
+                        emphasisKey: "prompt-\(event.agentMode?.rawValue ?? "build")"
+                    )
+                    .equatable()
+                    .font(OCTypography.userPrompt)
+                    .foregroundColor(OCColor.textPrimary)
                 }
 
                 if let attachments = event.attachments, !attachments.isEmpty {
@@ -170,11 +173,14 @@ public struct AssistantTextView: View {
                     .accessibilityAddTraits(.isHeader)
                 }
 
-                MarkdownText(content: isLiveTail ? text + "▍" : text, emphasisColor: OCColor.syntaxType)
-                    .font(OCTypography.body)
-                    .foregroundColor(OCColor.textPrimary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                MarkdownText(
+                    content: isLiveTail ? text + "▍" : text,
+                    emphasisColor: OCColor.syntaxType,
+                    emphasisKey: "assistant"
+                )
+                .equatable()
+                .font(OCTypography.body)
+                .foregroundColor(OCColor.textPrimary)
 
                 if turnPrompt != nil, !isLiveTail, !text.isEmpty {
                     actionBar(text: text)
@@ -234,16 +240,34 @@ public struct AssistantTextView: View {
     }
 }
 
+private final class CachedAttributedMarkdownBox: NSObject {
+    let value: AttributedString
+    init(_ value: AttributedString) { self.value = value }
+}
+
+private enum InlineMarkdownCache {
+    static let cache: NSCache<NSString, CachedAttributedMarkdownBox> = {
+        let cache = NSCache<NSString, CachedAttributedMarkdownBox>()
+        cache.countLimit = 1024
+        return cache
+    }()
+}
+
 /// Draws an assistant message block by block (see `ChatMarkdownParser`): SwiftUI's `Text` keeps inline styling but
 /// drops paragraph and list structure, which glued lines together. Strong emphasis gets an explicit accent so literal
 /// `**markers**` never appear in the conversation.
-private struct MarkdownText: View {
+private struct MarkdownText: View, Equatable {
     let content: String
     let emphasisColor: Color
+    let emphasisKey: String
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.content == rhs.content && lhs.emphasisKey == rhs.emphasisKey
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(ChatMarkdownParser.parse(content).enumerated()), id: \.offset) { _, block in
+            ForEach(Array(ChatMarkdownParser.cachedParse(content).enumerated()), id: \.offset) { _, block in
                 blockView(block)
             }
         }
@@ -275,33 +299,27 @@ private struct MarkdownText: View {
                 .overlay(alignment: .leading) {
                     Rectangle().fill(OCColor.borderBase).frame(width: 3)
                 }
-        case .code(_, let text):
-            monospacedScroll(text)
+        case .code(let language, let text):
+            MarkdownCodeBlockView(language: language, code: text)
         case .table(let rows):
-            monospacedScroll(rows.joined(separator: "\n"))
+            MarkdownTableView(rows: rows, renderInline: renderedInline)
         case .rule:
             Divider().overlay(OCColor.borderBase)
         }
     }
 
-    /// Code and tables keep their exact spacing and scroll sideways instead of wrapping.
-    private func monospacedScroll(_ text: String) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            Text(text)
-                .font(.system(size: 13, design: .monospaced))
-                .textSelection(.enabled)
-                .padding(10)
-        }
-        .background(Color.black.opacity(0.22))
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-    }
-
     private func inline(_ text: String) -> some View {
-        Text(renderedInline(text)).lineSpacing(3)
+        Text(renderedInline(text))
+            .lineSpacing(3)
+            .textSelection(.enabled)
     }
 
     /// Inline Markdown only (bold, italics, code, links), keeping every newline the model wrote.
     private func renderedInline(_ text: String) -> AttributedString {
+        let cacheKey = "\(emphasisKey)\u{0}\(text)" as NSString
+        if let hit = InlineMarkdownCache.cache.object(forKey: cacheKey) {
+            return hit.value
+        }
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         var value = (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
         let emphasizedRanges = value.runs.compactMap { run -> Range<AttributedString.Index>? in
@@ -311,7 +329,149 @@ private struct MarkdownText: View {
         for range in emphasizedRanges {
             value[range].foregroundColor = emphasisColor
         }
+        if text.utf8.count <= 16_384 {
+            InlineMarkdownCache.cache.setObject(CachedAttributedMarkdownBox(value), forKey: cacheKey)
+        }
         return value
+    }
+}
+
+private struct MarkdownCodeBlockView: View {
+    let language: String
+    let code: String
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(language.isEmpty ? "código" : language)
+                    .font(OCTypography.metaMono)
+                    .foregroundColor(OCColor.textFaint)
+                Spacer()
+                Button {
+                    #if canImport(UIKit)
+                    UIPasteboard.general.string = code
+                    #endif
+                    OCHaptics.light()
+                    copied = true
+                    Task {
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        copied = false
+                    }
+                } label: {
+                    Label(copied ? "Copiado" : "Copiar", systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(.caption2.weight(.medium))
+                        .foregroundColor(copied ? OCColor.success : OCColor.textSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.leading, 10)
+            .padding(.trailing, 4)
+            .background(Color.black.opacity(0.28))
+
+            Divider().overlay(OCColor.borderMuted)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(code)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundColor(OCColor.textPrimary)
+                    .textSelection(.enabled)
+                    .padding(10)
+            }
+        }
+        .background(Color.black.opacity(0.22))
+        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+        .overlay(
+            RoundedRectangle(cornerRadius: OCRadius.r12)
+                .stroke(OCColor.borderMuted, lineWidth: 0.75)
+        )
+    }
+}
+
+private struct MarkdownTableView: View {
+    let rows: [String]
+    let renderInline: (String) -> AttributedString
+
+    private var parsed: (headers: [String]?, bodyRows: [[String]]) {
+        var rawCells: [[String]] = []
+        var separatorIndex: Int?
+        for row in rows {
+            let cells = Self.splitRow(row)
+            guard !cells.isEmpty else { continue }
+            if separatorIndex == nil, Self.isSeparatorRow(cells) {
+                separatorIndex = rawCells.count
+                continue
+            }
+            rawCells.append(cells)
+        }
+        guard !rawCells.isEmpty else { return (nil, []) }
+        let colCount = rawCells.map(\.count).max() ?? 1
+        let normalized = rawCells.map { row in
+            row.count < colCount ? row + Array(repeating: "", count: colCount - row.count) : row
+        }
+        if let sepIdx = separatorIndex, sepIdx > 0 {
+            return (normalized[0], Array(normalized.dropFirst()))
+        }
+        return (nil, normalized)
+    }
+
+    private static func splitRow(_ row: String) -> [String] {
+        var trimmed = row.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("|") { trimmed.removeFirst() }
+        if trimmed.hasSuffix("|") { trimmed.removeLast() }
+        return trimmed.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    private static func isSeparatorRow(_ cells: [String]) -> Bool {
+        cells.allSatisfy { cell in
+            let stripped = cell.replacingOccurrences(of: ":", with: "").replacingOccurrences(of: "-", with: "").trimmingCharacters(in: .whitespaces)
+            return !cell.isEmpty && stripped.isEmpty && cell.contains("-")
+        }
+    }
+
+    var body: some View {
+        let table = parsed
+        ScrollView(.horizontal, showsIndicators: false) {
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 0) {
+                if let headers = table.headers {
+                    GridRow {
+                        ForEach(Array(headers.enumerated()), id: \.offset) { _, cell in
+                            Text(renderInline(cell))
+                                .font(.footnote.weight(.semibold))
+                                .foregroundColor(OCColor.textPrimary)
+                                .padding(.vertical, 8)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    Divider().overlay(OCColor.borderBase)
+                }
+                ForEach(Array(table.bodyRows.enumerated()), id: \.offset) { rowIndex, row in
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                            Text(renderInline(cell))
+                                .font(.footnote)
+                                .foregroundColor(OCColor.textSecondary)
+                                .padding(.vertical, 7)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    if rowIndex < table.bodyRows.count - 1 {
+                        Divider().overlay(OCColor.borderMuted)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+        }
+        .background(OCColor.bgBase)
+        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+        .overlay(
+            RoundedRectangle(cornerRadius: OCRadius.r12)
+                .stroke(OCColor.borderMuted, lineWidth: 0.75)
+        )
     }
 }
 
@@ -1044,18 +1204,10 @@ public struct ThinkingView: View {
 
     public var body: some View {
         HStack(spacing: OCSpacing.base) {
-            // Activity indicator
-            ZStack {
-                Circle()
-                    .stroke(agentColor.opacity(0.2), lineWidth: 2)
-                    .frame(width: 16, height: 16)
-                Circle()
-                    .trim(from: 0, to: 0.3)
-                    .stroke(agentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                    .frame(width: 16, height: 16)
-                    .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: UUID())
-            }
+            ProgressView()
+                .controlSize(.small)
+                .tint(agentColor)
+                .frame(width: 16, height: 16)
 
             Text(event.statusLabel ?? "Working")
                 .font(OCTypography.control)
