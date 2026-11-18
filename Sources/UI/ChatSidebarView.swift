@@ -389,7 +389,7 @@ public struct ChatLandingView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: onOpenSidebar) {
                     Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundColor(OCColor.iconPrimary)
                         .frame(width: 44, height: 44, alignment: .leading)
                         .contentShape(Rectangle())
@@ -405,9 +405,9 @@ public struct ChatLandingView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "sparkles")
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.footnote.weight(.bold))
                             Text("GUS")
-                                .font(.system(size: 12.5, weight: .semibold))
+                                .font(.caption.weight(.semibold))
                         }
                         .foregroundColor(IysThemePreferences.active.accent)
                         .padding(.horizontal, 10)
@@ -423,7 +423,7 @@ public struct ChatLandingView: View {
                         router.openSettings()
                     } label: {
                         Image(systemName: "gearshape")
-                            .font(.system(size: 16, weight: .medium))
+                            .font(.callout.weight(.medium))
                             .foregroundColor(OCColor.iconPrimary)
                             .frame(width: 36, height: 36)
                             .contentShape(Rectangle())
@@ -443,21 +443,22 @@ public struct ChatLandingView: View {
     private func heroHeader(runtime: RuntimeSelectionSnapshot) -> some View {
         VStack(alignment: .leading, spacing: OCSpacing.sm) {
             Text("¿Qué quieres lograr hoy?")
-                .font(.system(size: 25, weight: .bold))
+                .font(.title2.weight(.bold))
                 .foregroundColor(OCColor.textPrimary)
-            Text("Conversa con tu asistente, construye un agente con capacidades reales sin programar o administra los que ya creaste.")
-                .font(.system(size: 13.5))
+                .accessibilityAddTraits(.isHeader)
+            Text("Conversa, construye un agente sin programar o administra los tuyos.")
+                .font(.subheadline)
                 .foregroundColor(OCColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 8) {
+            OCFlowLayout(spacing: 8, lineSpacing: 8) {
                 assistantPill(runtime: runtime)
                 if let link = store.sandboxLink {
                     Button {
                         router.showSandboxExplanationSheet = true
                     } label: {
                         Label(link.projectName, systemImage: "shippingbox.fill")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.caption.weight(.medium))
                             .foregroundColor(OCColor.agentBuild)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
@@ -476,25 +477,28 @@ public struct ChatLandingView: View {
                 .foregroundColor(Color(hex: agent.accentHex))
             VStack(alignment: .leading, spacing: 1) {
                 Text("Agente activo: \(agent.name)")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.footnote.weight(.semibold))
                     .foregroundColor(OCColor.textPrimary)
                 Text("\(agent.enabledL0Tools.count) L0 · \(agent.l1Tools.count) L1 · \(agent.preferredBackend.shortLabel)")
-                    .font(.system(size: 11))
+                    .font(.caption2)
                     .foregroundColor(OCColor.textFaint)
             }
             Spacer()
             Button("Cambiar") {
                 contractStore.activeAgentForSession = nil
             }
-            .font(.system(size: 12, weight: .semibold))
+            .font(.caption.weight(.semibold))
             .foregroundColor(IysThemePreferences.active.accent)
         }
         .padding(10)
         .ocCard(radius: OCRadius.r12, border: Color(hex: agent.accentHex).opacity(0.4))
     }
 
+    /// Two primary actions side by side (same height), then the secondary tools as one
+    /// grouped list. Five equally weighted cards with five colored borders gave the
+    /// screen no hierarchy, and "Aprender acción" wrapping made its card taller.
     private var primaryThreeActionsGrid: some View {
-        VStack(spacing: OCSpacing.sm) {
+        VStack(spacing: OCSpacing.md) {
             HStack(spacing: OCSpacing.sm) {
                 primaryActionCard(
                     title: "Conversar",
@@ -522,24 +526,26 @@ public struct ChatLandingView: View {
                     router.openBuilder()
                 }
             }
+            // Both cards take the taller one's height.
+            .fixedSize(horizontal: false, vertical: true)
 
-            primaryActionCard(
-                title: "Mis agentes",
-                subtitle: contractStore.agents.isEmpty
-                    ? "Administra tus agentes y contratos"
-                    : "\(contractStore.agents.count) \(contractStore.agents.count == 1 ? "agente listo" : "agentes listos") · Contratos .isyagent.json y pruebas",
-                symbol: "square.stack.3d.up.fill",
-                tint: OCColor.success,
-                id: "home-action-agents"
-            ) {
-                OCHaptics.light()
-                router.openMyAgents()
-            }
-
-            HStack(spacing: OCSpacing.sm) {
-                primaryActionCard(
+            VStack(spacing: 0) {
+                secondaryActionRow(
+                    title: "Mis agentes",
+                    subtitle: contractStore.agents.isEmpty
+                        ? "Administra tus agentes y contratos"
+                        : "\(contractStore.agents.count) \(contractStore.agents.count == 1 ? "agente listo" : "agentes listos")",
+                    symbol: "square.stack.3d.up.fill",
+                    tint: OCColor.success,
+                    id: "home-action-agents"
+                ) {
+                    OCHaptics.light()
+                    router.openMyAgents()
+                }
+                Divider().overlay(OCColor.borderMuted).padding(.leading, 52)
+                secondaryActionRow(
                     title: "Aprender acción",
-                    subtitle: "Graba flujo por WDA",
+                    subtitle: "Graba un flujo en el iPhone",
                     symbol: "record.circle",
                     tint: OCColor.danger,
                     id: "home-action-learn"
@@ -547,10 +553,10 @@ public struct ChatLandingView: View {
                     OCHaptics.medium()
                     router.openLearnAction()
                 }
-
-                primaryActionCard(
+                Divider().overlay(OCColor.borderMuted).padding(.leading, 52)
+                secondaryActionRow(
                     title: "Llavero",
-                    subtitle: "Claves con Face ID",
+                    subtitle: "Claves protegidas con Face ID",
                     symbol: "key.fill",
                     tint: OCColor.warning,
                     id: "home-action-vault"
@@ -559,7 +565,50 @@ public struct ChatLandingView: View {
                     router.openSecretVault()
                 }
             }
+            .ocCard(radius: OCRadius.r14, border: OCColor.borderMuted, background: OCColor.bgBase)
         }
+    }
+
+    /// A list row (icon, title, subtitle, chevron) for tools used less often than
+    /// chatting or building.
+    private func secondaryActionRow(
+        title: String,
+        subtitle: String,
+        symbol: String,
+        tint: Color,
+        id: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: OCSpacing.md) {
+                Image(systemName: symbol)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(tint)
+                    .frame(width: 28, height: 28)
+                    .background(RoundedRectangle(cornerRadius: OCRadius.r8).fill(tint.opacity(0.14)))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(OCColor.textPrimary)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(OCColor.textSecondary)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(OCColor.iconMuted)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, OCSpacing.md)
+            .padding(.vertical, OCSpacing.md)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
     }
 
     private func primaryActionCard(
@@ -571,30 +620,29 @@ public struct ChatLandingView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: OCRadius.r10)
-                        .fill(tint.opacity(0.16))
-                        .frame(width: 38, height: 38)
-                    Image(systemName: symbol)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(tint)
-                }
+            VStack(alignment: .leading, spacing: OCSpacing.sm) {
+                Image(systemName: symbol)
+                    .font(.callout.weight(.semibold))
+                    .foregroundColor(tint)
+                    .frame(width: 38, height: 38)
+                    .background(RoundedRectangle(cornerRadius: OCRadius.r10).fill(tint.opacity(0.16)))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.headline)
                         .foregroundColor(OCColor.textPrimary)
                     Text(subtitle)
-                        .font(.system(size: 11.5))
+                        .font(.caption)
                         .foregroundColor(OCColor.textSecondary)
-                        .lineLimit(2)
                         .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
             }
             .padding(OCSpacing.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .ocCard(radius: OCRadius.r14, border: tint.opacity(0.28), background: OCColor.bgBase)
+            // maxHeight .infinity + the row's fixedSize gives both cards the same height.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .ocCard(radius: OCRadius.r14, border: OCColor.borderMuted, background: OCColor.bgBase)
         }
         .buttonStyle(OCInteractiveButtonStyle())
         .accessibilityIdentifier(id)
@@ -617,8 +665,9 @@ public struct ChatLandingView: View {
                 Circle()
                     .fill(runtime.readiness.isUsableForChat ? OCColor.success : OCColor.warning)
                     .frame(width: 8, height: 8)
-                Text("Sistema listo · \(backendLabel)")
-                    .font(.system(size: 13, weight: .semibold))
+                // It said "Sistema listo" even with "Motor sin configurar" right below it.
+                Text(runtime.readiness.isUsableForChat ? "Listo · \(backendLabel)" : "Falta elegir un motor · \(backendLabel)")
+                    .font(.footnote.weight(.semibold))
                     .foregroundColor(OCColor.textPrimary)
                 Spacer()
                 Button {
@@ -627,20 +676,18 @@ public struct ChatLandingView: View {
                     }
                 } label: {
                     Label(showSystemDetails ? "Ocultar" : "Detalles", systemImage: showSystemDetails ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(.caption2.weight(.medium))
                         .foregroundColor(OCColor.textSecondary)
                 }
                 .buttonStyle(.plain)
             }
 
-            HStack(spacing: 10) {
+            OCFlowLayout(spacing: 12, lineSpacing: 4) {
                 Label(runtime.providerName, systemImage: "cpu")
-                Text("·")
                 Label("Python local", systemImage: "terminal")
-                Text("·")
                 Label(isymcpStore.isPaired ? "ISyMCP OK" : "Solo iPhone", systemImage: isymcpStore.isPaired ? "desktopcomputer" : "iphone")
             }
-            .font(.system(size: 11))
+            .font(.caption2)
             .foregroundColor(OCColor.textFaint)
             .lineLimit(1)
 
@@ -653,7 +700,7 @@ public struct ChatLandingView: View {
                     statusDetailRow("Conexión", value: isymcpStore.isPaired ? "Local + Tailscale (:8797)" : (loopback.loopbackVPNActive ? "LocalDevVPN (10.7.0.1)" : "Local en iPhone"))
                     statusDetailRow("Actividad reciente", value: recentSummary)
                 }
-                .font(.system(size: 12))
+                .font(.caption)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -691,11 +738,11 @@ public struct ChatLandingView: View {
                 } label: {
                     HStack(spacing: OCSpacing.md) {
                         Image(systemName: item.icon)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundColor(item.tint)
                             .frame(width: 24)
                         Text(item.text)
-                            .font(.system(size: 14.5))
+                            .font(.subheadline)
                             .foregroundColor(OCColor.textSecondary)
                             .multilineTextAlignment(.leading)
                         Spacer(minLength: 0)
@@ -730,11 +777,11 @@ public struct ChatLandingView: View {
                     .fill(runtime.readiness.isUsableForChat ? OCColor.success : OCColor.warning)
                     .frame(width: 7, height: 7)
                 Text(label)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundColor(OCColor.textSecondary)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundColor(OCColor.textFaint)
             }
             .padding(.horizontal, 12)
@@ -778,7 +825,7 @@ public struct ChatLandingView: View {
                 TextField("Pregunta lo que quieras…", text: $draft, axis: .vertical)
                     .focused($isInputFocused)
                     .lineLimit(1...6)
-                    .font(.system(size: 15.5))
+                    .font(.subheadline)
                     .foregroundColor(OCColor.textPrimary)
                     .padding(.vertical, 10)
                     .submitLabel(.send)
@@ -790,15 +837,16 @@ public struct ChatLandingView: View {
                 }
 
                 Button(action: send) {
+                    // Same rule as the chat composer: disabled is a gray disc, not a
+                    // faded accent that still looks pressable.
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(OCColor.onAccent)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundColor(canSend && !sending ? OCColor.onAccent : OCColor.iconMuted)
                         .frame(width: 34, height: 34)
-                        .background(Circle().fill(IysThemePreferences.active.accent))
+                        .background(Circle().fill(canSend && !sending ? IysThemePreferences.active.accent : OCColor.bgLayer2))
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend || sending)
-                .opacity(!canSend || sending ? 0.35 : 1)
                 .padding(4)
                 .fixedSize(horizontal: true, vertical: false)
                 .accessibilityLabel("Enviar mensaje")
