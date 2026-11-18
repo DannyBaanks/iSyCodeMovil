@@ -117,6 +117,19 @@ public struct UnifiedSettingsView: View {
 
             Section("Avanzado") {
                 Toggle(isOn: Binding(
+                    get: { GUSMailboxWatcher.isEnabled },
+                    set: { store.setMailboxWatcherEnabled($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Vigilante del buzón [GUS]")
+                        Text("GUS revisa el buzón [GUS] en Gmail mientras la app está viva y ejecuta las tareas pendientes. El buzón es la fuente de verdad; las notificaciones solo avisan. Apagado por defecto.")
+                            .font(OCTypography.meta)
+                            .foregroundColor(OCColor.textSecondary)
+                    }
+                }
+                .tint(IysThemePreferences.active.accent)
+
+                Toggle(isOn: Binding(
                     get: { assistant.developerMode },
                     set: { assistant.setDeveloperMode($0) }
                 )) {

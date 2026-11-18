@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Separates "Local on this iPhone" from "Connected cloud provider" into clear mental models
 /// while persisting the user's chosen provider, key, and model.
@@ -8,8 +11,10 @@ public struct RuntimeSetupSheet: View {
     public var onOpenRemotePairing: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var store: WorkbenchStore
     @StateObject private var gusModelManager = GUSModelDownloadManager.shared
+    @ObservedObject private var chatgptOAuth = ChatGPTOAuthStore.shared
 
     @State private var track: RuntimeSetupTrack = .connected
     @State private var selectedCloudProviderID = "nvidia"
@@ -34,11 +39,17 @@ public struct RuntimeSetupSheet: View {
     }
 
     private var hasSavedKeyForSelected: Bool {
-        savedKeyProviders.contains(selectedCloudProviderID)
+        if selectedCloudProviderID == "chatgpt-oauth" {
+            return chatgptOAuth.isSignedIn
+        }
+        return savedKeyProviders.contains(selectedCloudProviderID)
     }
 
     private var canStartSelectedCloud: Bool {
-        !isApplying && (hasSavedKeyForSelected || !apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        if selectedCloudProviderID == "chatgpt-oauth" {
+            return !isApplying && chatgptOAuth.isSignedIn
+        }
+        return !isApplying && (hasSavedKeyForSelected || !apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     private var canStartLocal: Bool {
@@ -219,7 +230,7 @@ public struct RuntimeSetupSheet: View {
 
                 ForEach(SandboxModelProvider.all) { provider in
                     let isSelected = selectedCloudProviderID == provider.id
-                    let hasSaved = savedKeyProviders.contains(provider.id)
+                    let hasSaved = provider.id == "chatgpt-oauth" ? chatgptOAuth.isSignedIn : savedKeyProviders.contains(provider.id)
                     Button {
                         selectedCloudProviderID = provider.id
                     } label: {
@@ -278,32 +289,82 @@ public struct RuntimeSetupSheet: View {
                 .background(RoundedRectangle(cornerRadius: OCRadius.r12).fill(OCColor.info.opacity(0.10)))
             }
 
-            VStack(alignment: .leading, spacing: OCSpacing.sm) {
-                Text("API KEY DE \(selectedCloudProvider.name.uppercased())")
-                    .font(OCTypography.sectionLabel)
-                    .foregroundColor(OCColor.textFaint)
+            if selectedCloudProviderID == "chatgpt-oauth" {
+                VStack(alignment: .leading, spacing: OCSpacing.sm) {
+                    Text("INICIO DE SESIÓN CHATGPT OAUTH")
+                        .font(OCTypography.sectionLabel)
+                        .foregroundColor(OCColor.textFaint)
 
-                SecureField(
-                    hasSavedKeyForSelected
-                        ? "Clave guardada en Keychain (pega otra para reemplazar)"
-                        : selectedCloudProvider.keyPlaceholder,
-                    text: $apiKeyDraft
-                )
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .font(.system(size: 14, design: .monospaced))
-                .foregroundColor(OCColor.textPrimary)
-                .focused($keyFocused)
+                    if let code = chatgptOAuth.userCode {
+                        Text("Código copiado: \(code)")
+                            .font(.system(size: 16, weight: .bold, design: .monospaced))
+                            .foregroundColor(OCColor.textPrimary)
+                        Button {
+                            #if canImport(UIKit)
+                            UIPasteboard.general.string = code
+                            #endif
+                            openURL(ChatGPTOAuthStore.verificationURL)
+                        } label: {
+                            Label("Copiar código y abrir OpenAI", systemImage: "safari")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else if chatgptOAuth.isPolling {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Esperando confirmación en Safari…")
+                                .font(.system(size: 13))
+                                .foregroundColor(OCColor.textSecondary)
+                        }
+                    } else if !chatgptOAuth.isSignedIn {
+                        Button {
+                            chatgptOAuth.startDeviceLogin()
+                        } label: {
+                            Label("Conectar ChatGPT Plus/Pro (OAuth)", systemImage: "person.badge.key")
+                                .font(.system(size: 14, weight: .semibold))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else {
+                        Label("Suscripción ChatGPT conectada. Pulsa continuar para activar.", systemImage: "checkmark.seal.fill")
+                            .font(.system(size: 13))
+                            .foregroundColor(OCColor.success)
+                    }
+
+                    if let oauthErr = chatgptOAuth.errorMessage ?? chatgptOAuth.lastDiscoveryError {
+                        errorBanner(oauthErr)
+                    }
+                }
                 .padding(OCSpacing.md)
-                .background(OCColor.bgBase)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
-                .accessibilityIdentifier("runtime-api-key-field")
+                .ocCard(radius: OCRadius.r12)
+            } else {
+                VStack(alignment: .leading, spacing: OCSpacing.sm) {
+                    Text("API KEY DE \(selectedCloudProvider.name.uppercased())")
+                        .font(OCTypography.sectionLabel)
+                        .foregroundColor(OCColor.textFaint)
 
-                Link(destination: selectedCloudProvider.apiKeyURL) {
-                    Label("Obtener clave de \(selectedCloudProvider.name)", systemImage: "arrow.up.right.square")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(IysThemePreferences.active.accent)
+                    SecureField(
+                        hasSavedKeyForSelected
+                            ? "Clave guardada en Keychain (pega otra para reemplazar)"
+                            : selectedCloudProvider.keyPlaceholder,
+                        text: $apiKeyDraft
+                    )
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 14, design: .monospaced))
+                    .foregroundColor(OCColor.textPrimary)
+                    .focused($keyFocused)
+                    .padding(OCSpacing.md)
+                    .background(OCColor.bgBase)
+                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
+                    .accessibilityIdentifier("runtime-api-key-field")
+
+                    Link(destination: selectedCloudProvider.apiKeyURL) {
+                        Label("Obtener clave de \(selectedCloudProvider.name)", systemImage: "arrow.up.right.square")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(IysThemePreferences.active.accent)
+                    }
                 }
             }
 

@@ -5,8 +5,11 @@ public struct ActiveSessionView: View {
     @EnvironmentObject private var store: WorkbenchStore
     @State private var showDisconnectConfirm = false
     @State private var showSandboxPanel = false
+    let onOpenSidebar: (() -> Void)?
     
-    public init() {}
+    public init(onOpenSidebar: (() -> Void)? = nil) {
+        self.onOpenSidebar = onOpenSidebar
+    }
 
     private var isCodexRemote: Bool {
         store.backendMode == .remote && sessionState.selectedModel?.route == "codex"
@@ -135,18 +138,29 @@ public struct ActiveSessionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                // RootView intercambia vistas por estado (no hay push), asi que
-                // la salida de la sesion es explicita: currentSession = nil.
-                Button {
-                    sessionState.currentSession = nil
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(OCColor.iconPrimary)
-                        .frame(width: 44, height: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+                if let onOpenSidebar {
+                    Button(action: onOpenSidebar) {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(OCColor.iconPrimary)
+                            .frame(width: 44, height: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Abrir barra lateral")
+                } else {
+                    // RootView intercambia vistas por estado (no hay push), asi que
+                    // la salida de la sesion es explicita: currentSession = nil.
+                    Button {
+                        sessionState.currentSession = nil
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(OCColor.iconPrimary)
+                            .frame(width: 44, height: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Volver")
                 }
-                .accessibilityLabel("Volver")
             }
 
             // El titulo va al centro: en el lado izquierdo se aplastaba contra
@@ -162,6 +176,16 @@ public struct ActiveSessionView: View {
             
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: OCSpacing.xs) {
+                    if onOpenSidebar != nil {
+                        Button {
+                            Task { _ = await store.openOrCreateConversation(preferNew: true) }
+                        } label: {
+                            Image(systemName: "square.and.pencil")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+                        .accessibilityLabel("Nueva conversación")
+                    }
+
                     if availableSurfaces.count > 1 {
                         Menu {
                             ForEach(availableSurfaces) { surface in
@@ -175,6 +199,7 @@ public struct ActiveSessionView: View {
                             Image(systemName: "square.grid.2x2")
                                 .font(.system(size: 16, weight: .medium))
                         }
+                        .accessibilityLabel("Cambiar vista")
                     }
 
                     if sessionState.activeSurface == .files && !isCodexRemote && !isGrokRemote {
@@ -182,6 +207,7 @@ public struct ActiveSessionView: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 17))
                         }
+                        .accessibilityLabel("Actualizar archivos")
                     }
                     
                     if sessionState.activeSurface == .review {
@@ -189,12 +215,14 @@ public struct ActiveSessionView: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 17))
                         }
+                        .accessibilityLabel("Actualizar cambios")
                     }
                     
                     Button { showDisconnectConfirm = true } label: {
                         Image(systemName: "rectangle.portrait.and.arrow.right")
                             .font(.system(size: 17))
                     }
+                    .accessibilityLabel("Desconectar")
                 }
             }
         }
@@ -230,6 +258,9 @@ public struct ActiveSessionView: View {
                 },
                 onCodexCancel: {
                     store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .cancel)
+                },
+                onSequence: {
+                    store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .allowSequence)
                 }
             )
             .presentationDetents([.medium, .large])
@@ -336,11 +367,30 @@ private struct CodexWorkspaceFoldersUnavailableView: View {
 struct ChatSurfaceView: View {
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var store: WorkbenchStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrollProxy: ScrollViewProxy?
+    @State private var showActivityDetail = false
+    @State private var runStartedAt = Date()
+    @State private var isPinnedToBottom = true
     
     var body: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
+                if sessionState.isProcessing {
+                    ThinkingShimmerView(
+                        label: liveActivityLabel,
+                        activeStepCount: sessionState.timelineEvents.filter { $0.kind == .toolCall }.count,
+                        startedAt: runStartedAt
+                    ) {
+                        showActivityDetail = true
+                    }
+                }
+                if let scope = store.activeSequenceScope {
+                    SequenceScopeBanner(scope: scope) {
+                        OCHaptics.light()
+                        store.revokeActiveSequenceApproval()
+                    }
+                }
                 ChatActivityBar(
                     isProcessing: sessionState.isProcessing,
                     needsApproval: sessionState.pendingPermission != nil,
@@ -352,41 +402,172 @@ struct ChatSurfaceView: View {
                 .padding(.top, OCSpacing.sm)
                 .padding(.bottom, OCSpacing.xs)
 
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        if sessionState.timelineEvents.isEmpty {
-                            EmptyChatView(sessionTitle: sessionState.currentSession?.title)
+                ZStack(alignment: .bottomTrailing) {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            if sessionState.timelineEvents.isEmpty {
+                                EmptyChatView(sessionTitle: sessionState.currentSession?.title)
+                            }
+                            ForEach(groupedTimelineItems) { item in
+                                switch item {
+                                case .single(let event):
+                                    TimelineEventContainer(event: event)
+                                        .id(event.id)
+                                case .toolCarousel(let steps):
+                                    ToolStepsCarouselView(steps: steps, agentColor: sessionState.agentMode.color)
+                                        .id(item.id)
+                                }
+                            }
+                            Color.clear
+                                .frame(height: 1)
+                                .id("chat-bottom-anchor")
+                                .onAppear { isPinnedToBottom = true }
+                                .onDisappear { isPinnedToBottom = false }
                         }
-                        ForEach(sessionState.timelineEvents) { event in
-                            TimelineEventContainer(event: event)
-                                .id(event.id)
-                        }
+                        .padding(.horizontal, OCSpacing.contentMargin)
+                        .padding(.top, OCSpacing.sm)
+                        .padding(.bottom, OCSpacing.lg)
                     }
-                    .padding(.horizontal, OCSpacing.contentMargin)
-                    .padding(.top, OCSpacing.sm)
-                    .padding(.bottom, OCSpacing.lg)
+                    .refreshable {
+                        guard !sessionState.isProcessing, let current = sessionState.currentSession else { return }
+                        await store.selectSession(current)
+                    }
+                    .scrollDismissesKeyboard(.interactively)
+
+                    if !isPinnedToBottom && !sessionState.timelineEvents.isEmpty {
+                        Button {
+                            OCHaptics.light()
+                            isPinnedToBottom = true
+                            scrollToBottom(force: true)
+                        } label: {
+                            Label("Ir al final", systemImage: "arrow.down")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(OCColor.textPrimary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(Capsule().fill(OCColor.bgBase.opacity(0.95)))
+                                .overlay(Capsule().stroke(OCColor.borderBase, lineWidth: 1))
+                                .shadow(color: Color.black.opacity(0.25), radius: 8, x: 0, y: 2)
+                        }
+                        .buttonStyle(OCInteractiveButtonStyle())
+                        .padding(.trailing, OCSpacing.contentMargin)
+                        .padding(.bottom, OCSpacing.sm)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onAppear { scrollProxy = proxy }
                 .onChange(of: sessionState.timelineEvents.count) { _ in
-                    scrollToBottom()
+                    if sessionState.timelineEvents.last?.kind == .userPrompt {
+                        isPinnedToBottom = true
+                        scrollToBottom(force: true)
+                    } else if isPinnedToBottom {
+                        scrollToBottom()
+                    }
                 }
                 .onChange(of: sessionState.timelineEvents.last?.assistantText) { _ in
-                    scrollToBottom()
+                    if isPinnedToBottom { scrollToBottom() }
                 }
                 .onChange(of: sessionState.isProcessing) { processing in
-                    if !processing { scrollToBottom() }
+                    if processing {
+                        runStartedAt = Date()
+                    } else if isPinnedToBottom {
+                        scrollToBottom()
+                    }
+                }
+                .sheet(isPresented: $showActivityDetail) {
+                    AgentActivityDetailSheet(events: sessionState.timelineEvents)
                 }
             }
         }
     }
-    
-    private func scrollToBottom() {
-        guard let proxy = scrollProxy,
-              let lastEvent = sessionState.timelineEvents.last else { return }
-        withAnimation(.easeOut(duration: 0.2)) {
-            proxy.scrollTo(lastEvent.id, anchor: .bottom)
+
+    private var liveActivityLabel: String {
+        if sessionState.pendingPermission != nil { return "Esperando tu permiso…" }
+        if sessionState.pendingQuestion != nil { return "Esperando tu respuesta…" }
+        if let activeTool = sessionState.timelineEvents.last(where: { $0.kind == .toolCall && $0.toolState == .running }) {
+            return "\(ToolCallCollapsedView.displayTitle(for: activeTool.toolName))…"
         }
+        return "Pensando…"
+    }
+    
+    private func scrollToBottom(force: Bool = false) {
+        guard force || isPinnedToBottom, let proxy = scrollProxy else { return }
+        if reduceMotion {
+            proxy.scrollTo("chat-bottom-anchor", anchor: .bottom)
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo("chat-bottom-anchor", anchor: .bottom)
+            }
+        }
+    }
+
+    private enum TimelineRenderItem: Identifiable {
+        case single(TimelineEvent)
+        case toolCarousel([TimelineEvent])
+
+        var id: String {
+            switch self {
+            case .single(let event): return event.id
+            case .toolCarousel(let steps): return "steps-\(steps.first?.id ?? "")"
+            }
+        }
+    }
+
+    private var groupedTimelineItems: [TimelineRenderItem] {
+        var items: [TimelineRenderItem] = []
+        var toolRun: [TimelineEvent] = []
+        func flushRun() {
+            guard !toolRun.isEmpty else { return }
+            if toolRun.count >= 2 {
+                items.append(.toolCarousel(toolRun))
+            } else {
+                items.append(.single(toolRun[0]))
+            }
+            toolRun.removeAll()
+        }
+        for event in sessionState.timelineEvents {
+            if event.kind == .toolCall {
+                toolRun.append(event)
+            } else {
+                flushRun()
+                items.append(.single(event))
+            }
+        }
+        flushRun()
+        return items
+    }
+}
+
+private struct SequenceScopeBanner: View {
+    let scope: SequenceApprovalScope
+    let onRevoke: () -> Void
+
+    var body: some View {
+        HStack(spacing: OCSpacing.sm) {
+            Image(systemName: "shield.lefthalf.filled")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(OCColor.warning)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Secuencia WDA acotada activa")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(OCColor.textPrimary)
+                Text(scope.summary())
+                    .font(OCTypography.metaMono)
+                    .foregroundColor(OCColor.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Button("Revocar", action: onRevoke)
+                .font(.system(size: 11.5, weight: .bold))
+                .foregroundColor(OCColor.onAccent)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(OCColor.danger))
+        }
+        .padding(.horizontal, OCSpacing.contentMargin)
+        .padding(.vertical, 7)
+        .background(OCColor.warning.opacity(0.10))
+        .overlay(Rectangle().frame(height: 0.5).foregroundColor(OCColor.warning.opacity(0.30)), alignment: .bottom)
     }
 }
 
@@ -652,6 +833,9 @@ struct FilesSurfaceView: View {
                             }
                         )
                     }
+                }
+                .refreshable {
+                    await loadDirectory(path: filesLoadPath)
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
@@ -1367,6 +1551,6 @@ private struct CodexCapabilityNotice: View {
                 .overlay(Capsule().stroke(OCColor.warning.opacity(0.18), lineWidth: 1))
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Experimental Codex connection. Chat and approvals only.")
+        .accessibilityLabel("Conexión experimental de Codex. Solo chat y aprobaciones.")
     }
 }

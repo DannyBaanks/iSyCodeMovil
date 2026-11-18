@@ -10,6 +10,7 @@ public struct SandboxModelProvider: Identifiable, Sendable, Equatable {
     public let fallbackModel: String
     public let apiKeyURL: URL
     public let supportsGoogleOAuth: Bool
+    public let curatedOnly: Bool
 
     public static let gusLocal = SandboxModelProvider(
         id: "gus-local", name: "GUS local · Qwen 1.5",
@@ -21,8 +22,16 @@ public struct SandboxModelProvider: Identifiable, Sendable, Equatable {
     public static let all: [SandboxModelProvider] = [
         .init(id: "nvidia", name: "NVIDIA NIM", description: "Modelos NVIDIA y modelos abiertos servidos por NIM.",
               keyPlaceholder: "nvapi-…", baseURL: "https://integrate.api.nvidia.com/v1",
-              preferredModels: ["nvidia/nemotron-3-super-120b-a12b", "openai/gpt-oss-20b"],
-              fallbackModel: "openai/gpt-oss-20b", apiKeyURL: URL(string: "https://build.nvidia.com/settings/api-keys")!),
+              preferredModels: [
+                  "nvidia/nemotron-3-ultra-550b-a55b",
+                  "minimaxai/minimax-m3.1-flash",
+                  "stepfun-ai/step-5-preview",
+                  "nvidia/nemotron-3.5-super-vl-120b-a12b",
+                  "mistralai/mistral-large-4-1t-a52b"
+              ],
+              fallbackModel: "nvidia/nemotron-3-ultra-550b-a55b",
+              apiKeyURL: URL(string: "https://build.nvidia.com/settings/api-keys")!,
+              curatedOnly: true),
         .init(id: "xai", name: "xAI · Grok", description: "API de xAI compatible con OpenAI.",
               keyPlaceholder: "xai-…", baseURL: "https://api.x.ai/v1",
               preferredModels: ["grok-4.7", "grok-4.6", "grok-4.5", "grok-4"], fallbackModel: "grok-4.7",
@@ -31,6 +40,10 @@ public struct SandboxModelProvider: Identifiable, Sendable, Equatable {
               keyPlaceholder: "sk-…", baseURL: "https://api.openai.com/v1",
               preferredModels: ["gpt-4o", "gpt-4o-mini"], fallbackModel: "gpt-4o",
               apiKeyURL: URL(string: "https://platform.openai.com/api-keys")!),
+        .init(id: "chatgpt-oauth", name: "ChatGPT Plus/Pro (OAuth)", description: "Usa tu suscripción semanal de ChatGPT sin API key (descubre modelos automáticamente).",
+              keyPlaceholder: "OAuth", baseURL: "https://chatgpt.com/backend-api/codex",
+              preferredModels: [], fallbackModel: "",
+              apiKeyURL: URL(string: "https://auth.openai.com/codex/device")!, curatedOnly: false),
         .init(id: "gemini", name: "Google Gemini", description: "Gemini API con clave de AI Studio; OAuth requiere configurar un cliente de Google Cloud.",
               keyPlaceholder: "AIza…", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
               preferredModels: ["gemini-3.8-flash", "gemini-2.5-flash"], fallbackModel: "gemini-3.8-flash",
@@ -45,7 +58,7 @@ public struct SandboxModelProvider: Identifiable, Sendable, Equatable {
 
     public init(id: String, name: String, description: String, keyPlaceholder: String,
                 baseURL: String, preferredModels: [String], fallbackModel: String,
-                apiKeyURL: URL, supportsGoogleOAuth: Bool = false) {
+                apiKeyURL: URL, supportsGoogleOAuth: Bool = false, curatedOnly: Bool = false) {
         self.id = id
         self.name = name
         self.description = description
@@ -55,6 +68,7 @@ public struct SandboxModelProvider: Identifiable, Sendable, Equatable {
         self.fallbackModel = fallbackModel
         self.apiKeyURL = apiKeyURL
         self.supportsGoogleOAuth = supportsGoogleOAuth
+        self.curatedOnly = curatedOnly
     }
 
     public static func provider(id: String) -> SandboxModelProvider? {
@@ -63,11 +77,15 @@ public struct SandboxModelProvider: Identifiable, Sendable, Equatable {
     }
 }
 
-/// Keeps the provider's complete live catalog while placing known-good models first.
-/// `preferredModels` is an ordering hint, never a model allowlist.
+/// Keeps the provider's live catalog while placing known-good models first (or filtering to curated
+/// models only when `curatedOnly` is true).
 public enum SandboxModelCatalog {
-    public static func orderedModelIDs(available: [String], preferred: [String], fallback: String) -> [String] {
+    public static func orderedModelIDs(available: [String], preferred: [String], fallback: String, curatedOnly: Bool = false) -> [String] {
         var seen = Set<String>()
+        if curatedOnly {
+            let curated = preferred.filter { available.contains($0) && !$0.isEmpty && seen.insert($0).inserted }
+            return curated.isEmpty ? [fallback] : curated
+        }
         let ordered = preferred.filter { available.contains($0) } + available.filter { !preferred.contains($0) }
         let unique = ordered.filter { !$0.isEmpty && seen.insert($0).inserted }
         return unique.isEmpty ? [fallback] : unique

@@ -27,6 +27,12 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     private var boundSessionID: String?
     private var runningTask: Task<Void, Never>?
     private var permissionWaiters: [String: CheckedContinuation<PermissionResponse.Decision, Never>] = [:]
+    public var flowMode = false
+    /// Acuse de recibo del turno del buzón [GUS] (una sola vez): lo pone
+    /// deliverMailboxTask y lo resuelve el Task de sendPrompt al terminar el turno.
+    /// Nil en turnos normales del usuario.
+    private var mailboxTurnCompletion: ((Bool) -> Void)?
+    private var mayHaveLeftAppInTurn = false
     private var connectionStatusStorage = "native runtime"
     private var currentSessionIDStorage: String?
     private var eventContinuation: AsyncStream<WorkbenchEvent>.Continuation?
@@ -225,11 +231,24 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         let fallbackOrder = SandboxModelProvider.all.map(\.id).filter { !order.contains($0) }
         order.append(contentsOf: fallbackOrder)
         for providerID in order {
-            guard let provider = SandboxModelProvider.provider(id: providerID),
-                  let key = try await ps.loadAPIKey(provider: provider.id), !key.isEmpty else { continue }
+            guard let provider = SandboxModelProvider.provider(id: providerID) else { continue }
+            if provider.id == "chatgpt-oauth" {
+                guard ChatGPTOAuthStore.hasStoredTokens() else { continue }
+                do {
+                    try await installChatGPTCodexProvider(savedModelName: providerID == preference ? configuration?.defaultModelName : nil)
+                } catch ModelProviderError.authenticationFailed where providerID != preference {
+                    continue
+                }
+                if providerID != preference, let wanted = SandboxModelProvider.provider(id: preference) {
+                    connectionStatusStorage += " · \(wanted.name) no disponible (sin clave); usando \(provider.name)"
+                }
+                return
+            }
+            guard let key = try await ps.loadAPIKey(provider: provider.id), !key.isEmpty else { continue }
             do {
                 try await installRemoteProvider(id: provider.id, display: provider.name, key: key,
                     baseURL: provider.baseURL, preferred: provider.preferredModels, fallback: provider.fallbackModel,
+                    curatedOnly: provider.curatedOnly,
                     savedModelName: providerID == preference ? configuration?.defaultModelName : nil)
             } catch ModelProviderError.authenticationFailed where providerID != preference {
                 continue
@@ -287,12 +306,17 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         baseURL: String,
         preferred: [String],
         fallback: String,
+        curatedOnly: Bool = false,
         savedModelName: String? = nil
     ) async throws {
-        let remote = RemoteModelProvider(id: id, name: display)
+        let remote = RemoteModelProvider(
+            id: id,
+            name: display,
+            supportsImages: MultimodalProviderCompatibility.evaluate(providerID: id, modelID: nil, backendMode: .native).supportsImages
+        )
         try await remote.configure(ModelConfiguration(apiKey: key, baseURL: baseURL))
         let listed = await remote.availableModels
-        let models = SandboxModelCatalog.orderedModelIDs(available: listed, preferred: preferred, fallback: fallback)
+        let models = SandboxModelCatalog.orderedModelIDs(available: listed, preferred: preferred, fallback: fallback, curatedOnly: curatedOnly)
         modelProvider = remote
         if let savedModelName, models.contains(savedModelName) {
             activeModelName = savedModelName
@@ -308,10 +332,34 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         connectionStatusStorage = "sandbox · \(activeModelName ?? fallback)"
     }
 
+    private func installChatGPTCodexProvider(savedModelName: String?) async throws {
+        let codex = ChatGPTCodexProvider()
+        try await codex.configure(ModelConfiguration())
+        let models = await codex.availableModels
+        modelProvider = codex
+        if let savedModelName, models.contains(savedModelName) {
+            activeModelName = savedModelName
+        } else {
+            activeModelName = models.first
+        }
+        providerID = codex.id
+        providerDisplay = codex.name
+        providerModelIDs = models
+        isDualSmolActive = false
+        agentLoop = nil
+        boundSessionID = nil
+        connectionStatusStorage = "sandbox · \(activeModelName ?? "ChatGPT OAuth")"
+    }
+
     /// The loop persists under the session the UI opened. A backend-wide id
     /// made `session.idle` miss the open session, so the composer never left Stop.
     private func installLoop(sessionID: String) async {
+        // El vigilante del buzón [GUS] arranca con la sesión (idempotente: si ya
+        // está corriendo, no hace nada). Sin sesión no hay dónde ejecutar.
+        await maybeStartMailboxWatcher()
         guard let ws = workspace, let ps = persistence, let provider = modelProvider, let exec = toolExecutor else { return }
+        let activeContract = AgentContractStore.shared.activeAgentForSession
+        await exec.setActiveContract(activeContract)
         await exec.configureSharedMemory(localOnly: provider.capabilities.localOnly, conversationID: sessionID)
         let modelName = activeModelName
         if boundSessionID == sessionID, agentLoop != nil {
@@ -321,7 +369,14 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         failPendingPermissions()
         runningTask?.cancel()
         runningTask = nil
-        let activeExecutor: any ToolExecutor = sandboxExecutor ?? exec
+        // With a sandbox linked the agent also gets the iPhone's companion tools (Google, notifications, Shortcuts):
+        // before, it used only the sandbox's and could not read the person's mail.
+        let activeExecutor: any ToolExecutor
+        if let sandboxExecutor {
+            activeExecutor = CompositeToolExecutor(primary: sandboxExecutor, secondary: exec)
+        } else {
+            activeExecutor = exec
+        }
         let loop = AgentLoop(context: AgentContext(
             conversationId: sessionID,
             workspace: ws,
@@ -329,11 +384,15 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             modelProvider: provider,
             modelName: modelName,
             toolExecutor: activeExecutor,
-            systemPrompt: systemPromptText(),
+            systemPrompt: systemPromptText(contract: activeContract),
             maxTurns: 12,
             permissionHandler: { [weak self] request in
                 guard let self else {
                     return PermissionResponse(requestId: request.id, decision: .deny)
+                }
+                // Flow NEVER bypasses tools that require fresh per-operation confirmation (Section 12).
+                if await self.flowMode && !request.requiresApprovalEveryTime {
+                    return PermissionResponse(requestId: request.id, decision: .allowOnce)
                 }
                 let decision = await self.waitForPermission(request)
                 return PermissionResponse(requestId: request.id, decision: decision)
@@ -369,8 +428,21 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         }
     }
     
-    private func systemPromptText() -> String {
-        sandboxExecutor?.systemPrompt ?? GUSMobileRole.mobile.systemPrompt
+    private func systemPromptText(contract: AgentContract? = nil) -> String {
+        let base: String
+        if let sandboxExecutor {
+            base = sandboxExecutor.systemPrompt + "\n" + CompositeToolExecutor.layersNote
+        } else {
+            base = GUSMobileRole.mobile.systemPrompt + "\n\n" +
+                "También cuentas con `python_eval` (pocketpy 2.2.0 sin acceso a OS/red) para procesar CSV, JSON, cálculos exactos y validaciones en memoria, " +
+                "y con `isymcp_status` / `isymcp_tasks` / `isymcp_respond_task` si el usuario emparejó su PC por ISyMCP (Tailscale :8797)."
+        }
+        guard let contract else { return base }
+        return contract.effectiveSystemPrompt() + "\n\n" + base
+    }
+
+    public func revokeSequenceApproval() async {
+        await agentLoop?.revokeSequenceApproval()
     }
     
     public func listProjects() async throws -> [Project] {
@@ -439,6 +511,15 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     }
     
     public func sendPrompt(_ text: String, agent: String?, model: ModelInfo?) async throws {
+        try await sendPrompt(text, multimodalParts: [], agent: agent, model: model)
+    }
+
+    public func sendPrompt(
+        _ text: String,
+        multimodalParts: [ModelMessage.ContentPart],
+        agent: String?,
+        model: ModelInfo?
+    ) async throws {
         guard let sessionID = currentSessionIDStorage else { throw WorkbenchError.noSession }
         if let requested = model?.apiModelId, providerModelIDs.contains(requested), requested != activeModelName {
             activeModelName = requested
@@ -451,16 +532,34 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         }
         
         await PermissionNotifier.shared.prepare()
+        if let ps = persistence, var conv = try? await ps.loadConversation(id: sessionID) {
+            let trimmedTitle = conv.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedTitle.isEmpty || trimmedTitle == "Nueva conversación" {
+                let candidate = await ConversationTitleService.generateTitle(from: text)
+                if !candidate.isEmpty {
+                    conv.title = candidate
+                    try? await ps.saveConversation(conv)
+                    eventContinuation?.yield(.sessionsChanged)
+                }
+            }
+        }
         let sessionAtStart = sessionID
+        mayHaveLeftAppInTurn = false
         BackgroundRunKeeper.shared.begin()
         runningTask = Task { [weak self] in
-            defer { BackgroundRunKeeper.shared.end() }
+            defer {
+                BackgroundRunKeeper.shared.end()
+                self?.eventContinuation?.yield(.sessionsChanged)
+            }
             guard let self else { return }
             do {
-                _ = try await loop.run(userInput: text)
+                _ = try await loop.run(userInput: text, multimodalParts: multimodalParts)
+                await self.returnToAppIfNeeded()
+                self.completeMailboxTurn(success: true)
             } catch is CancellationError {
                 return
             } catch {
+                self.completeMailboxTurn(success: false)
                 guard self.currentSessionIDStorage == sessionAtStart else { return }
                 self.eventContinuation?.yield(.sessionError(error.localizedDescription))
             }
@@ -496,6 +595,63 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     public func replyPermission(requestID: String, decision: PermissionResponse.Decision) async throws {
         guard let waiter = permissionWaiters.removeValue(forKey: requestID) else { return }
         waiter.resume(returning: decision)
+    }
+
+    // MARK: - Buzón [GUS] (loop GUS ↔ Muse, Fase 3)
+
+    /// Arranca el vigilante del buzón [GUS] si el usuario lo activó en Ajustes.
+    /// Idempotente: si ya está corriendo, no hace nada.
+    public func maybeStartMailboxWatcher() async {
+        guard GUSMailboxWatcher.isEnabled else { return }
+        await GUSMailboxWatcher.shared.startPolling { [weak self] task, body in
+            guard let self else { return }
+            await self.deliverMailboxTask(task, body: body)
+        }
+    }
+
+    public func stopMailboxWatcher() async {
+        await GUSMailboxWatcher.shared.stopPolling()
+    }
+
+    /// Resuelve el acuse de recibo del turno del buzón (una sola vez). Nil en turnos normales.
+    private func completeMailboxTurn(success: Bool) {
+        guard let completion = mailboxTurnCompletion else { return }
+        mailboxTurnCompletion = nil
+        completion(success)
+    }
+
+    /// Entrega una tarea pendiente del buzón [GUS] como un turno del agente.
+    /// Marca `en curso` al tomarla y `hecho` solo si el turno terminó bien; si falla
+    /// o no se puede entregar, queda `en curso` y el vigilante la reintenta cuando se
+    /// vuelve obsoleta (el buzón es la fuente de verdad). No entrega si ya hay un
+    /// turno en marcha o no hay sesión abierta: la tarea sigue pendiente en el buzón.
+    private func deliverMailboxTask(_ task: GUSMailboxWatcher.MailboxTask, body: String) async {
+        guard runningTask == nil, currentSessionIDStorage != nil else { return }
+        do {
+            try await GUSMailboxWatcher.shared.mark(
+                taskID: task.id, state: .enCurso, recipient: task.recipient,
+                note: "GUS tomó la tarea \(task.id)."
+            )
+        } catch {
+            GUSFlightRecorder.shared.record("gus.mailbox.mark_error", ["task": task.id, "error": error.localizedDescription])
+            return
+        }
+        mailboxTurnCompletion = { [weak self] success in
+            guard let self, success else { return }
+            Task {
+                try? await GUSMailboxWatcher.shared.mark(
+                    taskID: task.id, state: .hecho, recipient: task.recipient,
+                    note: "Hecho: turno completado."
+                )
+            }
+        }
+        let text = "[Buzón GUS · tarea \(task.id)]\n\(body)"
+        do {
+            try await sendPrompt(text, agent: nil, model: nil)
+        } catch {
+            mailboxTurnCompletion = nil
+            GUSFlightRecorder.shared.record("gus.mailbox.deliver_error", ["task": task.id, "error": error.localizedDescription])
+        }
     }
     
     public func loadHistory(sessionID: String) async throws -> [TimelineEvent] {
@@ -578,9 +734,24 @@ public final class NativeSwiftBackend: WorkbenchBackend {
     
     public func availableProviders() async throws -> ProviderListResult {
         let models: [String: [String: Any]] = Dictionary(uniqueKeysWithValues: providerModelIDs.map { ($0, [String: Any]()) })
+        var allProviders = [ProviderInfo(id: providerID, name: providerDisplay, models: models)]
+        var connected = [providerID]
+        if providerID != "chatgpt-oauth", ChatGPTOAuthStore.hasStoredTokens() {
+            let codex = ChatGPTCodexProvider()
+            var discovered = ChatGPTOAuthStore.storedModelIDs()
+            if discovered.isEmpty {
+                try? await codex.configure(ModelConfiguration())
+                discovered = await codex.availableModels
+            }
+            if !discovered.isEmpty {
+                let codexModels: [String: [String: Any]] = Dictionary(uniqueKeysWithValues: discovered.map { ($0, [String: Any]()) })
+                allProviders.append(ProviderInfo(id: codex.id, name: codex.name, models: codexModels))
+                connected.append(codex.id)
+            }
+        }
         return ProviderListResult(
-            all: [ProviderInfo(id: providerID, name: providerDisplay, models: models)],
-            connected: [providerID],
+            all: allProviders,
+            connected: connected,
             defaultProvider: providerID
         )
     }
@@ -597,6 +768,26 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         eventContinuation?.yield(event)
     }
     
+    private static func toolMayLeaveApp(_ name: String) -> Bool {
+        name == "iphone_launch_app" || name == "iphone_press_button" || name == "iphone_open_url" || name == "shortcuts.run"
+    }
+
+    private func returnToAppIfNeeded() async {
+        guard mayHaveLeftAppInTurn else { return }
+        mayHaveLeftAppInTurn = false
+        guard let bundleID = Bundle.main.bundleIdentifier, !bundleID.isEmpty else { return }
+        let executor: (any ToolExecutor)? = sandboxExecutor ?? toolExecutor
+        if let executor,
+           executor.availableTools.contains(where: { $0.name == "iphone_launch_app" }) {
+            _ = await executor.execute(
+                ToolInvocation(id: "return-\(UUID().uuidString)", name: "iphone_launch_app", arguments: ["app": bundleID]),
+                approval: .allowOnce
+            )
+        } else {
+            try? await WdaClient().launchApp(bundleID: bundleID)
+        }
+    }
+
     private func handleAgentEvent(_ event: AgentLoopEvent) async {
         switch event {
         case .turnStarted:
@@ -617,6 +808,9 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             liveAnswerID = nil
             if let calls = response.toolCalls, !calls.isEmpty {
                 for call in calls {
+                    if Self.toolMayLeaveApp(call.name) {
+                        mayHaveLeftAppInTurn = true
+                    }
                     eventContinuation?.yield(.partUpdated(partID: call.id, kind: "tool", text: nil, tool: call.name, callID: call.id, status: "running", input: call.arguments, output: nil, error: nil))
                 }
             }
@@ -641,6 +835,9 @@ public final class NativeSwiftBackend: WorkbenchBackend {
             
         case .error(let error):
             eventContinuation?.yield(.sessionError(error.localizedDescription))
+
+        case .sequenceScopeChanged(let scope):
+            eventContinuation?.yield(.sequenceScopeChanged(scope))
             
         case .finished:
             if let sessionID = currentSessionIDStorage {

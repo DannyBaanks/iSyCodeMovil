@@ -39,13 +39,14 @@ public struct TimelineEventContainer: View {
                 onAllow: { store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .allowOnce) },
                 onDeny: { store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: event.permissionTool?.hasPrefix("Codex") == true ? .decline : .deny) },
                 onPersistent: { store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .allowAlways) },
-                onCodexCancel: { store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .cancel) }
+                onCodexCancel: { store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .cancel) },
+                onSequence: { store.respondToPermission(requestId: event.permissionRequestId ?? event.id, decision: .allowSequence) }
             )
         case .question:
             QuestionView(
                 event: event,
                 onSelect: { choice in store.respondToPermission(requestId: event.id, decision: .allowOnce) },
-                onFreeform: { text in Task { await store.sendPrompt(text) } }
+                onFreeform: { text in store.sendPrompt(text) }
             )
         case .system:
             SystemMessageView(event: event)
@@ -187,15 +188,76 @@ public struct AssistantTextView: View {
     }
 }
 
-/// Uses SwiftUI's native Markdown parser, then gives strong emphasis an
-/// explicit accent so literal `**markers**` never appear in the conversation.
+/// Draws an assistant message block by block (see `ChatMarkdownParser`): SwiftUI's `Text` keeps inline styling but
+/// drops paragraph and list structure, which glued lines together. Strong emphasis gets an explicit accent so literal
+/// `**markers**` never appear in the conversation.
 private struct MarkdownText: View {
     let content: String
     let emphasisColor: Color
 
-    private var renderedText: AttributedString {
-        let markdown = ChatMarkdownLayout.preserveLineBreaks(in: content)
-        var value = (try? AttributedString(markdown: markdown)) ?? AttributedString(content)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(ChatMarkdownParser.parse(content).enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: ChatMarkdownBlock) -> some View {
+        switch block {
+        case .paragraph(let text):
+            inline(text)
+        case .heading(let level, let text):
+            inline(text).font(.system(size: level <= 1 ? 20 : (level == 2 ? 18 : 16), weight: .semibold))
+        case .bullet(let indent, let text):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("•")
+                inline(text)
+            }
+            .padding(.leading, CGFloat(indent) * 14)
+        case .numbered(let indent, let number, let text):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("\(number).")
+                inline(text)
+            }
+            .padding(.leading, CGFloat(indent) * 14)
+        case .quote(let text):
+            inline(text)
+                .foregroundColor(OCColor.textSecondary)
+                .padding(.leading, 12)
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(OCColor.borderBase).frame(width: 3)
+                }
+        case .code(_, let text):
+            monospacedScroll(text)
+        case .table(let rows):
+            monospacedScroll(rows.joined(separator: "\n"))
+        case .rule:
+            Divider().overlay(OCColor.borderBase)
+        }
+    }
+
+    /// Code and tables keep their exact spacing and scroll sideways instead of wrapping.
+    private func monospacedScroll(_ text: String) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            Text(text)
+                .font(.system(size: 13, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(10)
+        }
+        .background(Color.black.opacity(0.22))
+        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+    }
+
+    private func inline(_ text: String) -> some View {
+        Text(renderedInline(text)).lineSpacing(3)
+    }
+
+    /// Inline Markdown only (bold, italics, code, links), keeping every newline the model wrote.
+    private func renderedInline(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        var value = (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
         let emphasizedRanges = value.runs.compactMap { run -> Range<AttributedString.Index>? in
             guard run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true else { return nil }
             return run.range
@@ -204,42 +266,6 @@ private struct MarkdownText: View {
             value[range].foregroundColor = emphasisColor
         }
         return value
-    }
-
-    var body: some View {
-        Text(renderedText)
-            .lineSpacing(3)
-    }
-}
-
-/// SwiftUI's Markdown text keeps inline styling but can visually flatten soft
-/// line breaks. Promote prose line breaks to Markdown hard breaks while
-/// leaving fenced code and table rows untouched.
-private enum ChatMarkdownLayout {
-    static func preserveLineBreaks(in markdown: String) -> String {
-        let normalized = markdown
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-        let lines = normalized.components(separatedBy: "\n")
-        var insideCodeFence = false
-
-        return lines.enumerated().map { index, line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("```") {
-                insideCodeFence.toggle()
-                return line
-            }
-
-            let isTableRow = trimmed.hasPrefix("|") && trimmed.hasSuffix("|")
-            guard index < lines.count - 1,
-                  !insideCodeFence,
-                  !line.isEmpty,
-                  !line.hasSuffix("  "),
-                  !isTableRow else {
-                return line
-            }
-            return line + "  "
-        }.joined(separator: "\n")
     }
 }
 
@@ -256,14 +282,34 @@ public struct AttachmentToken: View {
 
     public var body: some View {
         HStack(spacing: OCSpacing.xs) {
+            #if canImport(UIKit)
+            if attachment.type == .image, let path = attachment.path, let img = UIImage(contentsOfFile: path) {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 22, height: 22)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            } else {
+                Image(systemName: attachment.icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(OCColor.iconPrimary)
+            }
+            #else
             Image(systemName: attachment.icon)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(OCColor.iconPrimary)
+            #endif
 
             Text(attachment.name)
                 .font(OCTypography.modelPillLabel)
                 .foregroundColor(OCColor.textPrimary)
                 .lineLimit(1)
+
+            if let size = attachment.formattedByteSize {
+                Text(size)
+                    .font(.system(size: 10))
+                    .foregroundColor(OCColor.textFaint)
+            }
 
             if let onRemove = onRemove {
                 Button(action: onRemove) {
@@ -380,7 +426,58 @@ public struct ToolCallCollapsedView: View {
     }
 
     private var toolTitle: String {
-        let name = (event.toolName ?? "").lowercased()
+        Self.displayTitle(for: event.toolName)
+    }
+
+    static func displayTitle(for rawName: String?) -> String {
+        let name = (rawName ?? "").lowercased()
+        switch name {
+        case "iphone_status": return "Estado del iPhone"
+        case "iphone_list_elements": return "Leyendo pantalla del iPhone"
+        case "iphone_screenshot": return "Captura del iPhone"
+        case "iphone_tap", "iphone_tap_element": return "Tocando en el iPhone"
+        case "iphone_long_press": return "Manteniendo pulsado en el iPhone"
+        case "iphone_swipe": return "Deslizando en el iPhone"
+        case "iphone_type_text": return "Escribiendo en el iPhone"
+        case "iphone_press_button": return "Botón del iPhone"
+        case "iphone_launch_app": return "Abriendo app en el iPhone"
+        case "iphone_terminate_app": return "Cerrando app en el iPhone"
+        case "iphone_list_apps": return "Apps del iPhone"
+        case "iphone_open_url": return "Abriendo enlace en el iPhone"
+        case "iphone_wait_for": return "Esperando elemento en el iPhone"
+        default: break
+        }
+        if name.hasPrefix("iphone_") {
+            return "Control del iPhone"
+        }
+        if name == "python_eval" { return "Procesando con Python local" }
+        if name == "http_request" { return "Consultando servicio web" }
+        if name == "isymcp_status" { return "Consultando ISyMCP (PC)" }
+        if name == "isymcp_tasks" { return "Consultando tareas de ISyMCP" }
+        if name == "isymcp_respond_task" { return "Respondiendo tarea en ISyMCP" }
+        if name == "secret_vault_list" { return "Consultando aliases del Llavero" }
+        if name == "secret_vault_request_entry" { return "Preparando ficha del Llavero" }
+        if name == "learn_action_prepare" { return "Preparando grabador 'Aprender acción'" }
+        if name == "learn_action_status" { return "Consultando estado de grabación" }
+        if name == "l1_create_tool" { return "Creando capacidad compuesta (L1)" }
+        if name == "l1_list_tools" { return "Listando capacidades L1" }
+        if name == "l1_delete_tool" { return "Eliminando capacidad L1" }
+        if name == "importar_catalogo_csv" { return "Importando catálogo CSV (L1)" }
+        if name.hasPrefix("l1_") { return "Ejecutando acción aprendida (L1)" }
+        if name == "browser_navigate" { return "Navegando en la web" }
+        if name == "browser_get_page" { return "Leyendo página web" }
+        if name == "browser_click" { return "Tocando en la web" }
+        if name == "browser_input" { return "Escribiendo en la web" }
+        if name == "browser_scroll" { return "Desplazando página web" }
+        if name.hasPrefix("browser_") { return "Navegador" }
+        if name == "gmail.read.inbox" { return "Leyendo Gmail" }
+        if name == "gmail.write.send" { return "Enviando correo" }
+        if name.hasPrefix("gmail.") { return "Gmail" }
+        if name.hasPrefix("googlecalendar.") { return "Agenda de Google" }
+        if name.hasPrefix("googletasks.") { return "Tareas de Google" }
+        if name.hasPrefix("googledrive.") || name.hasPrefix("googledocs.") || name.hasPrefix("googlesheets.") { return "Google Drive" }
+        if name.hasPrefix("googlecontacts.") { return "Contactos de Google" }
+        if name.hasPrefix("shortcuts.") { return "Atajos del iPhone" }
         if name.contains("read") || name.contains("glob") || name.contains("search") || name.contains("list") {
             return "Consultando archivos"
         }
@@ -390,21 +487,47 @@ public struct ToolCallCollapsedView: View {
         if name.contains("bash") || name.contains("shell") || name.contains("command") || name.contains("exec") {
             return "Ejecutando comando"
         }
-        return event.toolName?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Herramienta"
+        return rawName?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Herramienta"
+    }
+
+    static func displayDetail(for arguments: [String: String]?) -> String? {
+        guard let arguments, !arguments.isEmpty else { return nil }
+        let preferredKeys = [
+            "path", "file", "file_path", "filepath", "pattern", "command", "url",
+            "text", "filter", "element", "app", "bundle_id", "button", "direction", "query"
+        ]
+        if let preferred = preferredKeys.compactMap({ key in
+            arguments.first(where: { $0.key.lowercased() == key })?.value
+        }).first(where: { !$0.isEmpty }) {
+            return preferred
+        }
+        return arguments.keys.sorted().compactMap { key -> String? in
+            guard let value = arguments[key], !value.isEmpty else { return nil }
+            let lower = value.lowercased()
+            if lower == "true" || lower == "false" { return nil }
+            return value
+        }.first
     }
 
     private var toolDetail: String? {
-        guard let arguments = event.toolArguments, !arguments.isEmpty else { return nil }
-        let preferredKeys = ["path", "file", "file_path", "filepath", "pattern", "command", "url"]
-        let candidate = preferredKeys.compactMap { key in
-            arguments.first(where: { $0.key.lowercased() == key })?.value
-        }.first ?? arguments.keys.sorted().compactMap { arguments[$0] }.first
-        guard let candidate, !candidate.isEmpty else { return nil }
-        return candidate
+        Self.displayDetail(for: event.toolArguments)
     }
 
-    private func toolIcon(for name: String?) -> String {
+    static func iconName(for name: String?) -> String {
         guard let name = name?.lowercased() else { return "wrench" }
+        if name == "python_eval" { return "terminal.fill" }
+        if name.hasPrefix("secret_vault_") { return "key.fill" }
+        if name.hasPrefix("learn_action_") { return "record.circle" }
+        if name.hasPrefix("isymcp_") { return "desktopcomputer" }
+        if name.hasPrefix("l1_") || name == "importar_catalogo_csv" { return "square.stack.3d.up.fill" }
+        if name == "http_request" { return "network" }
+        if name.hasPrefix("iphone_") { return "iphone" }
+        if name.hasPrefix("browser_") { return "safari" }
+        if name.hasPrefix("gmail.") { return "envelope" }
+        if name.hasPrefix("googlecalendar.") { return "calendar" }
+        if name.hasPrefix("googletasks.") { return "checkmark.circle" }
+        if name.hasPrefix("googledrive.") || name.hasPrefix("googledocs.") || name.hasPrefix("googlesheets.") { return "externaldrive" }
+        if name.hasPrefix("shortcuts.") { return "bolt" }
         if name.contains("read") { return "doc.text" }
         if name.contains("write") || name.contains("edit") { return "pencil" }
         if name.contains("bash") || name.contains("shell") { return "terminal" }
@@ -412,6 +535,10 @@ public struct ToolCallCollapsedView: View {
         if name.contains("list") { return "list.bullet" }
         if name.contains("patch") || name.contains("diff") { return "arrow.left.arrow.right" }
         return "wrench"
+    }
+
+    private func toolIcon(for name: String?) -> String {
+        Self.iconName(for: name)
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -440,7 +567,7 @@ public struct ToolCallExpandedView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(OCColor.iconPrimary)
 
-                Text(event.toolName ?? "tool")
+                Text(ToolCallCollapsedView.displayTitle(for: event.toolName))
                     .font(OCTypography.toolLabel)
                     .foregroundColor(OCColor.textPrimary)
 
@@ -474,29 +601,70 @@ public struct ToolCallExpandedView: View {
                 alignment: .bottom
             )
 
+            // Arguments summary (human-readable parameters)
+            if let args = event.toolArguments, !args.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("PARÁMETROS")
+                        .font(OCTypography.metaMono)
+                        .foregroundColor(OCColor.textFaint)
+                    ForEach(args.keys.sorted().prefix(4), id: \.self) { key in
+                        if let val = args[key], !val.isEmpty {
+                            Text("\(key): \(String(val.prefix(240)))")
+                                .font(OCTypography.codeSmall)
+                                .foregroundColor(OCColor.textSecondary)
+                                .lineLimit(3)
+                        }
+                    }
+                }
+                .padding(.horizontal, OCSpacing.base)
+                .padding(.top, OCSpacing.sm)
+            }
+
             // Output
             if let output = event.toolOutput, !output.isEmpty {
-                ScrollView(.horizontal, showsIndicators: true) {
-                    Text(output)
-                        .font(OCTypography.codeSmall)
-                        .foregroundColor(OCColor.textPrimary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, OCSpacing.base)
-                        .padding(.vertical, OCSpacing.xs)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("RESULTADO")
+                            .font(OCTypography.metaMono)
+                            .foregroundColor(OCColor.textFaint)
+                        Spacer()
+                        Button {
+                            #if canImport(UIKit)
+                            UIPasteboard.general.string = output
+                            #endif
+                            OCHaptics.light()
+                        } label: {
+                            Label("Copiar", systemImage: "doc.on.doc")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(IysThemePreferences.active.accent)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, OCSpacing.base)
+                    .padding(.top, OCSpacing.sm)
+
+                    ScrollView([.vertical, .horizontal], showsIndicators: true) {
+                        Text(output)
+                            .font(OCTypography.codeSmall)
+                            .foregroundColor(OCColor.textPrimary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, OCSpacing.base)
+                            .padding(.vertical, OCSpacing.xs)
+                    }
+                    .frame(maxHeight: 260)
                 }
-                .frame(maxHeight: 220)
             } else if event.toolState == .running {
-                HStack {
+                HStack(spacing: 8) {
                     ProgressView()
                         .scaleEffect(0.8)
                         .progressViewStyle(CircularProgressViewStyle(tint: agentColor))
-                    Text("Ejecutando…")
+                    Text("\(ToolCallCollapsedView.displayTitle(for: event.toolName)) en progreso…")
                         .font(OCTypography.codeSmall)
-                        .foregroundColor(OCColor.textFaint)
+                        .foregroundColor(OCColor.textSecondary)
                 }
                 .padding(.horizontal, OCSpacing.base)
-                .padding(.vertical, OCSpacing.xl)
+                .padding(.vertical, OCSpacing.md)
             }
         }
         .ocCard(radius: OCRadius.r10, border: OCColor.borderBase, background: OCColor.bgBase)
@@ -505,6 +673,13 @@ public struct ToolCallExpandedView: View {
 
     private func toolIcon(for name: String?) -> String {
         guard let name = name?.lowercased() else { return "wrench" }
+        if name.hasPrefix("iphone_") { return "iphone" }
+        if name.hasPrefix("browser_") { return "safari" }
+        if name.hasPrefix("gmail.") { return "envelope" }
+        if name.hasPrefix("googlecalendar.") { return "calendar" }
+        if name.hasPrefix("googletasks.") { return "checkmark.circle" }
+        if name.hasPrefix("googledrive.") || name.hasPrefix("googledocs.") || name.hasPrefix("googlesheets.") { return "externaldrive" }
+        if name.hasPrefix("shortcuts.") { return "bolt" }
         if name.contains("read") { return "doc.text" }
         if name.contains("write") || name.contains("edit") { return "pencil" }
         if name.contains("bash") || name.contains("shell") { return "terminal" }
@@ -917,17 +1092,21 @@ public struct PermissionView: View {
     let onDeny: () -> Void
     let onPersistent: () -> Void
     let onCodexCancel: (() -> Void)?
+    /// Una sola aprobación de alcance para el turno (solo herramientas iphone_*).
+    /// Nil cuando el llamador no la ofrece.
+    let onSequence: (() -> Void)?
     @EnvironmentObject private var store: WorkbenchStore
     @State private var showTechnicalDetails = false
 
     private var storeUsesFreshApproval: Bool { store.backendMode == .native }
 
-    public init(event: TimelineEvent, onAllow: @escaping () -> Void, onDeny: @escaping () -> Void, onPersistent: @escaping () -> Void, onCodexCancel: (() -> Void)? = nil) {
+    public init(event: TimelineEvent, onAllow: @escaping () -> Void, onDeny: @escaping () -> Void, onPersistent: @escaping () -> Void, onCodexCancel: (() -> Void)? = nil, onSequence: (() -> Void)? = nil) {
         self.event = event
         self.onAllow = onAllow
         self.onDeny = onDeny
         self.onPersistent = onPersistent
         self.onCodexCancel = onCodexCancel
+        self.onSequence = onSequence
     }
 
     public var body: some View {
@@ -1028,6 +1207,32 @@ public struct PermissionView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("permission-deny")
+                }
+
+                // Una sola aprobación de alcance para el turno: solo para herramientas
+                // WDA (iphone_*). Cubre abrir, tocar, escribir y enviar en esta tarea;
+                // al terminar el turno vuelve a pedir permiso. No es "siempre".
+                if let onSequence, event.permissionTool?.hasPrefix("iphone_") == true {
+                    Button(action: onSequence) {
+                        Text("Permitir secuencia WDA por esta tarea")
+                            .font(OCTypography.control)
+                            .foregroundColor(OCColor.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(OCColor.bgLayer1)
+                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: OCRadius.r10)
+                                    .stroke(OCColor.borderBase, lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("permission-allow-sequence")
+
+                    Text("Autoriza una secuencia acotada (hasta 12 acciones o 3 minutos) solo para herramientas WDA en esta tarea. Puedes revocarla en cualquier momento desde la barra superior.")
+                        .font(OCTypography.meta)
+                        .foregroundColor(OCColor.textFaint)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if isLimitedRemote {
@@ -1180,11 +1385,154 @@ public struct SystemMessageView: View {
 
     public var body: some View {
         if let text = event.assistantText {
-            Text(text)
-                .font(OCTypography.meta)
-                .foregroundColor(OCColor.textFaint)
-                .frame(maxWidth: .infinity, alignment: .center)
+            if text.hasPrefix("Error:") {
+                let raw = String(text.dropFirst("Error:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                OCUnifiedStateCard(
+                    kind: Self.classifyKind(raw),
+                    title: Self.friendlyTitle(raw),
+                    message: Self.friendlyMessage(raw),
+                    technicalDetail: raw
+                )
                 .padding(.vertical, OCSpacing.xs)
+            } else {
+                Text(text)
+                    .font(OCTypography.meta)
+                    .foregroundColor(OCColor.textFaint)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, OCSpacing.xs)
+            }
         }
+    }
+
+    private static func classifyKind(_ raw: String) -> OCVisualStateKind {
+        let lower = raw.lowercased()
+        if lower.contains("offline") || lower.contains("internet") || lower.contains("connection") || lower.contains("timed out") || lower.contains("sin conexión") {
+            return .offline
+        }
+        if lower.contains("stopped") || lower.contains("cancel") {
+            return .cancelled
+        }
+        return .error
+    }
+
+    private static func friendlyTitle(_ raw: String) -> String {
+        let lower = raw.lowercased()
+        if lower.contains("model") && (lower.contains("cargar") || lower.contains("load") || lower.contains("404") || lower.contains("401")) {
+            return "No pudimos cargar los modelos"
+        }
+        if lower.contains("http") || lower.contains("network") || lower.contains("timed out") || lower.contains("offline") || lower.contains("conexión") {
+            return "Problema de conexión"
+        }
+        if lower.contains("auth") || lower.contains("clave") || lower.contains("key") || lower.contains("401") || lower.contains("403") {
+            return "Revisa tu clave o sesión"
+        }
+        return "No pudimos completar la acción"
+    }
+
+    private static func friendlyMessage(_ raw: String) -> String {
+        let lower = raw.lowercased()
+        if lower.contains("model") {
+            return "No pudimos consultar o cargar los modelos. Revisa la conexión o vuelve a intentar."
+        }
+        if lower.contains("http") || lower.contains("network") || lower.contains("timed out") || lower.contains("conexión") {
+            return "Revisa tu conexión a internet o vuelve a intentarlo en unos segundos."
+        }
+        if lower.contains("auth") || lower.contains("clave") || lower.contains("401") || lower.contains("403") {
+            return "La sesión o clave del proveedor fue rechazada. Puedes actualizarla en Conexiones o Ajustes."
+        }
+        return "Ocurrió un inconveniente al ejecutar la operación. Puedes revisar los detalles técnicos abajo."
+    }
+}
+
+// MARK: - Tool Steps Carousel
+
+/// Groups consecutive tool calls into a compact horizontal step strip (inspired by iphone-use-app),
+/// with tap-to-inspect output below.
+public struct ToolStepsCarouselView: View {
+    let steps: [TimelineEvent]
+    let agentColor: Color
+    @State private var selectedStepID: String?
+
+    public init(steps: [TimelineEvent], agentColor: Color) {
+        self.steps = steps
+        self.agentColor = agentColor
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: OCSpacing.sm) {
+            HStack(spacing: OCSpacing.xs) {
+                Text("Pasos")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(OCColor.textSecondary)
+                Text("· \(steps.count)")
+                    .font(OCTypography.metaMono)
+                    .foregroundColor(OCColor.textFaint)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: OCSpacing.sm) {
+                    ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
+                        stepCard(step, index: index + 1)
+                    }
+                }
+            }
+
+            if let selected = steps.first(where: { $0.id == selectedStepID }) {
+                ToolCallExpandedView(event: selected, agentColor: agentColor)
+            }
+        }
+        .padding(.vertical, OCSpacing.xs)
+    }
+
+    private func stepCard(_ step: TimelineEvent, index: Int) -> some View {
+        let isSelected = selectedStepID == step.id
+        let stateColor = step.toolState?.color ?? OCColor.textFaint
+        return Button {
+            withAnimation(.easeInOut(duration: 0.16)) {
+                selectedStepID = isSelected ? nil : step.id
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: OCSpacing.xs) {
+                HStack(spacing: 6) {
+                    Text("\(index).")
+                        .font(OCTypography.metaMono)
+                        .foregroundColor(OCColor.textFaint)
+                    Image(systemName: ToolCallCollapsedView.iconName(for: step.toolName))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(stateColor)
+                    Spacer(minLength: 4)
+                    Circle()
+                        .fill(stateColor)
+                        .frame(width: 6, height: 6)
+                }
+
+                Text(ToolCallCollapsedView.displayTitle(for: step.toolName))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(OCColor.textPrimary)
+                    .lineLimit(1)
+
+                if let detail = ToolCallCollapsedView.displayDetail(for: step.toolArguments) {
+                    Text(detail)
+                        .font(OCTypography.metaMono)
+                        .foregroundColor(OCColor.textSecondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                } else {
+                    Text(step.toolState?.title ?? "Paso")
+                        .font(OCTypography.meta)
+                        .foregroundColor(stateColor)
+                }
+            }
+            .padding(OCSpacing.md)
+            .frame(width: 168, alignment: .leading)
+            .background(isSelected ? stateColor.opacity(0.10) : OCColor.bgBase)
+            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+            .overlay(
+                RoundedRectangle(cornerRadius: OCRadius.r12)
+                    .stroke(isSelected ? stateColor.opacity(0.55) : OCColor.borderBase, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -47,12 +47,14 @@ struct SandboxPanelView: View {
     @State private var workArchive: URL?
     @State private var confirmRestart = false
     @State private var confirmUnlink = false
+    @State private var showExplanation = false
 
     var body: some View {
         NavigationStack {
             Form {
                 if let link = store.sandboxLink {
                     statusSection(link)
+                    iphoneControlSection
                     pullRequestSection(link)
                     shareSection
                     manageSection
@@ -69,6 +71,9 @@ struct SandboxPanelView: View {
                 }
             }
             .task { await store.refreshSandboxStatus() }
+            .sheet(isPresented: $showExplanation) {
+                SandboxExplanationSheet()
+            }
         }
         .presentationDetents([.large])
     }
@@ -88,10 +93,42 @@ struct SandboxPanelView: View {
                     .font(OCTypography.meta)
                     .foregroundColor(OCColor.danger)
             }
+            Button {
+                showExplanation = true
+            } label: {
+                Label("¿Qué es el sandbox?", systemImage: "questionmark.circle")
+            }
         } header: {
             Text("En tu computadora")
         } footer: {
             Text("El agente piensa en este iPhone y sus herramientas se ejecutan en un contenedor sin red, sin acceso a tu disco y sin credenciales. Cada uso reinicia la cuenta atrás.")
+        }
+    }
+
+    private var iphoneControlSection: some View {
+        Section {
+            Picker("Quién controla el iPhone", selection: Binding(
+                get: { IphoneControlChoice(store.iphoneControlPreference) },
+                set: { choice in Task { await store.setIphoneControlPreference(choice.mode) } }
+            )) {
+                ForEach(IphoneControlChoice.allCases) { choice in
+                    Text(choice.title).tag(choice)
+                }
+            }
+            .disabled(store.sandboxLinkBusy)
+            LabeledContent("Ahora", value: activeIphoneControlLabel)
+        } header: {
+            Text("Control del iPhone")
+        } footer: {
+            Text("Computadora: el agente usa el iPhone a través de tu computadora. Este iPhone: el agente lo controla directamente, sin la computadora; necesita WebDriverAgent abierto en el teléfono. En este modo no puede listar apps ni abrir enlaces. Automático elige lo que esté disponible.")
+        }
+    }
+
+    private var activeIphoneControlLabel: String {
+        switch store.iphoneControlActive {
+        case .computer: return "A través de la computadora"
+        case .thisPhone: return "Este iPhone, directo"
+        case nil: return "Sin control"
         }
     }
 
@@ -181,6 +218,39 @@ struct SandboxPanelView: View {
                 }
         } header: {
             Text("Administrar")
+        }
+    }
+}
+
+/// The three options of the control picker; `automatic` maps to no stored preference.
+enum IphoneControlChoice: String, CaseIterable, Identifiable {
+    case automatic
+    case computer
+    case thisPhone
+
+    init(_ mode: IphoneControlMode?) {
+        switch mode {
+        case nil: self = .automatic
+        case .computer: self = .computer
+        case .thisPhone: self = .thisPhone
+        }
+    }
+
+    var id: String { rawValue }
+
+    var mode: IphoneControlMode? {
+        switch self {
+        case .automatic: return nil
+        case .computer: return .computer
+        case .thisPhone: return .thisPhone
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .automatic: return "Automático"
+        case .computer: return "Computadora"
+        case .thisPhone: return "Este iPhone"
         }
     }
 }

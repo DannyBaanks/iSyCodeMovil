@@ -375,7 +375,7 @@ public final class OpenCodeRemoteBackend: WorkbenchBackend, RemoteBackend {
         guard let sessionID = currentSessionIDStorage else { return }
         let response: String
         switch decision {
-        case .allowOnce: response = "once"
+        case .allowOnce, .allowSequence: response = "once"
         case .allowAlways: response = "always"
         case .deny, .decline, .cancel: response = "reject"
         }

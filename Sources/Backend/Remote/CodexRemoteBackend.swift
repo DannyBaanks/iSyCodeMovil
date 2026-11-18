@@ -120,7 +120,7 @@ public final class CodexRemoteBackend: WorkbenchBackend, RemoteBackend {
         let (rpcID, _, choices) = pending
         let selected: String
         switch decision {
-        case .allowOnce: selected = "accept"
+        case .allowOnce, .allowSequence: selected = "accept"
         case .allowAlways: selected = "acceptForSession"
         case .decline: selected = "decline"
         case .cancel: selected = "cancel"

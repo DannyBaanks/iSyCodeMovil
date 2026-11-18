@@ -149,12 +149,53 @@ public protocol ModelProvider: Sendable {
 
 /// Mensaje para el modelo
 public struct ModelMessage: Codable, Sendable {
+    public struct ContentPart: Codable, Sendable, Equatable {
+        public enum Kind: String, Codable, Sendable {
+            case text
+            case imageBase64
+            case documentText
+        }
+
+        public let kind: Kind
+        public let text: String?
+        public let mimeType: String?
+        public let base64Data: String?
+        public let filename: String?
+
+        public init(
+            kind: Kind,
+            text: String? = nil,
+            mimeType: String? = nil,
+            base64Data: String? = nil,
+            filename: String? = nil
+        ) {
+            self.kind = kind
+            self.text = text
+            self.mimeType = mimeType
+            self.base64Data = base64Data
+            self.filename = filename
+        }
+
+        public static func text(_ value: String) -> ContentPart {
+            ContentPart(kind: .text, text: value)
+        }
+
+        public static func image(base64: String, mimeType: String, filename: String? = nil) -> ContentPart {
+            ContentPart(kind: .imageBase64, mimeType: mimeType, base64Data: base64, filename: filename)
+        }
+
+        public static func document(filename: String, mimeType: String?, text: String) -> ContentPart {
+            ContentPart(kind: .documentText, text: text, mimeType: mimeType, filename: filename)
+        }
+    }
+
     public let role: Role
     public let content: String
     public let name: String? // for tool messages
     public let toolCallId: String? // for tool results
     public let toolCalls: [ToolCall]? // assistant tool_calls echo (history)
     public let metadata: [String: String]
+    public let multimodalParts: [ContentPart]?
     
     public enum Role: String, Codable, Sendable {
         case system, user, assistant, tool
@@ -166,7 +207,8 @@ public struct ModelMessage: Codable, Sendable {
         name: String? = nil,
         toolCallId: String? = nil,
         toolCalls: [ToolCall]? = nil,
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
+        multimodalParts: [ContentPart]? = nil
     ) {
         self.role = role
         self.content = content
@@ -174,6 +216,7 @@ public struct ModelMessage: Codable, Sendable {
         self.toolCallId = toolCallId
         self.toolCalls = toolCalls
         self.metadata = metadata
+        self.multimodalParts = multimodalParts
     }
 }
 
@@ -210,14 +253,18 @@ public struct GenerationOptions: Codable, Sendable {
     public let topP: Double?
     public let stopSequences: [String]?
     public let seed: Int?
-    
+    /// Esfuerzo de razonamiento pedido por el usuario. `nil` o `.auto` = no se envía
+    /// ningún campo de reasoning a ningún proveedor (comportamiento anterior).
+    public let reasoningEffort: ReasoningEffort?
+
     public init(
         model: String? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         topP: Double? = nil,
         stopSequences: [String]? = nil,
-        seed: Int? = nil
+        seed: Int? = nil,
+        reasoningEffort: ReasoningEffort? = nil
     ) {
         self.model = model
         self.temperature = temperature
@@ -225,6 +272,52 @@ public struct GenerationOptions: Codable, Sendable {
         self.topP = topP
         self.stopSequences = stopSequences
         self.seed = seed
+        self.reasoningEffort = reasoningEffort
+    }
+}
+
+/// Esfuerzo de razonamiento (selector Auto / Bajo / Medio / Alto del chat).
+/// `auto` significa "el proveedor decide" y nunca envía ningún campo: es el default
+/// y preserva el comportamiento anterior en todos los proveedores.
+public enum ReasoningEffort: String, Codable, Sendable, CaseIterable {
+    case auto
+    case low
+    case medium
+    case high
+
+    /// Valor que viaja en la request (`reasoning_effort` / `reasoning.effort`).
+    /// `auto` no tiene valor: se omite el campo.
+    public var apiValue: String? {
+        switch self {
+        case .auto: return nil
+        case .low: return "low"
+        case .medium: return "medium"
+        case .high: return "high"
+        }
+    }
+
+    public var displayName: String {
+        switch self {
+        case .auto: return "Auto"
+        case .low: return "Bajo"
+        case .medium: return "Medio"
+        case .high: return "Alto"
+        }
+    }
+}
+
+/// Ajuste único de esfuerzo de razonamiento, persistido en UserDefaults.
+/// Lo lee el loop del agente al construir cada request; la UI del picker de modelo lo escribe.
+public enum ReasoningEffortSetting {
+    public static let defaultsKey = "isycode.reasoningEffort"
+
+    public static var current: ReasoningEffort {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: defaultsKey),
+                  let effort = ReasoningEffort(rawValue: raw) else { return .auto }
+            return effort
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey) }
     }
 }
 
@@ -262,7 +355,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
     private var config: ModelConfiguration?
     private let session: URLSession
     
-    public init(id: String = "remote", name: String = "Remote API") {
+    public init(id: String = "remote", name: String = "Remote API", supportsImages: Bool = true) {
         self.id = id
         self.name = name
         self.capabilities = ModelProviderCapabilities(
@@ -271,7 +364,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
             maxTokens: 4096,
             maxContextTokens: 128000,
             supportsSystemPrompt: true,
-            supportsImages: false,
+            supportsImages: supportsImages,
             localOnly: false,
             restrictions: [
                 "Requires network connectivity",
@@ -367,6 +460,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
             throw ModelProviderError.notConfigured("Call configure() first")
         }
         
+        let reverseNames = Self.reverseToolNameMap(from: tools)
         let request = try buildRequest(messages: messages, tools: tools, options: options, stream: false)
         var attempt = 0
         while true {
@@ -379,7 +473,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
                 try await Self.sleep(delay)
                 continue
             }
-            return try parseResponse(data)
+            return try parseResponse(data, reverseNames: reverseNames)
         }
     }
     
@@ -396,6 +490,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
                         throw ModelProviderError.notConfigured("Call configure() first")
                     }
                     
+                    let reverseNames = Self.reverseToolNameMap(from: tools)
                     let request = try buildRequest(messages: messages, tools: tools, options: options, stream: true)
                     var attempt = 0
                     var opened: URLSession.AsyncBytes?
@@ -435,13 +530,13 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
                             let calls = choice.delta.toolCalls ?? []
                             continuation.yield(ModelStreamChunk(
                                 delta: choice.delta.content,
-                                toolCallDelta: calls.first.map(Self.toolCallDelta),
+                                toolCallDelta: calls.first.map { Self.toolCallDelta($0, reverseNames: reverseNames) },
                                 done: false,
                                 finishReason: choice.finishReason
                             ))
                             // Parallel tool calls can share a chunk; keep every one.
                             for extra in calls.dropFirst() {
-                                continuation.yield(ModelStreamChunk(delta: nil, toolCallDelta: Self.toolCallDelta(extra),
+                                continuation.yield(ModelStreamChunk(delta: nil, toolCallDelta: Self.toolCallDelta(extra, reverseNames: reverseNames),
                                                                     done: false, finishReason: nil))
                             }
                         } else if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -465,8 +560,41 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         }
     }
 
-    private static func toolCallDelta(_ call: StreamChunkResponse.StreamChoice.StreamToolCall) -> ModelStreamChunk.ToolCallDelta {
-        ModelStreamChunk.ToolCallDelta(index: call.index, id: call.id, name: call.function?.name, arguments: call.function?.arguments)
+    private static func toolCallDelta(_ call: StreamChunkResponse.StreamChoice.StreamToolCall, reverseNames: [String: String]) -> ModelStreamChunk.ToolCallDelta {
+        let resolvedName = call.function?.name.map { reverseNames[$0] ?? $0 }
+        return ModelStreamChunk.ToolCallDelta(index: call.index, id: call.id, name: resolvedName, arguments: call.function?.arguments)
+    }
+
+    public static func modelSupportsImages(providerID: String, model: String) -> Bool {
+        let lowerModel = model.lowercased()
+        switch providerID.lowercased() {
+        case "gus-local", "scripted":
+            return false
+        case "nvidia":
+            return lowerModel.contains("-vl") || lowerModel.contains("vision") || lowerModel.contains("neva") || lowerModel.contains("vila")
+        case "openai", "gemini", "chatgpt-oauth", "openrouter", "remote":
+            return true
+        case "xai":
+            return lowerModel.contains("grok-4") || lowerModel.contains("grok-2-vision") || lowerModel.contains("vision")
+        default:
+            return true
+        }
+    }
+
+    static func openAIFunctionName(for toolName: String) -> String {
+        toolName.replacingOccurrences(of: ".", with: "__")
+    }
+
+    static func reverseToolNameMap(from tools: [ToolDefinition]?) -> [String: String] {
+        guard let tools else { return [:] }
+        var map: [String: String] = [:]
+        for tool in tools {
+            let sanitized = openAIFunctionName(for: tool.name)
+            if sanitized != tool.name {
+                map[sanitized] = tool.name
+            }
+        }
+        return map
     }
 
     /// OpenAI reasoning models (o-series, GPT-5) reject `max_tokens` and any
@@ -475,6 +603,21 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         let id = model.lowercased().split(separator: "/").last.map(String.init) ?? model.lowercased()
         if id.hasPrefix("gpt-5") { return !id.contains("chat") }
         return id.hasPrefix("o1") || id.hasPrefix("o3") || id.hasPrefix("o4")
+    }
+
+    /// Decide si `reasoning_effort` viaja en la request de chat/completions.
+    /// Solo para los proveedores que lo aceptan (NVIDIA NIM, OpenAI, OpenRouter).
+    /// En api.openai.com solo para modelos de razonamiento conocidos: a cualquier otro
+    /// modelo OpenAI le rechaza el parámetro con 400. En NIM y OpenRouter el campo es
+    /// parte de su superficie compatible con OpenAI y lo aplica el modelo de razonamiento.
+    /// Cualquier otro host (xAI, Gemini, Ollama, genéricos) nunca lo recibe.
+    static func shouldSendReasoningEffort(host: String?, model: String) -> Bool {
+        guard let host = host?.lowercased() else { return false }
+        if host == "api.openai.com" { return isOpenAIReasoningModel(model) }
+        return host == "integrate.api.nvidia.com"
+            || host.hasSuffix(".integrate.api.nvidia.com")
+            || host == "openrouter.ai"
+            || host.hasSuffix(".openrouter.ai")
     }
     
     private func buildRequest(messages: [ModelMessage], tools: [ToolDefinition]?, options: GenerationOptions, stream: Bool) throws -> URLRequest {
@@ -491,9 +634,60 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         let model = options.model ?? availableModels.first ?? "gpt-4o-mini"
         var body: [String: Any] = [
             "model": model,
-            "messages": messages.map { msg in
-                var m: [String: Any] = ["role": msg.role.rawValue, "content": msg.content]
-                if let name = msg.name { m["name"] = name }
+            "messages": try messages.map { msg -> [String: Any] in
+                var m: [String: Any] = ["role": msg.role.rawValue]
+                if msg.role == .user, let parts = msg.multimodalParts, !parts.isEmpty {
+                    let hasImage = parts.contains { $0.kind == .imageBase64 && $0.base64Data != nil }
+                    if hasImage {
+                        guard Self.modelSupportsImages(providerID: self.id, model: model) else {
+                            throw ModelProviderError.unsupportedFeature(
+                                "El modelo seleccionado (\(model)) no acepta imágenes. Cambia a un modelo con visión (p. ej. GPT-4o, Gemini, o NVIDIA Nemotron VL) o quita la imagen."
+                            )
+                        }
+                        var contentArray: [[String: Any]] = []
+                        if !msg.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            contentArray.append(["type": "text", "text": msg.content])
+                        }
+                        for part in parts {
+                            switch part.kind {
+                            case .text:
+                                if let t = part.text, !t.isEmpty {
+                                    contentArray.append(["type": "text", "text": t])
+                                }
+                            case .documentText:
+                                if let t = part.text, !t.isEmpty {
+                                    let header = part.filename.map { "[Archivo adjunto: \($0)]\n" } ?? ""
+                                    contentArray.append(["type": "text", "text": header + t])
+                                }
+                            case .imageBase64:
+                                if let b64 = part.base64Data, !b64.isEmpty {
+                                    let mime = part.mimeType ?? "image/jpeg"
+                                    contentArray.append([
+                                        "type": "image_url",
+                                        "image_url": ["url": "data:\(mime);base64,\(b64)"]
+                                    ])
+                                }
+                            }
+                        }
+                        m["content"] = contentArray
+                    } else {
+                        let docSegments = parts.compactMap { part -> String? in
+                            guard part.kind == .documentText || part.kind == .text, let t = part.text, !t.isEmpty else { return nil }
+                            if let fn = part.filename, part.kind == .documentText {
+                                return "[Archivo adjunto: \(fn)]\n\(t)"
+                            }
+                            return t
+                        }
+                        if docSegments.isEmpty {
+                            m["content"] = msg.content
+                        } else {
+                            m["content"] = ([msg.content] + docSegments).filter { !$0.isEmpty }.joined(separator: "\n\n")
+                        }
+                    }
+                } else {
+                    m["content"] = msg.content
+                }
+                if let name = msg.name { m["name"] = Self.openAIFunctionName(for: name) }
                 if let toolCallId = msg.toolCallId { m["tool_call_id"] = toolCallId }
                 // Echo assistant tool_calls back into history (OpenAI requires this for multi-turn tool use)
                 if msg.role == .assistant, let toolCalls = msg.toolCalls, !toolCalls.isEmpty {
@@ -502,7 +696,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
                             "id": tc.id,
                             "type": "function",
                             "function": [
-                                "name": tc.name,
+                                "name": Self.openAIFunctionName(for: tc.name),
                                 "arguments": (try? jsonString(from: tc.arguments)) ?? "{}"
                             ]
                         ] as [String: Any]
@@ -529,13 +723,25 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         }
         if let stop = options.stopSequences { body["stop"] = stop }
         if let seed = options.seed { body["seed"] = seed }
+
+        // Esfuerzo de razonamiento pedido en el chat. Auto (o sin ajuste) nunca envía
+        // el campo. Queda registrado en el flight recorder para verificar en el log
+        // si la request lo llevó o por qué se omitió.
+        if let effort = options.reasoningEffort, let value = effort.apiValue {
+            if Self.shouldSendReasoningEffort(host: url.host, model: model) {
+                body["reasoning_effort"] = value
+                GUSFlightRecorder.shared.record("reasoning_effort", ["provider": name, "model": model, "effort": value])
+            } else {
+                GUSFlightRecorder.shared.record("reasoning_effort_omitido", ["provider": name, "model": model, "effort": value])
+            }
+        }
         
         if let tools = tools {
             body["tools"] = tools.map { tool in
                 [
                     "type": "function",
                     "function": [
-                        "name": tool.name,
+                        "name": Self.openAIFunctionName(for: tool.name),
                         "description": tool.description,
                         "parameters": [
                             "type": tool.parameters.type,
@@ -640,7 +846,7 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         return decoder
     }()
 
-    private func parseResponse(_ data: Data) throws -> ModelResponse {
+    private func parseResponse(_ data: Data, reverseNames: [String: String] = [:]) throws -> ModelResponse {
         let decoded = try Self.openAIDecoder.decode(ChatCompletionResponse.self, from: data)
         guard let choice = decoded.choices.first else {
             throw ModelProviderError.invalidRequest("No choices in response")
@@ -649,7 +855,8 @@ public actor RemoteModelProvider: @preconcurrency ModelProvider {
         let toolCalls = choice.message.toolCalls?.map { tc in
             // Function arguments arrive as a JSON string; decode to [String:String] for our contract.
             let args = decodeArguments(tc.function.arguments)
-            return ToolCall(id: tc.id, name: tc.function.name, arguments: args)
+            let resolvedName = reverseNames[tc.function.name] ?? tc.function.name
+            return ToolCall(id: tc.id, name: resolvedName, arguments: args)
         }
         
         let usage = decoded.usage.map { u in

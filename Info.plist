@@ -51,9 +51,24 @@
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<!-- Tailscale CGNAT (100.64.0.0/10) no usa DNS ni RFC1918; WireGuard cifra el transporte y ISyMCP firma ISY1 por petición -->
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
 	</dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Face ID protege las llaves del Secure Enclave usadas para aprobar acciones remotas en ISyMCP y tu Llavero.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>ISyCode Móvil usa la cámara únicamente cuando eliges Tomar fotografía para adjuntar una imagen al asistente.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>ISyCode Móvil usa el micrófono únicamente cuando tocas el botón de dictado por voz para grabar un mensaje.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>ISyCode Móvil usa el reconocimiento de voz de Apple para convertir tu dictado en texto editable antes de enviarlo.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to the IysCode server running on your computer over your local network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_remotepairing._tcp</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

@@ -138,7 +138,7 @@ public final class GrokRemoteBackend: WorkbenchBackend, RemoteBackend {
         }
         let kind: String
         switch decision {
-        case .allowOnce: kind = "allow_once"
+        case .allowOnce, .allowSequence: kind = "allow_once"
         case .allowAlways: kind = "allow_always"
         case .decline, .deny: kind = "reject_once"
         case .cancel: kind = ""

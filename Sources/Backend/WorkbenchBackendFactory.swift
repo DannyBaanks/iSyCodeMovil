@@ -14,7 +14,7 @@ public enum WorkbenchBackendFactory {
         public var errorDescription: String? {
             switch self {
             case .unsupportedBackendType(let type): return "Unsupported backend type: \(type)"
-            case .invalidPairingLink(let reason): return "Invalid pairing link: \(reason)"
+            case .invalidPairingLink(let reason): return "Enlace de emparejamiento no válido: \(reason)"
             case .missingConfiguration(let detail): return "Missing configuration: \(detail)"
             }
         }

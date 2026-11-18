@@ -19,6 +19,7 @@ public final class PermissionNotifier {
     public static let onceCategoryID = "iyscode.permission.once"
     public static let approveID = "iyscode.permission.approve"
     public static let alwaysID = "iyscode.permission.always"
+    public static let sequenceID = "iyscode.permission.sequence"
     public static let denyID = "iyscode.permission.deny"
     public static let requestKey = "permissionRequestId"
 
@@ -36,10 +37,14 @@ public final class PermissionNotifier {
     public func registerCategory() {
         let approve = UNNotificationAction(identifier: Self.approveID, title: "Aprobar", options: [.authenticationRequired])
         let always = UNNotificationAction(identifier: Self.alwaysID, title: "Aprobar siempre", options: [.authenticationRequired])
+        // Una sola aprobación de alcance para el turno: cubre la secuencia de operaciones
+        // WDA (iphone_*) de esa tarea, sin ser "siempre". Se ofrece en ambas categorías
+        // porque no es un permiso permanente, aunque la herramienta pida aprobación cada vez.
+        let sequence = UNNotificationAction(identifier: Self.sequenceID, title: "Permitir secuencia", options: [.authenticationRequired])
         let deny = UNNotificationAction(identifier: Self.denyID, title: "Denegar", options: [.destructive])
         UNUserNotificationCenter.current().setNotificationCategories([
-            UNNotificationCategory(identifier: Self.categoryID, actions: [approve, always, deny], intentIdentifiers: [], options: []),
-            UNNotificationCategory(identifier: Self.onceCategoryID, actions: [approve, deny], intentIdentifiers: [], options: [])
+            UNNotificationCategory(identifier: Self.categoryID, actions: [approve, sequence, always, deny], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: Self.onceCategoryID, actions: [approve, sequence, deny], intentIdentifiers: [], options: [])
         ])
     }
 
@@ -85,6 +90,7 @@ public final class PermissionNotifier {
         switch identifier {
         case approveID: return .allowOnce
         case alwaysID: return .allowAlways
+        case sequenceID: return .allowSequence
         case denyID: return .deny
         default: return nil
         }
