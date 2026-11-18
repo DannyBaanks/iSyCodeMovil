@@ -269,8 +269,10 @@ public struct ComposerControlRow: View {
         self.limitedLabel = limitedLabel
     }
 
+    // Wraps instead of truncating: at large Dynamic Type sizes the chips used to read
+    // "Con…" / "iSy…" in one squeezed line.
     public var body: some View {
-        HStack(spacing: OCSpacing.base) {
+        OCFlowLayout(spacing: OCSpacing.base, lineSpacing: 0) {
             if showsAttachButton {
                 // Attach remains available for Codex sessions too; the old layout
                 // hid it whenever the Codex-specific controls were shown.
@@ -318,10 +320,8 @@ public struct ComposerControlRow: View {
             }
 
             FlowPill(isActive: $flowMode)
-
-            Spacer()
         }
-        .frame(minHeight: 44, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
     }
 }
 
@@ -348,7 +348,8 @@ public struct FlowPill: View {
                     .foregroundColor(isActive ? OCColor.warning : OCColor.textSecondary)
             }
             .padding(.horizontal, 9)
-            .frame(height: 28)
+            .padding(.vertical, 4)
+            .frame(minHeight: 28)
             .background(
                 RoundedRectangle(cornerRadius: OCRadius.r14)
                     .fill(isActive ? OCColor.warning.opacity(0.14) : OCColor.bgLayer1.opacity(0.5))
@@ -359,7 +360,7 @@ public struct FlowPill: View {
             )
         }
         .buttonStyle(.plain)
-        .frame(height: 44)
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
         .accessibilityLabel(isActive ? "Modo Flow activado: omite confirmaciones rutinarias (acciones sensibles siguen pidiendo permiso)" : "Activar modo Flow acotado")
     }
@@ -390,7 +391,8 @@ public struct AgentPill: View {
                     .foregroundColor(OCColor.textPrimary)
             }
             .padding(.horizontal, 9)
-            .frame(height: 28)
+            .padding(.vertical, 4)
+            .frame(minHeight: 28)
             .background(
                 RoundedRectangle(cornerRadius: OCRadius.r14)
                     .fill(mode.softColor)
@@ -406,7 +408,7 @@ public struct AgentPill: View {
         .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
             isPressed = pressing
         }, perform: {})
-        .frame(height: 44) // hit target
+        .frame(minHeight: 44) // hit target
         .contentShape(Rectangle())
     }
 }
@@ -442,8 +444,9 @@ public struct ModelPill: View {
                     .lineLimit(1)
             }
             .padding(.horizontal, 9)
-            .frame(height: 28)
-            .frame(maxWidth: 136)
+            .padding(.vertical, 4)
+            .frame(minHeight: 28)
+            .frame(maxWidth: 260)
             .background(
                 RoundedRectangle(cornerRadius: OCRadius.r14)
                     .fill(OCColor.bgLayer1.opacity(0.5))
@@ -459,7 +462,7 @@ public struct ModelPill: View {
         .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
             isPressed = pressing
         }, perform: {})
-        .frame(height: 44)
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
     }
 
@@ -498,7 +501,8 @@ public struct ModelPillPlaceholder: View {
                     .foregroundColor(OCColor.textFaint)
             }
             .padding(.horizontal, 9)
-            .frame(height: 28)
+            .padding(.vertical, 4)
+            .frame(minHeight: 28)
             .background(
                 RoundedRectangle(cornerRadius: OCRadius.r14)
                     .fill(OCColor.bgLayer1.opacity(0.3))
@@ -509,7 +513,7 @@ public struct ModelPillPlaceholder: View {
             )
         }
         .buttonStyle(.plain)
-        .frame(height: 44)
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
     }
 }
