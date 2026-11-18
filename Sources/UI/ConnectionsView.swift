@@ -157,7 +157,7 @@ public struct ConnectionsView: View {
         } header: {
             Text("ChatGPT Plus/Pro (OAuth)")
         } footer: {
-            Text("Inicia sesión con tu cuenta ChatGPT Plus o Pro usando el flujo de dispositivo de Codex para usar GPT-5.4 / Codex con tu suscripción semanal sin pagar API key.")
+            Text("Inicia sesión con tu cuenta ChatGPT Plus o Pro usando el flujo de dispositivo de Codex para usar los modelos reales de tu cuenta con tu suscripción semanal sin pagar API key.")
         }
     }
 

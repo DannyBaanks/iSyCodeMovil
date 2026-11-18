@@ -18,7 +18,8 @@ public actor ChatGPTCodexProvider: @preconcurrency ModelProvider {
     )
     public private(set) var availableModels: [String] = []
 
-    private static let modelsEndpoint = URL(string: "https://chatgpt.com/backend-api/codex/models?client_version=0.1.0")!
+    private static let codexClientVersion = "0.167.0"
+    private static let modelsEndpoint = URL(string: "https://chatgpt.com/backend-api/codex/models?client_version=0.167.0")!
     private static let responsesEndpoint = URL(string: "https://chatgpt.com/backend-api/codex/responses")!
     private let session: URLSession
 
@@ -39,42 +40,36 @@ public actor ChatGPTCodexProvider: @preconcurrency ModelProvider {
     }
 
     private func fetchAvailableModels(creds: (accessToken: String, accountID: String)) async throws -> [String] {
-        let candidates = [
-            Self.modelsEndpoint,
-            URL(string: "https://chatgpt.com/backend-api/codex/models")!
-        ]
-        var lastError = ""
-        for endpoint in candidates {
-            var req = URLRequest(url: endpoint, timeoutInterval: 20)
-            req.httpMethod = "GET"
-            req.setValue("Bearer \(creds.accessToken)", forHTTPHeaderField: "Authorization")
-            if !creds.accountID.isEmpty {
-                req.setValue(creds.accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
-            }
-            req.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
-            req.setValue("codex_cli_rs/0.1.0", forHTTPHeaderField: "User-Agent")
-            req.setValue("application/json", forHTTPHeaderField: "Accept")
-
-            let (data, response) = try await session.data(for: req)
-            guard let http = response as? HTTPURLResponse else { continue }
-            if http.statusCode == 401 || http.statusCode == 403 {
-                let body = String(data: data.prefix(300), encoding: .utf8) ?? ""
-                lastError = "HTTP \(http.statusCode): \(body)"
-                continue
-            }
-            guard (200...299).contains(http.statusCode) else {
-                let body = String(data: data.prefix(300), encoding: .utf8) ?? ""
-                lastError = "HTTP \(http.statusCode): \(body)"
-                continue
-            }
-            if let slugs = Self.extractModelSlugs(from: data), !slugs.isEmpty {
-                return slugs
-            }
-            let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
-            lastError = "Formato inesperado: \(preview)"
+        var req = URLRequest(url: Self.modelsEndpoint, timeoutInterval: 20)
+        req.httpMethod = "GET"
+        req.setValue("Bearer \(creds.accessToken)", forHTTPHeaderField: "Authorization")
+        if !creds.accountID.isEmpty {
+            req.setValue(creds.accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
         }
-        await ChatGPTOAuthStore.setDiscoveryError(lastError.isEmpty ? "Sin modelos devueltos." : lastError)
-        throw ModelProviderError.networkError("No pude listar modelos de ChatGPT Codex (\(lastError)).")
+        req.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
+        req.setValue("codex_cli_rs/\(Self.codexClientVersion)", forHTTPHeaderField: "User-Agent")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw ModelProviderError.networkError("Respuesta inválida al consultar modelos de ChatGPT Codex.")
+        }
+        guard (200...299).contains(http.statusCode) else {
+            let body = String(data: data.prefix(400), encoding: .utf8) ?? ""
+            let msg = "HTTP \(http.statusCode): \(body)"
+            await ChatGPTOAuthStore.setDiscoveryError(msg)
+            if http.statusCode == 401 || http.statusCode == 403 {
+                throw ModelProviderError.networkError("Auth/HTTP \(http.statusCode) en models: \(body)")
+            }
+            throw ModelProviderError.networkError("No pude listar modelos de ChatGPT Codex (\(msg)).")
+        }
+        if let slugs = Self.extractModelSlugs(from: data), !slugs.isEmpty {
+            return slugs
+        }
+        let preview = String(data: data.prefix(400), encoding: .utf8) ?? ""
+        let msg = "Formato inesperado: \(preview)"
+        await ChatGPTOAuthStore.setDiscoveryError(msg)
+        throw ModelProviderError.networkError("No pude listar modelos de ChatGPT Codex (\(msg)).")
     }
 
     private static func extractModelSlugs(from data: Data) -> [String]? {
@@ -181,7 +176,7 @@ public actor ChatGPTCodexProvider: @preconcurrency ModelProvider {
                         req.setValue(creds.accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
                     }
                     req.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
-                    req.setValue("codex_cli_rs/0.1.0", forHTTPHeaderField: "User-Agent")
+                    req.setValue("codex_cli_rs/\(Self.codexClientVersion)", forHTTPHeaderField: "User-Agent")
                     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
 
