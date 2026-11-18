@@ -716,6 +716,23 @@ public struct AgentBuilderDraft: Codable, Sendable, Equatable {
     public var contract: AgentContract
     public var savedAt: Date
 
+    public static func forNewAgent() -> Self {
+        guard let template = AgentTemplateCatalog.all.first(where: { $0.id == "custom_agent" }) else {
+            return AgentBuilderDraft()
+        }
+        return AgentBuilderDraft(selectedTemplateID: template.id, contract: template.makeInitialContract())
+    }
+
+    /// Change only the draft. Scope review and registration happen separately.
+    public mutating func addTools(_ tools: [String], compositions: [L1ToolDefinition]) {
+        for composition in compositions where !contract.l1Tools.contains(where: { $0.name == composition.name }) {
+            contract.l1Tools.append(composition)
+        }
+        for tool in tools + compositions.flatMap({ $0.steps.map(\.tool) }) where !contract.enabledL0Tools.contains(tool) {
+            contract.enabledL0Tools.append(tool)
+        }
+    }
+
     public init(
         currentStepIndex: Int = 0,
         selectedTemplateID: String = "store_creator",
@@ -765,8 +782,7 @@ public final class AgentContractStore: ObservableObject {
             self.agents = decoded
         } else if agents.isEmpty {
             // Seed with a ready-to-inspect starter agent so "Mis agentes" is immediately useful
-            var starter = AgentTemplateCatalog.all[0].makeInitialContract()
-            starter.localApprovalGrantedAt = Date()
+            let starter = AgentTemplateCatalog.all[0].makeInitialContract()
             self.agents = [starter]
             saveAgentsToDisk()
         }
@@ -785,8 +801,18 @@ public final class AgentContractStore: ObservableObject {
         loadFromDisk()
     }
 
-    public func saveDraft(_ draft: AgentBuilderDraft) {
+    @discardableResult
+    public func saveDraft(_ draft: AgentBuilderDraft) -> Bool {
         var updated = draft
+        if let previous = activeDraft?.contract, previous.id == updated.contract.id {
+            let next = updated.contract
+            if Set(previous.enabledL0Tools) != Set(next.enabledL0Tools)
+                || previous.l1Tools != next.l1Tools || previous.requiredSecrets != next.requiredSecrets
+                || previous.preferredBackend != next.preferredBackend || previous.scripts != next.scripts
+                || previous.dependencies != next.dependencies || previous.systemInstructions != next.systemInstructions {
+                updated.contract.localApprovalGrantedAt = nil
+            }
+        }
         updated.savedAt = Date()
         updated.contract.updatedAt = Date()
         updated.contract.requiredScopes = AgentContract.computeRequiredScopes(
@@ -801,8 +827,11 @@ public final class AgentContractStore: ObservableObject {
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(updated)
             try data.write(to: draftURL, options: .atomic)
+            lastError = nil
+            return true
         } catch {
             lastError = "No se pudo guardar el borrador: \(error.localizedDescription)"
+            return false
         }
     }
 
@@ -811,7 +840,9 @@ public final class AgentContractStore: ObservableObject {
         try? FileManager.default.removeItem(at: draftURL)
     }
 
-    public func saveAgent(_ contract: AgentContract, registerL1Tools: Bool = true) async {
+    @discardableResult
+    public func saveAgent(_ contract: AgentContract, registerL1Tools: Bool = true) async -> Bool {
+        let previous = agents
         var updated = contract
         updated.updatedAt = Date()
         updated.requiredScopes = AgentContract.computeRequiredScopes(
@@ -823,13 +854,22 @@ public final class AgentContractStore: ObservableObject {
         } else {
             agents.insert(updated, at: 0)
         }
-        saveAgentsToDisk()
+        guard saveAgentsToDisk() else {
+            agents = previous
+            return false
+        }
 
-        if registerL1Tools {
-            for l1 in updated.l1Tools {
-                try? await DynamicToolRegistry.shared.upsert(l1)
+        if registerL1Tools && updated.localApprovalGrantedAt != nil {
+            do {
+                for l1 in updated.l1Tools {
+                    try await DynamicToolRegistry.shared.upsert(l1)
+                }
+            } catch {
+                lastError = "El contrato se guardó. No se pudieron registrar todas sus herramientas: \(error.localizedDescription)"
+                return false
             }
         }
+        return true
     }
 
     public func deleteAgent(id: String) {
@@ -883,7 +923,8 @@ public final class AgentContractStore: ObservableObject {
         )
     }
 
-    private func saveAgentsToDisk() {
+    @discardableResult
+    private func saveAgentsToDisk() -> Bool {
         do {
             try FileManager.default.createDirectory(at: agentsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             let encoder = JSONEncoder()
@@ -892,8 +933,10 @@ public final class AgentContractStore: ObservableObject {
             let data = try encoder.encode(agents)
             try data.write(to: agentsURL, options: .atomic)
             lastError = nil
+            return true
         } catch {
             lastError = "No se pudo guardar el agente: \(error.localizedDescription)"
+            return false
         }
     }
 }

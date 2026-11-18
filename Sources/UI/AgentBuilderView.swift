@@ -56,9 +56,19 @@ public struct AgentBuilderView: View {
     @EnvironmentObject private var router: AppShellRouter
     @ObservedObject private var contractStore = AgentContractStore.shared
     @ObservedObject private var isymcpStore = ISyMCPStore.shared
-    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var draft: AgentBuilderDraft = AgentContractStore.shared.activeDraft ?? AgentBuilderDraft()
+    @State private var initialDraft = AgentBuilderDraft.forNewAgent()
+    @State private var showsSteps = false
+    @State private var showsTemplates = false
+    @State private var pendingTemplate: AgentTemplate?
+    private var draft: AgentBuilderDraft {
+        get { contractStore.activeDraft ?? initialDraft }
+        nonmutating set { contractStore.saveDraft(newValue) }
+    }
+    private var draftBinding: Binding<AgentBuilderDraft> {
+        Binding(get: { draft }, set: { draft = $0 })
+    }
     @State private var recommendationNote: String?
     @State private var isRunningTest = false
     @State private var lastTestReceipt: PythonExecutionReceipt?
@@ -105,6 +115,7 @@ public struct AgentBuilderView: View {
                 .padding(OCSpacing.contentMargin)
                 .padding(.bottom, 76)
             }
+            .id(currentStep)
             .scrollDismissesKeyboard(.interactively)
 
             navigationFooterBar
@@ -113,17 +124,19 @@ public struct AgentBuilderView: View {
         .navigationTitle("Construir agente")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            if let persisted = contractStore.activeDraft {
-                draft = persisted
-            }
+            if contractStore.activeDraft == nil { contractStore.saveDraft(initialDraft) }
         }
-        .onChange(of: draft) { newValue in
-            contractStore.saveDraft(newValue)
-        }
-        .onChange(of: scenePhase) { phase in
-            if phase != .active {
-                contractStore.saveDraft(draft)
-            }
+        .alert(item: $pendingTemplate) { template in
+            Alert(title: Text("¿Usar la plantilla \(template.title)?"),
+                  message: Text("Se reemplazarán el objetivo y las herramientas de este borrador."),
+                  primaryButton: .default(Text("Usar plantilla")) {
+                      var updated = draft
+                      updated.selectedTemplateID = template.id
+                      updated.contract = template.makeInitialContract()
+                      draft = updated
+                      recommendationNote = template.gusPitch
+                      showsTemplates = false
+                  }, secondaryButton: .cancel(Text("Conservar borrador")))
         }
         .sheet(isPresented: $showCustomL1Composer) {
             CustomL1ToolComposerSheet { newL1 in
@@ -157,50 +170,56 @@ public struct AgentBuilderView: View {
     // MARK: - Step Progress Strip
 
     private var stepHeaderStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(AgentBuilderStep.allCases) { step in
-                    let isCurrent = step == currentStep
-                    let isCompleted = step.rawValue < currentStep.rawValue
-                    Button {
-                        OCHaptics.selection()
-                        withAnimation(OCMotion.smooth) {
-                            draft.currentStepIndex = step.rawValue
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: isCompleted ? "checkmark.circle.fill" : step.symbol)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(isCurrent ? OCColor.onAccent : (isCompleted ? OCColor.success : OCColor.textSecondary))
-                            Text("\(step.shortCode) · \(step.title)")
-                                .font(.system(size: 12.5, weight: isCurrent ? .semibold : .medium))
-                                .foregroundColor(isCurrent ? OCColor.onAccent : OCColor.textPrimary)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(
-                            Capsule().fill(
-                                isCurrent
-                                    ? AnyShapeStyle(IysThemePreferences.active.accent.gradient)
-                                    : AnyShapeStyle(OCColor.bgBase)
-                            )
-                        )
-                        .overlay(
-                            Capsule().stroke(
-                                isCurrent ? Color.clear : (isCompleted ? OCColor.success.opacity(0.45) : OCColor.borderBase),
-                                lineWidth: 1
-                            )
-                        )
-                    }
-                    .buttonStyle(OCInteractiveButtonStyle())
-                    .accessibilityIdentifier("builder-step-\(step.rawValue)")
+        VStack(alignment: .leading, spacing: OCSpacing.sm) {
+            Button {
+                OCHaptics.selection()
+                withAnimation(reduceMotion ? nil : OCMotion.snappy) { showsSteps.toggle() }
+            } label: {
+                HStack {
+                    Text("Paso \(currentStep.rawValue + 1) de \(AgentBuilderStep.allCases.count)")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(showsSteps ? "Ocultar pasos" : "Ver pasos").font(.subheadline)
+                    Image(systemName: showsSteps ? "chevron.up" : "chevron.down")
                 }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, OCSpacing.contentMargin)
-            .padding(.vertical, 10)
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("builder-step-menu")
+            ProgressView(value: Double(currentStep.rawValue + 1), total: Double(AgentBuilderStep.allCases.count))
+                .tint(IysThemePreferences.active.accent)
+                .accessibilityHidden(true)
+            if showsSteps {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(AgentBuilderStep.allCases) { step in
+                            Button {
+                                withAnimation(reduceMotion ? nil : OCMotion.smooth) {
+                                    draft.currentStepIndex = step.rawValue
+                                    showsSteps = false
+                                }
+                            } label: {
+                                HStack {
+                                    Label(step.title, systemImage: step.symbol)
+                                    Spacer()
+                                    if step == currentStep { Image(systemName: "checkmark") }
+                                }
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(step == currentStep ? .isSelected : [])
+                            .accessibilityIdentifier("builder-step-\(step.rawValue)")
+                        }
+                    }
+                }
+                .frame(maxHeight: 190)
+            }
         }
-        .background(OCColor.bgBase.opacity(0.90))
-        .overlay(Rectangle().frame(height: 0.5).foregroundColor(OCColor.borderMuted), alignment: .bottom)
+        .foregroundColor(OCColor.textPrimary)
+        .padding(.horizontal, OCSpacing.contentMargin)
+        .padding(.bottom, OCSpacing.sm)
     }
 
     // MARK: - Step Body
@@ -228,36 +247,26 @@ public struct AgentBuilderView: View {
     private var stepAGoalView: some View {
         VStack(alignment: .leading, spacing: OCSpacing.lg) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Paso A · ¿Qué quieres que haga tu agente?")
-                    .font(.system(size: 20, weight: .bold))
+                Text("¿Qué quieres delegar?")
+                    .font(.title2.weight(.bold))
                     .foregroundColor(OCColor.textPrimary)
-                Text("Elige una plantilla lista para usar o escribe tu objetivo con tus propias palabras. No necesitas saber programar.")
+                Text("Por ejemplo, revisar las ventas de tu tienda o clasificar tus documentos.")
                     .font(.system(size: 14))
                     .foregroundColor(OCColor.textSecondary)
             }
 
             VStack(alignment: .leading, spacing: OCSpacing.sm) {
-                Text("PLANTILLAS DECLARATIVAS")
-                    .font(OCTypography.sectionLabel)
-                    .foregroundColor(OCColor.textFaint)
-
-                ForEach(AgentTemplateCatalog.all) { template in
-                    templateCard(template)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: OCSpacing.sm) {
                 HStack {
-                    Text("OBJETIVO DE TU AGENTE")
+                    Text("Objetivo")
                         .font(OCTypography.sectionLabel)
                         .foregroundColor(OCColor.textFaint)
                     Spacer()
-                    DictationMicrophoneButton(targetText: $draft.contract.goal)
+                    DictationMicrophoneButton(targetText: draftBinding.contract.goal)
                 }
 
                 DictationLiveStatusBar()
 
-                TextField("Describe qué resultado quieres conseguir…", text: $draft.contract.goal, axis: .vertical)
+                TextField("Describe qué resultado quieres conseguir…", text: draftBinding.contract.goal, axis: .vertical)
                     .lineLimit(3...6)
                     .font(.system(size: 15))
                     .foregroundColor(OCColor.textPrimary)
@@ -270,11 +279,10 @@ public struct AgentBuilderView: View {
                 Button {
                     OCHaptics.light()
                     let rec = AgentTemplateCatalog.recommendTools(forGoal: draft.contract.goal)
-                    draft.contract.enabledL0Tools = rec.l0
-                    draft.contract.l1Tools = rec.l1
+                    draft.addTools(rec.l0, compositions: rec.l1)
                     recommendationNote = rec.explanation
                 } label: {
-                    Label("Pedir a GUS que seleccione las herramientas para este objetivo", systemImage: "sparkles")
+                    Label("Añadir herramientas según el objetivo", systemImage: "sparkles")
                         .font(.system(size: 13.5, weight: .semibold))
                         .foregroundColor(IysThemePreferences.active.accent)
                         .padding(.horizontal, 12)
@@ -284,6 +292,7 @@ public struct AgentBuilderView: View {
                         .overlay(Capsule().stroke(OCColor.agentBuildBorder, lineWidth: 1))
                 }
                 .buttonStyle(OCInteractiveButtonStyle())
+                .disabled(draft.contract.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                 if let recommendationNote {
                     HStack(alignment: .top, spacing: 8) {
@@ -298,6 +307,12 @@ public struct AgentBuilderView: View {
                     .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
                 }
             }
+
+            DisclosureGroup("Empezar con una plantilla", isExpanded: $showsTemplates) {
+                ForEach(AgentTemplateCatalog.all) { template in templateCard(template) }
+            }
+            .tint(IysThemePreferences.active.accent)
+
         }
     }
 
@@ -306,11 +321,7 @@ public struct AgentBuilderView: View {
         let tint = Color(hex: template.accentHex)
         return Button {
             OCHaptics.selection()
-            withAnimation(OCMotion.snappy) {
-                draft.selectedTemplateID = template.id
-                draft.contract = template.makeInitialContract()
-                recommendationNote = template.gusPitch
-            }
+            pendingTemplate = template
         } label: {
             VStack(alignment: .leading, spacing: OCSpacing.sm) {
                 HStack(spacing: OCSpacing.md) {
@@ -383,10 +394,11 @@ public struct AgentBuilderView: View {
     private var stepBCapabilitiesView: some View {
         VStack(alignment: .leading, spacing: OCSpacing.lg) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Paso B · Capacidades del agente")
-                    .font(.system(size: 20, weight: .bold))
+                Text("Capacidades del agente")
+                    .font(.title2.weight(.bold))
+                    .accessibilityAddTraits(.isHeader)
                     .foregroundColor(OCColor.textPrimary)
-                Text("ISyCode separa las herramientas básicas (L0) de las capacidades reutilizables compuestas (L1). Activa solo lo que tu agente necesite.")
+                Text("Elige qué podrá hacer. Un flujo reúne varias herramientas en una secuencia que puedes revisar.")
                     .font(.system(size: 14))
                     .foregroundColor(OCColor.textSecondary)
             }
@@ -394,14 +406,14 @@ public struct AgentBuilderView: View {
             // L1 Composite Capabilities Section
             VStack(alignment: .leading, spacing: OCSpacing.sm) {
                 HStack {
-                    Text("CAPACIDADES COMPUESTAS (L1)")
+                    Text("Flujos")
                         .font(OCTypography.sectionLabel)
                         .foregroundColor(OCColor.textFaint)
                     Spacer()
                     Button {
                         showLearnRecorder = true
                     } label: {
-                        Label("Aprender por WDA", systemImage: "record.circle")
+                        Label("Grabar pasos", systemImage: "record.circle")
                             .font(.system(size: 12.5, weight: .semibold))
                             .foregroundColor(OCColor.danger)
                     }
@@ -410,7 +422,7 @@ public struct AgentBuilderView: View {
                     Button {
                         showCustomL1Composer = true
                     } label: {
-                        Label("Componer L1", systemImage: "plus.circle.fill")
+                        Label("Crear flujo", systemImage: "plus.circle.fill")
                             .font(.system(size: 12.5, weight: .semibold))
                             .foregroundColor(IysThemePreferences.active.accent)
                     }
@@ -427,7 +439,7 @@ public struct AgentBuilderView: View {
 
             // L0 Primitives Section
             VStack(alignment: .leading, spacing: OCSpacing.sm) {
-                Text("HERRAMIENTAS PRIMITIVAS (L0)")
+                Text("Herramientas")
                     .font(OCTypography.sectionLabel)
                     .foregroundColor(OCColor.textFaint)
 
@@ -477,6 +489,7 @@ public struct AgentBuilderView: View {
                             }
                         ))
                         .labelsHidden()
+                        .accessibilityLabel(l1.name)
                         .tint(IysThemePreferences.active.accent)
                     }
 
@@ -484,9 +497,25 @@ public struct AgentBuilderView: View {
                         .font(.system(size: 13))
                         .foregroundColor(OCColor.textSecondary)
 
-                    Text("Pasos: \(l1.steps.map(\.tool).joined(separator: " → "))")
-                        .font(OCTypography.metaMono)
-                        .foregroundColor(OCColor.textFaint)
+                    DisclosureGroup("Ver \(l1.steps.count) pasos") {
+                        VStack(alignment: .leading, spacing: OCSpacing.sm) {
+                            ForEach(l1.steps.indices, id: \.self) { index in
+                                let step = l1.steps[index]
+                                let title = Self.l0CatalogItems.first(where: { $0.id == step.tool })?.title ?? step.tool
+                                Text("\(index + 1). \(title)").font(.subheadline)
+                            }
+                            if !l1.parameters.isEmpty {
+                                Text("Datos de entrada").font(.caption.weight(.semibold))
+                                ForEach(l1.parameters, id: \.name) { parameter in
+                                    Text(parameter.description).font(.caption)
+                                }
+                            }
+                            Text(l1.outputSchema).font(.caption)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(.subheadline)
+                    .tint(IysThemePreferences.active.accent)
 
                     HStack(spacing: 6) {
                         Image(systemName: effectiveCaps.isDestructive ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
@@ -521,14 +550,15 @@ public struct AgentBuilderView: View {
         .init(id: "gmail.read.inbox", title: "Leer bandeja de Gmail", reason: "Revisa correos en segundo plano usando la API de Google (pide permiso la primera vez).", icon: "envelope.fill", badge: "Google"),
         .init(id: "googlecalendar.read.events", title: "Consultar Agenda de Google", reason: "Revisa tus eventos del día sin salir de iSyCode.", icon: "calendar", badge: "Google"),
         .init(id: "notifications.schedule", title: "Programar recordatorios en el iPhone", reason: "Crea alertas locales con tu confirmación.", icon: "bell.badge.fill", badge: "Pide permiso"),
-        .init(id: "iphone_list_elements", title: "Control del iPhone (WDA)", reason: "Lee e interactúa con otras apps del iPhone con aprobación por secuencia.", icon: "iphone", badge: "WDA"),
+        .init(id: "iphone_list_elements", title: "Consultar la pantalla del iPhone", reason: "Consulta los elementos visibles de la pantalla cuando el control del iPhone esté disponible.", icon: "iphone", badge: "WDA"),
         .init(id: "learn_action_prepare", title: "Aprender acción por demostración", reason: "Observa con WDA lo que haces en WhatsApp o Safari para enseñárselo al agente.", icon: "record.circle", badge: "WDA Polling"),
         .init(id: "secret_vault_list", title: "Llavero protegido (Face ID)", reason: "Lista únicamente aliases de contraseñas sin ver nunca su texto claro.", icon: "key.fill", badge: "Keychain"),
         .init(id: "isymcp_status", title: "Puente remoto ISyMCP (PC)", reason: "Consulta compuertas, tareas y compiladores de tu computadora por Tailscale + Face ID.", icon: "desktopcomputer", badge: "ISyMCP PC")
     ]
 
     private func l0ToggleCard(_ item: L0CatalogItem) -> some View {
-        let isOn = draft.contract.enabledL0Tools.contains(item.id)
+        let requiredBy = draft.contract.l1Tools.filter { $0.steps.contains { $0.tool == item.id } }
+        let isOn = draft.contract.enabledL0Tools.contains(item.id) || !requiredBy.isEmpty
         return Button {
             OCHaptics.selection()
             if isOn {
@@ -562,6 +592,9 @@ public struct AgentBuilderView: View {
                             .padding(.vertical, 2)
                             .background(Capsule().fill(OCColor.bgLayer1))
                     }
+                    if !requiredBy.isEmpty {
+                        Text("Incluida en " + requiredBy.map(\.name).joined(separator: ", ")).font(.caption)
+                    }
                     Text(item.reason)
                         .font(.system(size: 12.5))
                         .foregroundColor(OCColor.textSecondary)
@@ -572,6 +605,8 @@ public struct AgentBuilderView: View {
             .ocCard(radius: OCRadius.r12, border: isOn ? IysThemePreferences.active.accent.opacity(0.45) : OCColor.borderBase)
         }
         .buttonStyle(OCInteractiveButtonStyle())
+        .disabled(!requiredBy.isEmpty)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
     // MARK: - Paso C: Personalización
@@ -579,8 +614,9 @@ public struct AgentBuilderView: View {
     private var stepCCustomizationView: some View {
         VStack(alignment: .leading, spacing: OCSpacing.lg) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Paso C · Personalización")
-                    .font(.system(size: 20, weight: .bold))
+                Text("Personalización")
+                    .font(.title2.weight(.bold))
+                    .accessibilityAddTraits(.isHeader)
                     .foregroundColor(OCColor.textPrimary)
                 Text("Elige el nombre de tu agente, cómo quieres que te responda y dónde prefieres que ejecute sus operaciones.")
                     .font(.system(size: 14))
@@ -591,7 +627,7 @@ public struct AgentBuilderView: View {
                 Text("NOMBRE DEL AGENTE")
                     .font(OCTypography.sectionLabel)
                     .foregroundColor(OCColor.textFaint)
-                TextField("Ej. Mi Creador de Tienda", text: $draft.contract.name)
+                TextField("Ej. Mi Creador de Tienda", text: draftBinding.contract.name)
                     .font(.system(size: 15.5, weight: .medium))
                     .foregroundColor(OCColor.textPrimary)
                     .padding(12)
@@ -604,7 +640,7 @@ public struct AgentBuilderView: View {
                 Text("COMPORTAMIENTO E INSTRUCCIONES")
                     .font(OCTypography.sectionLabel)
                     .foregroundColor(OCColor.textFaint)
-                TextField("Cómo debe actuar y explicar sus resultados…", text: $draft.contract.systemInstructions, axis: .vertical)
+                TextField("Cómo debe actuar y explicar sus resultados…", text: draftBinding.contract.systemInstructions, axis: .vertical)
                     .lineLimit(3...6)
                     .font(.system(size: 14.5))
                     .foregroundColor(OCColor.textPrimary)
@@ -615,7 +651,7 @@ public struct AgentBuilderView: View {
             }
 
             VStack(alignment: .leading, spacing: OCSpacing.sm) {
-                Text("DÓNDE TIENE PERMITIDO EJECUTAR (BACKEND)")
+                Text("Lugar de ejecución")
                     .font(OCTypography.sectionLabel)
                     .foregroundColor(OCColor.textFaint)
 
@@ -676,8 +712,9 @@ public struct AgentBuilderView: View {
         )
         return VStack(alignment: .leading, spacing: OCSpacing.lg) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Paso D · Alcance y Autorizaciones")
-                    .font(.system(size: 20, weight: .bold))
+                Text("Alcance y Autorizaciones")
+                    .font(.title2.weight(.bold))
+                    .accessibilityAddTraits(.isHeader)
                     .foregroundColor(OCColor.textPrimary)
                 Text("Revisa en lenguaje claro qué podrá hacer este agente. Las herramientas compuestas L1 heredan exactamente los permisos de sus pasos: nunca obtienen autoridad extra.")
                     .font(.system(size: 14))
@@ -742,8 +779,9 @@ public struct AgentBuilderView: View {
         let test = draft.contract.tests.first ?? AgentTemplateCatalog.all[0].defaultTest
         return VStack(alignment: .leading, spacing: OCSpacing.lg) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Paso E · Prueba en workspace de prueba")
-                    .font(.system(size: 20, weight: .bold))
+                Text("Prueba en workspace de prueba")
+                    .font(.title2.weight(.bold))
+                    .accessibilityAddTraits(.isHeader)
                     .foregroundColor(OCColor.textPrimary)
                 Text("Ejecuta una tarea real de ejemplo con el motor Python local (`pocketpy` 2.2.0) antes de guardar tu agente.")
                     .font(.system(size: 14))
@@ -797,21 +835,22 @@ public struct AgentBuilderView: View {
                 .disabled(isRunningTest)
                 .accessibilityIdentifier("builder-run-test")
 
-                if let receipt = lastTestReceipt {
+                if let receipt = lastTestReceipt, test.lastRunAt != nil {
+                    let passed = test.lastPassed == true
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Image(systemName: receipt.succeeded ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                                .foregroundColor(receipt.succeeded ? OCColor.success : OCColor.danger)
-                            Text(receipt.succeeded ? "Prueba superada · \(receipt.durationMs) ms" : "La prueba reportó un error")
+                            Image(systemName: passed ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                                .foregroundColor(passed ? OCColor.success : OCColor.danger)
+                            Text(passed ? "Prueba superada · \(receipt.durationMs) ms" : "La prueba no obtuvo el resultado esperado")
                                 .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(receipt.succeeded ? OCColor.success : OCColor.danger)
+                                .foregroundColor(passed ? OCColor.success : OCColor.danger)
                             Spacer()
                             Text(receipt.runtimeVersion)
                                 .font(OCTypography.metaMono)
                                 .foregroundColor(OCColor.textFaint)
                         }
 
-                        Text(receipt.succeeded ? receipt.stdout : (receipt.error ?? ""))
+                        Text(receipt.error ?? receipt.stdout)
                             .font(OCTypography.codeSmall)
                             .foregroundColor(OCColor.textPrimary)
                             .textSelection(.enabled)
@@ -821,7 +860,7 @@ public struct AgentBuilderView: View {
                             .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
                     }
                     .padding(OCSpacing.md)
-                    .background((receipt.succeeded ? OCColor.success : OCColor.danger).opacity(0.10))
+                    .background((passed ? OCColor.success : OCColor.danger).opacity(0.10))
                     .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
                 }
             }
@@ -833,6 +872,7 @@ public struct AgentBuilderView: View {
     private func runBuilderVerificationTest(_ test: AgentContractTest) {
         guard !isRunningTest else { return }
         isRunningTest = true
+        let contractID = draft.contract.id
         let script = test.pythonVerificationScript ?? "print(INPUT_TEXT)"
         Task {
             let receipt = await PythonRuntimeService.shared.evaluate(
@@ -842,17 +882,23 @@ public struct AgentBuilderView: View {
             )
             await MainActor.run {
                 isRunningTest = false
+                guard draft.contract.id == contractID else { return }
                 lastTestReceipt = receipt
-                if receipt.succeeded {
+                let passed = receipt.succeeded && receipt.stdout.contains(test.expectedSubstring)
+                if passed {
                     OCHaptics.success()
                 } else {
                     OCHaptics.error()
                 }
                 var updatedTest = test
                 updatedTest.lastRunAt = Date()
-                updatedTest.lastPassed = receipt.succeeded && receipt.stdout.contains(test.expectedSubstring)
+                updatedTest.lastPassed = passed
                 updatedTest.lastOutput = receipt.stdout
-                draft.contract.tests = [updatedTest]
+                if let index = draft.contract.tests.firstIndex(where: { $0.id == test.id }) {
+                    draft.contract.tests[index] = updatedTest
+                } else if draft.contract.tests.isEmpty {
+                    draft.contract.tests.append(updatedTest)
+                }
             }
         }
     }
@@ -862,8 +908,9 @@ public struct AgentBuilderView: View {
     private var stepFSaveView: some View {
         VStack(alignment: .leading, spacing: OCSpacing.lg) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Paso F · Guardar y usar tu agente")
-                    .font(.system(size: 20, weight: .bold))
+                Text("Guardar y usar tu agente")
+                    .font(.title2.weight(.bold))
+                    .accessibilityAddTraits(.isHeader)
                     .foregroundColor(OCColor.textPrimary)
                 Text("Tu agente queda guardado como un contrato de capacidades (`.isyagent.json`), listo para conversar, reutilizar sus herramientas L1 o exportarlo.")
                     .font(.system(size: 14))
@@ -894,15 +941,23 @@ public struct AgentBuilderView: View {
                     .font(.system(size: 14))
                     .foregroundColor(OCColor.textSecondary)
 
+                if draft.contract.localApprovalGrantedAt == nil {
+                    Button {
+                        draft.currentStepIndex = AgentBuilderStep.authorizations.rawValue
+                    } label: {
+                        Label("Revisar permisos antes de guardar", systemImage: "hand.raised")
+                    }
+                    .accessibilityIdentifier("builder-review-permissions")
+                }
+
                 HStack(spacing: 10) {
                     Button {
                         Task {
-                            if draft.contract.localApprovalGrantedAt == nil {
-                                draft.contract.localApprovalGrantedAt = Date()
-                            }
-                            await contractStore.saveAgent(draft.contract, registerL1Tools: true)
+                            let reviewed = draft.contract
+                            guard reviewed.localApprovalGrantedAt != nil,
+                                  await contractStore.saveAgent(reviewed, registerL1Tools: true) else { return }
                             OCHaptics.success()
-                            savedBannerText = "Agente '\(draft.contract.name)' guardado en Mis agentes."
+                            savedBannerText = "Agente '\(reviewed.name)' guardado en Mis agentes."
                         }
                     } label: {
                         Label("Guardar en Mis agentes", systemImage: "tray.and.arrow.down.fill")
@@ -918,14 +973,11 @@ public struct AgentBuilderView: View {
 
                     Button {
                         Task {
-                            if draft.contract.localApprovalGrantedAt == nil {
-                                draft.contract.localApprovalGrantedAt = Date()
-                            }
-                            await contractStore.saveAgent(draft.contract, registerL1Tools: true)
-                            contractStore.activeAgentForSession = draft.contract
-                            let firstPrompt = draft.contract.exampleTasks.first
-                            _ = await store.openOrCreateConversation(preferNew: true, initialPrompt: firstPrompt)
-                            router.openConversations()
+                            let reviewed = draft.contract
+                            guard reviewed.localApprovalGrantedAt != nil,
+                                  await contractStore.saveAgent(reviewed, registerL1Tools: true) else { return }
+                            contractStore.activeAgentForSession = reviewed
+                            if await store.openOrCreateConversation(preferNew: true) { router.openConversations() }
                         }
                     } label: {
                         Label("Probar en Chat", systemImage: "bubble.left.and.bubble.right.fill")
@@ -938,6 +990,13 @@ public struct AgentBuilderView: View {
                             .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
                     }
                     .buttonStyle(OCInteractiveButtonStyle())
+                }
+                .disabled(draft.contract.localApprovalGrantedAt == nil)
+
+                if let error = contractStore.lastError {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundColor(OCColor.danger)
                 }
 
                 Button {
@@ -965,7 +1024,7 @@ public struct AgentBuilderView: View {
             if currentStep.rawValue > 0 {
                 Button {
                     OCHaptics.light()
-                    withAnimation(OCMotion.smooth) {
+                    withAnimation(reduceMotion ? nil : OCMotion.smooth) {
                         draft.currentStepIndex -= 1
                     }
                 } label: {
@@ -985,16 +1044,12 @@ public struct AgentBuilderView: View {
 
             Spacer()
 
-            Text("Borrador guardado automáticamente")
-                .font(.system(size: 11))
-                .foregroundColor(OCColor.textFaint)
 
-            Spacer()
 
             if currentStep.rawValue < AgentBuilderStep.allCases.count - 1 {
                 Button {
                     OCHaptics.light()
-                    withAnimation(OCMotion.smooth) {
+                    withAnimation(reduceMotion ? nil : OCMotion.smooth) {
                         draft.currentStepIndex += 1
                     }
                 } label: {
@@ -1130,6 +1185,7 @@ public struct MyAgentsView: View {
     @ObservedObject private var contractStore = AgentContractStore.shared
     @ObservedObject private var isymcpStore = ISyMCPStore.shared
 
+    @State private var reviewContract: AgentContract?
     @State private var inspectingContract: AgentContract?
     @State private var showImportSheet = false
 
@@ -1184,6 +1240,16 @@ public struct MyAgentsView: View {
                 }
             }
         }
+        .alert(item: $reviewContract) { agent in
+            let scopes = AgentContract.computeRequiredScopes(l0Tools: agent.enabledL0Tools, l1Tools: agent.l1Tools)
+            return Alert(title: Text("Permisos de \(agent.name)"),
+                         message: Text(scopes.map { $0.title + " · " + $0.plainExplanation }.joined(separator: "\n\n")),
+                         primaryButton: .default(Text("Aceptar alcance")) {
+                             var approved = agent
+                             approved.localApprovalGrantedAt = Date()
+                             Task { await contractStore.saveAgent(approved) }
+                         }, secondaryButton: .cancel(Text("Volver")))
+        }
         .sheet(item: $inspectingContract) { contract in
             AgentContractInspectorSheet(contract: contract)
         }
@@ -1195,10 +1261,10 @@ public struct MyAgentsView: View {
     private var headerBanner: some View {
         HStack(spacing: OCSpacing.md) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Tus agentes por capacidades")
+                Text("Elige con quién trabajar")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(OCColor.textPrimary)
-                Text("Cada agente conserva sus herramientas L0/L1, scripts Python, permisos requeridos y pruebas en un contrato `.isyagent.json`. Desliza hacia abajo para actualizar.")
+                Text("Puedes abrir una conversación, revisar sus permisos o ajustar sus herramientas.")
                     .font(.system(size: 13))
                     .foregroundColor(OCColor.textSecondary)
             }
@@ -1271,18 +1337,15 @@ public struct MyAgentsView: View {
                 Button {
                     OCHaptics.light()
                     if compat.requiresUserAuthorization {
-                        contractStore.approveContractOnThisDevice(id: agent.id)
+                        reviewContract = agent
+                        return
                     }
                     contractStore.activeAgentForSession = agent
                     Task {
-                        _ = await store.openOrCreateConversation(
-                            preferNew: true,
-                            initialPrompt: agent.exampleTasks.first
-                        )
-                        router.openConversations()
+                        if await store.openOrCreateConversation(preferNew: true) { router.openConversations() }
                     }
                 } label: {
-                    Label(compat.requiresUserAuthorization ? "Autorizar y usar" : "Conversar con agente", systemImage: "bubble.left.and.bubble.right.fill")
+                    Label(compat.requiresUserAuthorization ? "Revisar permisos" : "Conversar con agente", systemImage: "bubble.left.and.bubble.right.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(OCColor.onAccent)
                         .padding(.horizontal, 12)
@@ -1436,8 +1499,8 @@ private struct ImportAgentContractSheet: View {
                             var approved = preview
                             approved.localApprovalGrantedAt = Date()
                             Task {
-                                await contractStore.saveAgent(approved, registerL1Tools: true)
-                                await MainActor.run { dismiss() }
+                                if await contractStore.saveAgent(approved, registerL1Tools: true) { dismiss() }
+                                else { errorMessage = contractStore.lastError }
                             }
                         }
                     }

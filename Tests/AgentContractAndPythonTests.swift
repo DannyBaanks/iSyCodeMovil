@@ -109,6 +109,32 @@ final class AgentContractAndPythonTests: XCTestCase {
         XCTAssertEqual(store2.activeDraft?.contract.name, "Mi Tienda Coral")
     }
 
+    @MainActor
+    func testSuggestedToolsPreserveSelectionsAndRequireNewReview() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = AgentContractStore(directoryURL: directory)
+        var draft = AgentBuilderDraft.forNewAgent()
+        XCTAssertTrue(draft.contract.goal.isEmpty)
+        draft.contract.enabledL0Tools = ["list_directory"]
+        draft.contract.localApprovalGrantedAt = Date()
+        XCTAssertTrue(store.saveDraft(draft))
+        draft.currentStepIndex = 2
+        XCTAssertTrue(store.saveDraft(draft))
+        XCTAssertNotNil(store.activeDraft?.contract.localApprovalGrantedAt)
+
+        let proposal = AgentTemplateCatalog.recommendTools(forGoal: "Revisar precios de mi tienda")
+        draft.addTools(proposal.l0, compositions: proposal.l1)
+        draft.addTools(proposal.l0, compositions: proposal.l1)
+        XCTAssertTrue(store.saveDraft(draft))
+        let restored = try XCTUnwrap(AgentContractStore(directoryURL: directory).activeDraft)
+        XCTAssertEqual(restored.currentStepIndex, 2)
+        XCTAssertNil(restored.contract.localApprovalGrantedAt)
+        XCTAssertTrue(restored.contract.enabledL0Tools.contains("list_directory"))
+        XCTAssertEqual(restored.contract.enabledL0Tools.count, Set(restored.contract.enabledL0Tools).count)
+        XCTAssertEqual(restored.contract.l1Tools.map(\.name), [L1ToolDefinition.sampleCatalogImporter.name])
+    }
+
     // MARK: - Bounded Sequence Scope & ISyMCP Signing
 
     func testSequenceApprovalScopeIsBoundedByBudgetAndExpiry() {
