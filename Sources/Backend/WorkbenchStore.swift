@@ -1088,7 +1088,7 @@ public final class WorkbenchStore: ObservableObject {
             isProcessingRemote = false
             runningSessionIDs.removeAll()
             connectionHealth = .connected
-            addSystemEvent("Connected")
+            addSystemEvent("Conectado")
 
         case .disconnected(let reason):
             sessionState.isProcessing = false

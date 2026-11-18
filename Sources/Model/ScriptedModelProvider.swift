@@ -46,9 +46,14 @@ public actor ScriptedModelProvider: @preconcurrency ModelProvider {
         tools: [ToolDefinition]?,
         options: GenerationOptions
     ) async throws -> ModelResponse {
+        if cursor >= script.count, !script.isEmpty, messages.last?.role == .user {
+            // Un turno nuevo con el guion agotado lo repite desde el principio: la demo
+            // sigue mostrando el flujo completo en vez de una sola línea por mensaje.
+            cursor = 0
+        }
         guard cursor < script.count else {
-            // Fuera de script: devolver texto final para cerrar el loop con elegancia.
-            return ModelResponse(content: "(script exhausted — end of demo)")
+            // A mitad de turno y sin guion: cerrar el loop con un final legible.
+            return ModelResponse(content: "Fin del guion de demo. Elige un proveedor para hablar con un modelo real.")
         }
         let resp = script[cursor]
         cursor += 1

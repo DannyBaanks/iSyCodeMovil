@@ -425,6 +425,12 @@ struct ChatSurfaceView: View {
                     .padding(.bottom, OCSpacing.xs)
                 }
 
+                // The GeometryReader answers a size question with the space it is offered and never
+                // asks its content. Without it, the stacks above probe this area with an infinite
+                // height, the ScrollView measures the whole chat (every message and its markdown)
+                // to answer, and on a long chat that took over 5 s on the main thread: iOS killed
+                // the app on scene updates (0x8BADF00D, 2026-11-18, LazyStack.measureEstimates).
+                GeometryReader { _ in
                 ZStack(alignment: .bottomTrailing) {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
@@ -484,7 +490,15 @@ struct ChatSurfaceView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onAppear { scrollProxy = proxy }
+                }
+                .onAppear {
+                    scrollProxy = proxy
+                    settleAtBottom()
+                }
+                .onChange(of: sessionState.currentSession?.id) { _ in
+                    isPinnedToBottom = true
+                    settleAtBottom()
+                }
                 .onChange(of: sessionState.timelineEvents.count) { _ in
                     if sessionState.timelineEvents.last?.kind == .userPrompt {
                         isPinnedToBottom = true
@@ -519,6 +533,19 @@ struct ChatSurfaceView: View {
         return "Pensando…"
     }
     
+    /// Opening or restoring a chat: the lazy list only knows estimated row heights at first, so
+    /// one jump to the end lands a few points short, the 1 pt anchor stays off screen and
+    /// "Ir al final" shows at the bottom of the chat. A second, unanimated jump after layout lands.
+    private func settleAtBottom() {
+        Task { @MainActor in
+            for delay: UInt64 in [50_000_000, 350_000_000] {
+                try? await Task.sleep(nanoseconds: delay)
+                guard isPinnedToBottom, let proxy = scrollProxy else { return }
+                proxy.scrollTo("chat-bottom-anchor", anchor: .bottom)
+            }
+        }
+    }
+
     private func scrollToBottom(force: Bool = false) {
         guard force || isPinnedToBottom, let proxy = scrollProxy else { return }
         if reduceMotion {
