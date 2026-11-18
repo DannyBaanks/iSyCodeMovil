@@ -352,7 +352,7 @@ public struct ChatLandingView: View {
     @State private var showGUSAssistant = false
     @StateObject private var mediaCoordinator = MultimodalComposerCoordinator()
     @FocusState private var isInputFocused: Bool
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showTools = false
     let onOpenSidebar: () -> Void
 
     public init(onOpenSidebar: @escaping () -> Void) {
@@ -370,7 +370,7 @@ public struct ChatLandingView: View {
                         activeAgentBanner(activeAgent)
                     }
 
-                    primaryThreeActionsGrid
+                    conversationActions
 
                     compactSystemStatusCard(runtime: runtime)
 
@@ -451,14 +451,10 @@ public struct ChatLandingView: View {
 
     private func heroHeader(runtime: RuntimeSelectionSnapshot) -> some View {
         VStack(alignment: .leading, spacing: OCSpacing.sm) {
-            Text("¿Qué quieres lograr hoy?")
+            Text("Nueva conversación")
                 .font(.title2.weight(.bold))
                 .foregroundColor(OCColor.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            Text("Conversa, construye un agente sin programar o administra los tuyos.")
-                .font(.subheadline)
-                .foregroundColor(OCColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
 
             OCFlowLayout(spacing: 8, lineSpacing: 8) {
                 assistantPill(runtime: runtime)
@@ -506,51 +502,46 @@ public struct ChatLandingView: View {
     /// Two primary actions side by side (same height), then the secondary tools as one
     /// grouped list. Five equally weighted cards with five colored borders gave the
     /// screen no hierarchy, and "Aprender acción" wrapping made its card taller.
-    private var primaryThreeActionsGrid: some View {
-        VStack(spacing: OCSpacing.md) {
-            // At accessibility text sizes two columns hyphenate "Conver-sar": stack them.
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: OCSpacing.sm) { primaryCards }
-            } else {
-                HStack(spacing: OCSpacing.sm) { primaryCards }
-                    // Both cards take the taller one's height.
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            secondaryActionsGroup
-        }
-    }
-
-    @ViewBuilder private var primaryCards: some View {
-            primaryActionCard(
-                title: "Conversar",
-                subtitle: "Modelos y herramientas",
-                symbol: "bubble.left.and.bubble.right.fill",
-                tint: IysThemePreferences.active.accent,
-                id: "home-action-chat"
-            ) {
-                OCHaptics.light()
-                if let first = store.sessions.first {
-                    Task { await store.selectSession(first) }
-                } else {
-                    isInputFocused = true
+    private var conversationActions: some View {
+        VStack(alignment: .leading, spacing: OCSpacing.md) {
+            if let session = store.sessions.first {
+                secondaryActionRow(
+                    title: "Retomar conversación",
+                    subtitle: session.title,
+                    symbol: "bubble.left",
+                    tint: IysThemePreferences.active.accent,
+                    id: "home-action-chat"
+                ) {
+                    OCHaptics.light()
+                    Task { await store.selectSession(session) }
                 }
             }
 
-            primaryActionCard(
-                title: "Construir",
-                subtitle: "Crea un agente nuevo",
-                symbol: "hammer.fill",
-                tint: OCColor.info,
+            DisclosureGroup(isExpanded: $showTools) {
+                secondaryActionsGroup
+            } label: {
+                Label("Herramientas", systemImage: "wrench.and.screwdriver")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(OCColor.textPrimary)
+                    .frame(minHeight: 44)
+            }
+            .tint(OCColor.textSecondary)
+        }
+    }
+
+    private var secondaryActionsGroup: some View {
+        VStack(spacing: 0) {
+            secondaryActionRow(
+                title: "Crear agente",
+                subtitle: "Configura sus instrucciones y herramientas",
+                symbol: "hammer",
+                tint: OCColor.textSecondary,
                 id: "home-action-build"
             ) {
                 OCHaptics.light()
                 router.openBuilder()
             }
-    }
-
-private var secondaryActionsGroup: some View {
-        VStack(spacing: 0) {
+            Divider().overlay(OCColor.borderMuted).padding(.leading, 52)
             secondaryActionRow(
                 title: "Mis agentes",
                 subtitle: contractStore.agents.isEmpty
@@ -631,43 +622,6 @@ private var secondaryActionsGroup: some View {
         .accessibilityIdentifier(id)
     }
 
-    private func primaryActionCard(
-        title: String,
-        subtitle: String,
-        symbol: String,
-        tint: Color,
-        id: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: OCSpacing.sm) {
-                Image(systemName: symbol)
-                    .font(.callout.weight(.semibold))
-                    .foregroundColor(tint)
-                    .frame(minWidth: 38, minHeight: 38)
-                    .background(RoundedRectangle(cornerRadius: OCRadius.r10).fill(tint.opacity(0.16)))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.headline)
-                        .foregroundColor(OCColor.textPrimary)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundColor(OCColor.textSecondary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(OCSpacing.md)
-            // maxHeight .infinity + the row's fixedSize gives both cards the same height.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .ocCard(radius: OCRadius.r14, border: OCColor.borderMuted, background: OCColor.bgBase)
-        }
-        .buttonStyle(OCInteractiveButtonStyle())
-        .accessibilityIdentifier(id)
-    }
-
     private func compactSystemStatusCard(runtime: RuntimeSelectionSnapshot) -> some View {
         let backendLabel: String
         if store.sandboxLink != nil {
@@ -702,16 +656,16 @@ private var secondaryActionsGroup: some View {
                 .buttonStyle(.plain)
             }
 
-            OCFlowLayout(spacing: 12, lineSpacing: 4) {
-                Label(runtime.providerName, systemImage: "cpu")
-                Label("Python local", systemImage: "terminal")
-                Label(isymcpStore.isPaired ? "ISyMCP OK" : "Solo iPhone", systemImage: isymcpStore.isPaired ? "desktopcomputer" : "iphone")
-            }
-            .font(.caption2)
-            .foregroundColor(OCColor.textFaint)
-            .lineLimit(1)
-
             if showSystemDetails {
+                OCFlowLayout(spacing: 12, lineSpacing: 4) {
+                    Label(runtime.providerName, systemImage: "cpu")
+                    Label("Python local", systemImage: "terminal")
+                    Label(isymcpStore.isPaired ? "ISyMCP OK" : "Solo iPhone", systemImage: isymcpStore.isPaired ? "desktopcomputer" : "iphone")
+                }
+                .font(.caption2)
+                .foregroundColor(OCColor.textFaint)
+                .lineLimit(1)
+
                 Divider().overlay(OCColor.borderMuted)
                 VStack(alignment: .leading, spacing: 5) {
                     statusDetailRow("Modelo", value: runtime.modelName ?? runtime.providerName)
