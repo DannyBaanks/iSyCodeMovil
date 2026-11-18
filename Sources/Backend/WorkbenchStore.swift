@@ -1106,6 +1106,7 @@ public final class WorkbenchStore: ObservableObject {
                     scope: tool.hasPrefix("Codex") ? "Codex · para esta sesión" : (backendMode == .remote ? "remote workspace" : "sandbox"),
                     agentMode: sessionState.agentMode
                 )
+                OCHaptics.attention()
                 PermissionNotifier.shared.onDecision = { [weak self] requestID, decision in
                     // Only the request still on screen can be answered from a notification.
                     guard self?.sessionState.pendingPermission?.permissionRequestId == requestID else { return }
@@ -1130,6 +1131,7 @@ public final class WorkbenchStore: ObservableObject {
                     isProcessingRemote = false
                 }
                 addSuccessEvent("Listo")
+                OCHaptics.done()
             }
 
         case .sessionError(let message):

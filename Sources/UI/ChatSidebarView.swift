@@ -839,7 +839,18 @@ private var secondaryActionsGroup: some View {
             }
 
             HStack(alignment: .bottom, spacing: OCSpacing.xs) {
-                ComposerPlusMenuButton(coordinator: mediaCoordinator, includesWorkspaceFiles: false)
+                // Same "+" sheet as inside a chat. The model picker only exists in a chat, so
+                // here "Modelo" opens the engine setup.
+                ComposerOptionsButton(
+                    coordinator: mediaCoordinator,
+                    agentMode: $store.sessionState.agentMode,
+                    flowMode: $store.sessionState.flowMode,
+                    availableModes: AgentMode.allCases,
+                    modelName: runtime.modelName ?? runtime.providerName,
+                    onModelTap: {
+                        router.openRuntimeSetup(track: runtime.isLocal ? .local : .connected, providerID: runtime.providerID)
+                    }
+                )
 
                 TextField("Pregunta lo que quieras…", text: $draft, axis: .vertical)
                     .focused($isInputFocused)
