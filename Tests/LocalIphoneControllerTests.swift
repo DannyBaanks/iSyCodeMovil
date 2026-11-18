@@ -86,8 +86,12 @@ final class LocalIphoneControllerTests: XCTestCase {
         XCTAssertEqual(LocalIphoneController.resolveBundleID("com.openai.chat"), "com.openai.chat")
         XCTAssertEqual(LocalIphoneController.resolveBundleID("safari"), "com.apple.mobilesafari")
         XCTAssertEqual(LocalIphoneController.resolveBundleID("com.example.app"), "com.example.app")
+        // Verificados en el iPhone real (iphone_list_apps, 18 nov 2026).
+        XCTAssertEqual(LocalIphoneController.resolveBundleID("claude"), "com.anthropic.claude")
+        XCTAssertEqual(LocalIphoneController.resolveBundleID("Muse"), "com.facebook.hatch")
+        XCTAssertEqual(LocalIphoneController.resolveBundleID("localdevvpn"), "com.jkcoxson.LocalDevVPN")
         // Sin alias conocido, el nombre se devuelve tal cual (no se inventa un ID).
-        XCTAssertEqual(LocalIphoneController.resolveBundleID("claude"), "claude")
+        XCTAssertEqual(LocalIphoneController.resolveBundleID("appquenoexiste"), "appquenoexiste")
     }
 
     func testControlModeResolutionTable() {

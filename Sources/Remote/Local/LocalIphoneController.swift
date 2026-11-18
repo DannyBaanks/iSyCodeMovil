@@ -27,7 +27,7 @@ public actor LocalIphoneController {
         "iphone_status", "iphone_screenshot", "iphone_list_elements", "iphone_list_devices",
         "iphone_wait_for", "iphone_tap", "iphone_tap_element", "iphone_long_press",
         "iphone_swipe", "iphone_type_text", "iphone_press_button", "iphone_launch_app",
-        "iphone_terminate_app"
+        "iphone_terminate_app", "iphone_app_directory", "iphone_app_remember"
     ]
 
     private let wda: WdaDriving
@@ -61,7 +61,18 @@ public actor LocalIphoneController {
             return "Este iPhone (WebDriverAgent en 127.0.0.1:8100)."
 
         case "iphone_list_apps":
-            throw LocalIphoneError.unsupported("iphone_list_apps no está disponible en modo local: WebDriverAgent no permite enumerar las apps instaladas.")
+            throw LocalIphoneError.unsupported("iphone_list_apps no está disponible en modo local: WebDriverAgent no permite enumerar las apps instaladas. Usa iphone_app_directory para ver las apps que ya se conocen con su Bundle ID.")
+
+        case "iphone_app_directory":
+            return IphoneAppDirectory.describe(filter: arguments["filter"] as? String)
+
+        case "iphone_app_remember":
+            let name = try string("name", in: arguments)
+            let bundleID = try string("bundle_id", in: arguments)
+            guard IphoneAppDirectory.remember(name: name, bundleID: bundleID) else {
+                throw LocalIphoneError.unsupported("«\(bundleID)» no parece un Bundle ID (formato com.empresa.app).")
+            }
+            return "Guardado: \(name) → \(bundleID). Desde ahora iphone_launch_app acepta «\(name)»."
 
         case "iphone_open_url":
             throw LocalIphoneError.unsupported("iphone_open_url no está disponible en modo local: WebDriverAgent no ofrece una operación para abrir URLs en este controlador.")
@@ -227,7 +238,34 @@ public actor LocalIphoneController {
         "twitter": "com.atebits.Tweetie2",
         "x": "com.atebits.Tweetie2",
         "tailscale": "io.tailscale.ipn.ios",
-        "localdevvpn": "com.stoss.LocalDevVPN",
+        // Era com.stoss.LocalDevVPN: en el iPhone real (iphone_list_apps, 18 nov 2026) es este.
+        "localdevvpn": "com.jkcoxson.LocalDevVPN",
+        // Verificados con iphone_list_apps en el iPhone real (18 nov 2026). Solo apps
+        // públicas: las apps personales se aprenden en IphoneAppDirectory, no aquí.
+        "claude": "com.anthropic.claude",
+        "gemini": "com.google.gemini",
+        "grok": "ai.x.GrokApp",
+        "deepseek": "com.deepseek.chat",
+        "qwen": "ai.qwenlm.chat.ios",
+        "qwen studio": "ai.qwenlm.chat.ios",
+        "meta ai": "com.facebook.stellaapp",
+        "muse": "com.facebook.hatch",
+        "facebook": "com.facebook.Facebook",
+        "messenger": "com.facebook.Messenger",
+        "threads": "com.burbn.barcelona",
+        "tiktok": "com.zhiliaoapp.musically",
+        "snapchat": "com.toyopagroup.picaboo",
+        "discord": "com.hammerandchisel.discord",
+        "gmail": "com.google.Gmail",
+        "drive": "com.google.Drive",
+        "google drive": "com.google.Drive",
+        "google maps": "com.google.Maps",
+        "youtube music": "com.google.ios.youtubemusic",
+        "brave": "com.brave.ios.browser",
+        "github": "com.github.stormbreaker.prod",
+        "testflight": "com.apple.TestFlight",
+        "steam": "com.valvesoftware.Steam",
+        "wireguard": "com.wireguard.ios",
         // Verificado en el iPhone real (17 nov 2026): com.openai.chat abre ChatGPT;
         // com.openai.chatgpt no existe (iOS dice que no está instalada con ese ID).
         "chatgpt": "com.openai.chat"
@@ -258,6 +296,10 @@ public actor LocalIphoneController {
             .lowercased()
         if normalized.contains("isycode") || normalized.contains("iyscode") {
             return Bundle.main.bundleIdentifier ?? "com.isyco.iyscodemovil"
+        }
+        // What this iPhone actually has wins over the built-in table.
+        if let learned = IphoneAppDirectory.resolve(trimmed) {
+            return learned
         }
         return bundleAliases[normalized] ?? trimmed
     }

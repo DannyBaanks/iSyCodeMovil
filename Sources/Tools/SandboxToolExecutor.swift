@@ -9,6 +9,8 @@ import Foundation
 /// time, since a pull request leaves the sandbox.
 public final class SandboxToolExecutor: ToolExecutor {
     public static let maxOutputCharacters = 12_000
+    /// Answered on the iPhone (IphoneAppDirectory), not by the computer's iphone-control.
+    static let appDirectoryTools = ["iphone_app_directory", "iphone_app_remember"]
 
     private let client: SandboxHostClient
     private let sandboxID: String
@@ -127,7 +129,9 @@ public final class SandboxToolExecutor: ToolExecutor {
         if iphoneMode == .thisPhone {
             iphoneTools = localIphone == nil ? [] : IphoneControlCatalog.names.filter(LocalIphoneController.supportedToolNames.contains)
         } else {
-            iphoneTools = info.iphoneTools
+            // The app directory lives on this iPhone, so it is offered whenever the computer
+            // lets the agent use the phone at all.
+            iphoneTools = info.iphoneTools.isEmpty ? [] : info.iphoneTools + Self.appDirectoryTools
         }
         tools.append(contentsOf: IphoneControlCatalog.tools(allowed: iphoneTools))
         if info.hasGitHubAccount, info.repo != nil {
@@ -240,12 +244,39 @@ public final class SandboxToolExecutor: ToolExecutor {
                 let typedArguments = try IphoneControlCatalog.arguments(for: name, from: arguments)
                 return try await localIphone.call(tool: name, arguments: typedArguments)
             }
+            // The app directory is answered here, on the iPhone.
+            if Self.appDirectoryTools.contains(name), !info.iphoneTools.isEmpty {
+                let typed = try IphoneControlCatalog.arguments(for: name, from: arguments)
+                if name == "iphone_app_directory" {
+                    return IphoneAppDirectory.describe(filter: typed["filter"] as? String)
+                }
+                let appName = (typed["name"] as? String) ?? ""
+                let bundleID = (typed["bundle_id"] as? String) ?? ""
+                guard IphoneAppDirectory.remember(name: appName, bundleID: bundleID) else {
+                    throw SandboxHostError.refused("«\(bundleID)» no parece un Bundle ID (formato com.empresa.app).")
+                }
+                return "Guardado: \(appName) → \(bundleID)."
+            }
             // Only what the computer's gate listed is callable, even if the model invents the name.
             guard info.iphoneTools.contains(name) else {
                 throw SandboxHostError.refused("La computadora no permite \(name) en este enlace.")
             }
-            let result = try await client.iphoneCall(tool: name, arguments: try IphoneControlCatalog.arguments(for: name, from: arguments))
-            return try IphoneControlCatalog.report(result)
+            var forwarded = arguments
+            // A name the directory knows goes out as its exact Bundle ID.
+            if name == "iphone_launch_app" || name == "iphone_terminate_app",
+               let app = forwarded["app"], !IphoneAppDirectory.isBundleID(app),
+               let bundleID = IphoneAppDirectory.resolve(app) {
+                forwarded["app"] = bundleID
+            }
+            let result = try await client.iphoneCall(tool: name, arguments: try IphoneControlCatalog.arguments(for: name, from: forwarded))
+            let report = try IphoneControlCatalog.report(result)
+            if name == "iphone_list_apps" {
+                let learned = IphoneAppDirectory.learn(fromListing: report)
+                if learned > 0 {
+                    return report + "\n\n(\(learned) apps guardadas en el directorio: ya puedes abrirlas por nombre con iphone_launch_app.)"
+                }
+            }
+            return report
 
         default:
             throw SandboxHostError.refused("La herramienta \(invocation.name) no existe en el sandbox.")

@@ -55,9 +55,20 @@ public enum IphoneControlCatalog {
                 .init(name: "limit", type: "integer", detail: "Máximo de elementos (por defecto 150).")
              ], required: [], effect: .observe),
         Spec(name: "iphone_list_apps",
-             detail: "Lista las apps instaladas con su nombre y Bundle ID.",
+             detail: "Lista las apps instaladas con su nombre y Bundle ID. El resultado se guarda solo en el directorio de apps (iphone_app_directory).",
              parameters: [.init(name: "include_system", type: "boolean", detail: "Incluir apps del sistema.")],
              required: [], effect: .observe),
+        Spec(name: "iphone_app_directory",
+             detail: "Apps de este iPhone ya conocidas, nombre → Bundle ID exacto (ej. Muse → com.facebook.hatch). Consúltalo antes de abrir una app en vez de adivinar el Bundle ID. Funciona en ambos modos.",
+             parameters: [.init(name: "filter", type: "string", detail: "Solo apps cuyo nombre o Bundle ID contenga este texto.")],
+             required: [], effect: .observe),
+        Spec(name: "iphone_app_remember",
+             detail: "Guarda una app en el directorio: nombre → Bundle ID. Úsalo solo con un Bundle ID verificado (iphone_status muestra la app al frente después de abrirla).",
+             parameters: [
+                .init(name: "name", type: "string", detail: "Nombre con el que la persona llama a la app (ej. Muse)."),
+                .init(name: "bundle_id", type: "string", detail: "Bundle ID exacto, formato reverse-DNS (ej. com.facebook.hatch).")
+             ],
+             required: ["name", "bundle_id"], effect: .observe),
         Spec(name: "iphone_list_devices",
              detail: "Lista los iPhone/iPad conectados por USB y marca el que se controla.",
              parameters: [], required: [], effect: .observe),
