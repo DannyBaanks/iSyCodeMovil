@@ -57,6 +57,7 @@ struct ComposerOptionsButton: View {
 }
 
 private struct ComposerOptionsSheet: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var agentMode: AgentMode
     @Binding var flowMode: Bool
     let availableModes: [AgentMode]
@@ -83,6 +84,8 @@ private struct ComposerOptionsSheet: View {
                             }
                         }
                         .pickerStyle(.segmented)
+                        .onChange(of: agentMode) { _ in OCHaptics.selection() }
+                        .animation(reduceMotion ? nil : OCMotion.expoOut(), value: agentMode)
                     }
                     Toggle(isOn: $flowMode) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -96,6 +99,7 @@ private struct ComposerOptionsSheet: View {
                     }
                     .tint(IysThemePreferences.active.accent)
                     .onChange(of: flowMode) { _ in OCHaptics.selection() }
+                    .animation(reduceMotion ? nil : OCMotion.expoOut(), value: flowMode)
                 }
 
                 optionRow(
@@ -108,7 +112,8 @@ private struct ComposerOptionsSheet: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     Button {
-                        withAnimation(OCMotion.smooth) { showMore.toggle() }
+                        OCHaptics.selection()
+                        withAnimation(reduceMotion ? nil : OCMotion.expoOut()) { showMore.toggle() }
                     } label: {
                         HStack {
                             sectionTitle("Más")
@@ -136,7 +141,7 @@ private struct ComposerOptionsSheet: View {
                                 pick { NotificationCenter.default.post(name: .openSecretVaultSheet, object: nil) }
                             }
                         }
-                        .transition(.opacity)
+                        .ocBlurReplaceTransition()
                     }
                 }
             }

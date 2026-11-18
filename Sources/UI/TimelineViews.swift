@@ -127,6 +127,7 @@ public struct AssistantTextView: View {
     let turnPrompt: String?
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var store: WorkbenchStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var copied = false
 
     public init(event: TimelineEvent, showsSpeaker: Bool = true, turnPrompt: String? = nil) {
@@ -199,7 +200,7 @@ public struct AssistantTextView: View {
         HStack(spacing: 0) {
             Button {
                 UIPasteboard.general.string = text
-                OCHaptics.light()
+                OCHaptics.selection()
                 copied = true
                 Task {
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -207,6 +208,7 @@ public struct AssistantTextView: View {
                 }
             } label: {
                 actionIcon(copied ? "checkmark" : "doc.on.doc")
+                    .animation(reduceMotion ? nil : OCMotion.springSelection, value: copied)
             }
             .accessibilityLabel(copied ? "Copiado" : "Copiar respuesta")
 
@@ -237,6 +239,7 @@ public struct AssistantTextView: View {
             .foregroundColor(OCColor.iconMuted)
             .frame(width: 36, height: 44)
             .contentShape(Rectangle())
+            .ocSymbolReplace()
     }
 }
 
@@ -339,6 +342,7 @@ private struct MarkdownText: View, Equatable {
 private struct MarkdownCodeBlockView: View {
     let language: String
     let code: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var copied = false
 
     var body: some View {
@@ -352,7 +356,7 @@ private struct MarkdownCodeBlockView: View {
                     #if canImport(UIKit)
                     UIPasteboard.general.string = code
                     #endif
-                    OCHaptics.light()
+                    OCHaptics.selection()
                     copied = true
                     Task {
                         try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -365,6 +369,8 @@ private struct MarkdownCodeBlockView: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
                         .contentShape(Rectangle())
+                        .ocSymbolReplace()
+                        .animation(reduceMotion ? nil : OCMotion.springSelection, value: copied)
                 }
                 .buttonStyle(.plain)
             }
@@ -546,6 +552,7 @@ public struct ToolCallCollapsedView: View {
     let agentColor: Color
     let onExpand: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(event: TimelineEvent, agentColor: Color, onExpand: @escaping () -> Void) {
         self.event = event
@@ -603,7 +610,7 @@ public struct ToolCallCollapsedView: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundColor(OCColor.iconMuted)
                 .rotationEffect(.degrees(event.isExpanded ? 90 : 0))
-                .animation(.easeInOut(duration: 0.18), value: event.isExpanded)
+                .animation(reduceMotion ? nil : OCMotion.expoOut(), value: event.isExpanded)
                 .accessibilityHidden(true)
         }
         // Aligned with the answer's text and unframed, like Claude's tool rows; 44 pt stays
@@ -934,6 +941,7 @@ public struct ToolCallExpandedView: View {
 
 public struct ToolCallView: View {
     @EnvironmentObject private var sessionState: ActiveSessionState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let event: TimelineEvent
     let agentColor: Color
 
@@ -947,21 +955,21 @@ public struct ToolCallView: View {
             ToolCallCollapsedView(
                 event: event,
                 agentColor: agentColor,
-                onExpand: { sessionState.toggleToolExpansion(id: event.id) }
+                onExpand: {
+                    OCMotion.perform(OCMotion.expoOut(), reduceMotion: reduceMotion) {
+                        sessionState.toggleToolExpansion(id: event.id)
+                    }
+                }
             )
             .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12, style: .continuous))
 
             if event.isExpanded {
                 ToolCallExpandedView(event: event, agentColor: agentColor)
                     .padding(.top, OCSpacing.xs)
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .move(edge: .top)).animation(.easeInOut(duration: 0.2)),
-                        removal: .opacity.combined(with: .move(edge: .top)).animation(.easeInOut(duration: 0.15))
-                    ))
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(.vertical, OCSpacing.xs)
-        .animation(.easeInOut(duration: 0.18), value: event.isExpanded)
     }
 }
 

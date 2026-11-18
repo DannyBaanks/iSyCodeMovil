@@ -3,6 +3,7 @@ import SwiftUI
 public struct ActiveSessionView: View {
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var store: WorkbenchStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showDisconnectConfirm = false
     @State private var showSandboxPanel = false
     let onOpenSidebar: (() -> Void)?
@@ -70,12 +71,18 @@ public struct ActiveSessionView: View {
         VStack(spacing: 0) {
             // Banner de conexion perdida: antes solo quedaba un evento en el
             // timeline y no existia forma de reconectar en caliente.
-            if store.backendMode == .remote && store.connectionHealth == .disconnected {
-                ConnectionLostBanner(
-                    isReconnecting: store.isConnecting,
-                    onReconnect: { Task { await store.reconnect() } }
-                )
+            ZStack {
+                if store.backendMode == .remote && store.connectionHealth == .disconnected {
+                    ConnectionLostBanner(
+                        isReconnecting: store.isConnecting,
+                        onReconnect: { Task { await store.reconnect() } }
+                    )
+                }
             }
+            .animation(
+                reduceMotion ? nil : OCMotion.softOut(),
+                value: store.backendMode == .remote && store.connectionHealth == .disconnected
+            )
             if let link = store.sandboxLink {
                 SandboxStatusBar(link: link) { showSandboxPanel = true }
             }
@@ -379,6 +386,7 @@ private struct CodexWorkspaceFoldersUnavailableView: View {
 struct ChatSurfaceView: View {
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var store: WorkbenchStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrollProxy: ScrollViewProxy?
     @State private var showActivityDetail = false
     @State private var runStartedAt = Date()
@@ -405,26 +413,35 @@ struct ChatSurfaceView: View {
                         showActivityDetail = true
                     }
                 }
-                if let scope = store.activeSequenceScope {
-                    SequenceScopeBanner(scope: scope) {
-                        OCHaptics.light()
-                        store.revokeActiveSequenceApproval()
+                ZStack {
+                    if let scope = store.activeSequenceScope {
+                        SequenceScopeBanner(scope: scope) {
+                            OCHaptics.light()
+                            store.revokeActiveSequenceApproval()
+                        }
                     }
                 }
+                .animation(reduceMotion ? nil : OCMotion.softOut(), value: store.activeSequenceScope != nil)
                 // Solo cuando el agente espera algo de la persona. "Listo para seguir"
                 // repetía lo que ya dicen el subtítulo del header y el chip del compositor.
-                if sessionState.pendingPermission != nil || sessionState.pendingQuestion != nil {
-                    ChatActivityBar(
-                        isProcessing: sessionState.isProcessing,
-                        needsApproval: sessionState.pendingPermission != nil,
-                        needsAnswer: sessionState.pendingQuestion != nil,
-                        agentMode: sessionState.agentMode,
-                        modelName: sessionState.selectedModel?.name
-                    )
-                    .padding(.horizontal, OCSpacing.contentMargin)
-                    .padding(.top, OCSpacing.sm)
-                    .padding(.bottom, OCSpacing.xs)
+                ZStack {
+                    if sessionState.pendingPermission != nil || sessionState.pendingQuestion != nil {
+                        ChatActivityBar(
+                            isProcessing: sessionState.isProcessing,
+                            needsApproval: sessionState.pendingPermission != nil,
+                            needsAnswer: sessionState.pendingQuestion != nil,
+                            agentMode: sessionState.agentMode,
+                            modelName: sessionState.selectedModel?.name
+                        )
+                        .padding(.horizontal, OCSpacing.contentMargin)
+                        .padding(.top, OCSpacing.sm)
+                        .padding(.bottom, OCSpacing.xs)
+                    }
                 }
+                .animation(
+                    reduceMotion ? nil : OCMotion.softOut(),
+                    value: sessionState.pendingPermission != nil || sessionState.pendingQuestion != nil
+                )
 
                 // The GeometryReader answers a size question with the space it is offered and never
                 // asks its content. Without it, the stacks above probe this area with an infinite
@@ -493,7 +510,7 @@ struct ChatSurfaceView: View {
 
                     if !isPinnedToBottom && !sessionState.timelineEvents.isEmpty {
                         Button {
-                            OCHaptics.light()
+                            OCHaptics.selection()
                             pinUpdateTask?.cancel()
                             pinUpdateTask = nil
                             pendingPinTarget = nil
@@ -515,6 +532,7 @@ struct ChatSurfaceView: View {
                         .buttonStyle(OCInteractiveButtonStyle())
                         .padding(.trailing, OCSpacing.contentMargin)
                         .padding(.bottom, OCSpacing.sm)
+                        .ocBlurReplaceTransition()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -605,7 +623,9 @@ struct ChatSurfaceView: View {
                 return
             }
             if isPinnedToBottom != pinned {
-                isPinnedToBottom = pinned
+                OCMotion.perform(OCMotion.overshoot(0.28), reduceMotion: reduceMotion) {
+                    isPinnedToBottom = pinned
+                }
             }
         }
     }
@@ -762,6 +782,7 @@ private struct SequenceScopeBanner: View {
         .padding(.vertical, 7)
         .background(OCColor.warning.opacity(0.10))
         .overlay(Rectangle().frame(height: 0.5).foregroundColor(OCColor.warning.opacity(0.30)), alignment: .bottom)
+        .ocBlurReplaceTransition()
     }
 }
 
@@ -849,6 +870,7 @@ private struct ChatActivityBar: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("chat-activity-status")
+        .ocBlurReplaceTransition()
     }
 }
 
@@ -886,7 +908,7 @@ struct ConnectionLostBanner: View {
                 .foregroundColor(OCColor.warning.opacity(0.30)),
             alignment: .bottom
         )
-        .transition(.move(edge: .top).combined(with: .opacity))
+        .ocBlurReplaceTransition()
     }
 }
 

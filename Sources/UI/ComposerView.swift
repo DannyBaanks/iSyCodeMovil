@@ -205,6 +205,7 @@ public struct ComposerView: View {
 // MARK: - Send/Stop Button
 
 public struct SendStopButton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isProcessing: Bool
     let canSend: Bool
     let agentColor: Color
@@ -221,28 +222,32 @@ public struct SendStopButton: View {
         Button(action: action) {
             ZStack {
                 Circle()
-                    .fill(backgroundColor)
+                    .fill(backgroundFill)
                     .frame(width: 32, height: 32)
 
                 Image(systemName: iconName)
                     .font(.system(size: iconSize, weight: .semibold))
                     .foregroundColor(iconColor)
+                    .ocSymbolReplace()
             }
+            .scaleEffect(isProcessing && !reduceMotion ? 0.94 : 1.0)
         }
         .disabled(isProcessing ? false : !canSend)
         .frame(width: 44, height: 44)
         .fixedSize(horizontal: true, vertical: false)
         .contentShape(Rectangle())
         .accessibilityLabel(isProcessing ? "Detener" : "Enviar mensaje")
-        .animation(.easeInOut(duration: 0.15), value: isProcessing)
-        .animation(.easeInOut(duration: 0.15), value: canSend)
+        .animation(reduceMotion ? nil : OCMotion.springSnappy, value: isProcessing)
+        .animation(reduceMotion ? nil : OCMotion.springSnappy, value: canSend)
     }
 
     /// Disabled reads as disabled: a neutral gray disc, not a faded accent that looks
     /// like it is still the thing to press.
-    private var backgroundColor: Color {
-        if isProcessing { return agentColor.opacity(0.9) }
-        return canSend ? IysThemePreferences.active.accent : OCColor.bgLayer2
+    private var backgroundFill: AnyShapeStyle {
+        if isProcessing { return AnyShapeStyle(agentColor.opacity(0.9)) }
+        return canSend
+            ? AnyShapeStyle(IysThemePreferences.active.accentGradient)
+            : AnyShapeStyle(OCColor.bgLayer2)
     }
 
     private var iconColor: Color {
@@ -261,6 +266,7 @@ public struct SendStopButton: View {
 // MARK: - Composer Control Row
 
 public struct ComposerControlRow: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let agentMode: AgentMode
     let onAgentTap: () -> Void
     let selectedModel: ModelInfo?
@@ -300,7 +306,10 @@ public struct ComposerControlRow: View {
             if showsAttachButton {
                 // Attach remains available for Codex sessions too; the old layout
                 // hid it whenever the Codex-specific controls were shown.
-                Button(action: onAttachTap) {
+                Button {
+                    OCHaptics.selection()
+                    onAttachTap()
+                } label: {
                     Image(systemName: "paperclip")
                         .font(.system(size: 17, weight: .medium))
                         .foregroundColor(OCColor.iconPrimary)
@@ -310,7 +319,7 @@ public struct ComposerControlRow: View {
                         .overlay(RoundedRectangle(cornerRadius: OCRadius.r10).stroke(OCColor.borderMuted, lineWidth: 1))
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(OCInteractiveButtonStyle())
                 .accessibilityLabel("Adjuntar archivo")
             }
 
@@ -350,12 +359,15 @@ public struct ComposerControlRow: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .animation(reduceMotion ? nil : OCMotion.springSelection, value: agentMode)
+        .animation(reduceMotion ? nil : OCMotion.springSelection, value: flowMode)
     }
 }
 
 // MARK: - Flow Pill
 
 public struct FlowPill: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var isActive: Bool
 
     public init(isActive: Binding<Bool>) {
@@ -364,8 +376,10 @@ public struct FlowPill: View {
 
     public var body: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            isActive.toggle()
+            OCHaptics.selection()
+            withAnimation(reduceMotion ? nil : OCMotion.springSelection) {
+                isActive.toggle()
+            }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: isActive ? "bolt.fill" : "bolt")
@@ -387,7 +401,7 @@ public struct FlowPill: View {
                     )
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(OCInteractiveButtonStyle())
         .frame(minHeight: 44)
         .contentShape(Rectangle())
         .accessibilityLabel(isActive ? "Modo Flow activado: omite confirmaciones rutinarias (acciones sensibles siguen pidiendo permiso)" : "Activar modo Flow acotado")
@@ -397,6 +411,7 @@ public struct FlowPill: View {
 // MARK: - Agent Pill
 
 public struct AgentPill: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let mode: AgentMode
     let onTap: () -> Void
 
@@ -406,7 +421,10 @@ public struct AgentPill: View {
     }
 
     public var body: some View {
-        Button(action: onTap) {
+        Button {
+            OCHaptics.selection()
+            onTap()
+        } label: {
             HStack(spacing: OCSpacing.xs) {
                 // State dot
                 Circle()
@@ -432,6 +450,7 @@ public struct AgentPill: View {
         .buttonStyle(OCInteractiveButtonStyle())
         .frame(minHeight: 44) // hit target
         .contentShape(Rectangle())
+        .animation(reduceMotion ? nil : OCMotion.springSelection, value: mode)
     }
 }
 
@@ -447,7 +466,10 @@ public struct ModelPill: View {
     }
 
     public var body: some View {
-        Button(action: onTap) {
+        Button {
+            OCHaptics.selection()
+            onTap()
+        } label: {
             HStack(spacing: OCSpacing.xs) {
                 if let icon = model.providerIcon {
                     Image(systemName: icon)
@@ -506,7 +528,10 @@ public struct ModelPillPlaceholder: View {
     }
 
     public var body: some View {
-        Button(action: onTap) {
+        Button {
+            OCHaptics.selection()
+            onTap()
+        } label: {
             HStack(spacing: OCSpacing.xs) {
                 Image(systemName: "cpu")
                     .font(.system(size: 14, weight: .medium))
@@ -528,7 +553,7 @@ public struct ModelPillPlaceholder: View {
                     )
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(OCInteractiveButtonStyle())
         .frame(minHeight: 44)
         .contentShape(Rectangle())
     }
@@ -537,6 +562,7 @@ public struct ModelPillPlaceholder: View {
 // MARK: - Attachments Bar
 
 public struct AttachmentsBar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let attachments: [Attachment]
     let onRemove: (Attachment) -> Void
 
@@ -550,9 +576,11 @@ public struct AttachmentsBar: View {
             HStack(spacing: OCSpacing.xs) {
                 ForEach(attachments) { attachment in
                     AttachmentToken(attachment: attachment, onRemove: { onRemove(attachment) })
+                        .ocBlurReplaceTransition()
                 }
             }
             .padding(.horizontal, 2)
+            .animation(reduceMotion ? nil : OCMotion.expoOut(), value: attachments.map(\.id))
         }
         .frame(height: 36)
     }

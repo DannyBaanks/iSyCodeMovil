@@ -13,6 +13,7 @@ public struct ChatSidebarView: View {
     @State private var renameText = ""
     @State private var sessionToDelete: Session?
     @State private var showDeleteConfirm = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(showsCloseButton: Bool = false, onClose: @escaping () -> Void = {}) {
         self.showsCloseButton = showsCloseButton
@@ -79,6 +80,7 @@ public struct ChatSidebarView: View {
 
     private var newConversationButton: some View {
         Button {
+            OCHaptics.selection()
             router.openConversations()
             onClose()
             Task {
@@ -134,6 +136,7 @@ public struct ChatSidebarView: View {
     private func conversationRow(_ session: Session) -> some View {
         let isActive = router.activeDestination == .chat && sessionState.currentSession?.id == session.id
         return Button {
+            OCHaptics.selection()
             router.openConversations()
             onClose()
             Task {
@@ -164,6 +167,7 @@ public struct ChatSidebarView: View {
             .padding(.vertical, 9)
             .background(isActive ? IysThemePreferences.active.accent.opacity(0.14) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+            .animation(reduceMotion ? nil : OCMotion.softOut(0.18), value: isActive)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -185,6 +189,7 @@ public struct ChatSidebarView: View {
     private var destinationsSection: some View {
         VStack(spacing: 2) {
             Button {
+                OCHaptics.selection()
                 sessionState.currentSession = nil
                 router.openConversations()
                 onClose()
@@ -210,6 +215,7 @@ public struct ChatSidebarView: View {
                 .frame(minHeight: 44)
                 .background(isHomeActive ? IysThemePreferences.active.accent.opacity(0.12) : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                .animation(reduceMotion ? nil : OCMotion.softOut(0.18), value: isHomeActive)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -238,6 +244,7 @@ public struct ChatSidebarView: View {
     private func destinationButton(_ destination: AppShellDestination, title: String, subtitle: String?) -> some View {
         let isActive = router.activeDestination == destination
         return Button {
+            OCHaptics.selection()
             switch destination {
             case .chat: router.openConversations()
             case .builder: router.openBuilder()
@@ -272,6 +279,7 @@ public struct ChatSidebarView: View {
             .frame(minHeight: 44)
             .background(isActive ? IysThemePreferences.active.accent.opacity(0.12) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+            .animation(reduceMotion ? nil : OCMotion.softOut(0.18), value: isActive)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -350,9 +358,11 @@ public struct ChatLandingView: View {
     @State private var sending = false
     @State private var showSystemDetails = false
     @State private var showGUSAssistant = false
+    @State private var hasAnimatedEntrance = false
     @StateObject private var mediaCoordinator = MultimodalComposerCoordinator()
     @FocusState private var isInputFocused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let onOpenSidebar: () -> Void
 
     public init(onOpenSidebar: @escaping () -> Void) {
@@ -379,6 +389,18 @@ public struct ChatLandingView: View {
                 .padding(.horizontal, OCSpacing.contentMargin)
                 .padding(.top, OCSpacing.md)
                 .padding(.bottom, OCSpacing.lg)
+                .opacity(hasAnimatedEntrance || reduceMotion ? 1 : 0)
+                .offset(y: hasAnimatedEntrance || reduceMotion ? 0 : 8)
+                .onAppear {
+                    guard !hasAnimatedEntrance else { return }
+                    if reduceMotion {
+                        hasAnimatedEntrance = true
+                    } else {
+                        withAnimation(OCMotion.expoOut(0.32)) {
+                            hasAnimatedEntrance = true
+                        }
+                    }
+                }
             }
             .refreshable {
                 loopback.refreshState()
@@ -418,7 +440,7 @@ public struct ChatLandingView: View {
                             Text("GUS")
                                 .font(.caption.weight(.semibold))
                         }
-                        .foregroundColor(IysThemePreferences.active.accent)
+                        .foregroundStyle(IysThemePreferences.active.accentGradient)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(Capsule().fill(OCColor.agentBuildSoft))
@@ -527,6 +549,7 @@ public struct ChatLandingView: View {
                 subtitle: "Modelos y herramientas",
                 symbol: "bubble.left.and.bubble.right.fill",
                 tint: IysThemePreferences.active.accent,
+                useAccentGradient: true,
                 id: "home-action-chat"
             ) {
                 OCHaptics.light()
@@ -636,6 +659,7 @@ private var secondaryActionsGroup: some View {
         subtitle: String,
         symbol: String,
         tint: Color,
+        useAccentGradient: Bool = false,
         id: String,
         action: @escaping () -> Void
     ) -> some View {
@@ -643,7 +667,7 @@ private var secondaryActionsGroup: some View {
             VStack(alignment: .leading, spacing: OCSpacing.sm) {
                 Image(systemName: symbol)
                     .font(.callout.weight(.semibold))
-                    .foregroundColor(tint)
+                    .foregroundStyle(useAccentGradient ? AnyShapeStyle(IysThemePreferences.active.accentGradient) : AnyShapeStyle(tint))
                     .frame(minWidth: 38, minHeight: 38)
                     .background(RoundedRectangle(cornerRadius: OCRadius.r10).fill(tint.opacity(0.16)))
                     .accessibilityHidden(true)
@@ -663,6 +687,11 @@ private var secondaryActionsGroup: some View {
             // maxHeight .infinity + the row's fixedSize gives both cards the same height.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .ocCard(radius: OCRadius.r14, border: OCColor.borderMuted, background: OCColor.bgBase)
+            .overlay(
+                RoundedRectangle(cornerRadius: OCRadius.r14)
+                    .stroke(IysThemePreferences.active.accentGradient, lineWidth: 1)
+                    .opacity(useAccentGradient ? 0.28 : 0)
+            )
         }
         .buttonStyle(OCInteractiveButtonStyle())
         .accessibilityIdentifier(id)
@@ -691,7 +720,8 @@ private var secondaryActionsGroup: some View {
                     .foregroundColor(OCColor.textPrimary)
                 Spacer()
                 Button {
-                    withAnimation(OCMotion.snappy) {
+                    OCHaptics.selection()
+                    withAnimation(reduceMotion ? nil : OCMotion.expoOut()) {
                         showSystemDetails.toggle()
                     }
                 } label: {
@@ -808,7 +838,18 @@ private var secondaryActionsGroup: some View {
             .padding(.vertical, 7)
             .background(OCColor.bgBase)
             .clipShape(Capsule())
-            .overlay(Capsule().stroke(OCColor.borderMuted, lineWidth: 1))
+            .overlay(
+                Group {
+                    if runtime.readiness.isUsableForChat {
+                        Capsule()
+                            .stroke(IysThemePreferences.active.accentGradient, lineWidth: 1)
+                            .opacity(0.32)
+                    } else {
+                        Capsule()
+                            .stroke(OCColor.borderMuted, lineWidth: 1)
+                    }
+                }
+            )
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("chat-assistant-selector")
@@ -874,7 +915,13 @@ private var secondaryActionsGroup: some View {
                         .font(.subheadline.weight(.bold))
                         .foregroundColor(canSend && !sending ? OCColor.onAccent : OCColor.iconMuted)
                         .frame(width: 34, height: 34)
-                        .background(Circle().fill(canSend && !sending ? IysThemePreferences.active.accent : OCColor.bgLayer2))
+                        .background(
+                            Circle().fill(
+                                canSend && !sending
+                                    ? AnyShapeStyle(IysThemePreferences.active.accentGradient)
+                                    : AnyShapeStyle(OCColor.bgLayer2)
+                            )
+                        )
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend || sending)
