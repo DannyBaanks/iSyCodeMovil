@@ -2,7 +2,8 @@ import runpy
 import unittest
 from pathlib import Path
 
-inspect = runpy.run_path(str(Path(__file__).with_name("ui-doctor.py")))["inspect"]
+doctor = runpy.run_path(str(Path(__file__).with_name("ui-doctor.py")))
+inspect = doctor["inspect"]
 
 class SnapshotTests(unittest.TestCase):
     def test_reports_only_captured_geometry_and_expected_names(self):
@@ -19,6 +20,10 @@ class SnapshotTests(unittest.TestCase):
             ["Button#2", "visible según WDA pero fuera de pantalla"],
             ["destination", "destino esperado ausente o invisible"]])
         self.assertNotIn("private text", str(report))
+
+    def test_marks_empty_actions_as_candidates(self):
+        source = 'Button { open() } label: { Text("Abrir") }\n    Button {\n    } label: { Image(systemName: "plus") }'
+        self.assertEqual(doctor["empty_button_lines"](source), [2])
 
     def test_rejects_missing_application(self):
         with self.assertRaises(ValueError):

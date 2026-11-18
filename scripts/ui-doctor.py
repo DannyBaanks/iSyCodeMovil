@@ -13,13 +13,24 @@ IDENTIFIER = re.compile(r'\.accessibilityIdentifier\(\s*"([^"\n]+)"\s*\)')
 CONTROL = {"Button", "Switch", "TextField", "SecureTextField", "TextView", "Slider", "Link"}
 
 
+# Conservative lexical check. Report candidates for manual review, including preview code.
+EMPTY_BUTTON = re.compile(r"(?m)^[ \t]*Button\s*(?:\(\s*action:\s*\{\s*\}\s*\)|\{\s*\}\s*label:)")
+
+def empty_button_lines(source):
+    return [source.count("\n", 0, match.start()) + 1 for match in EMPTY_BUTTON.finditer(source)]
+
+
 def inventory():
     items = []
+    candidates = []
     for path in sorted((ROOT / "Sources").rglob("*.swift")):
-        for number, line in enumerate(path.read_text().splitlines(), 1):
+        source = path.read_text()
+        candidates.extend(dict(source=str(path.relative_to(ROOT)), line=n)
+                          for n in empty_button_lines(source))
+        for number, line in enumerate(source.splitlines(), 1):
             for name in IDENTIFIER.findall(line):
                 items.append(dict(identifier=name, source=str(path.relative_to(ROOT)), line=number))
-    return items
+    return dict(controls=items, empty_button_candidates=candidates)
 
 
 def bounds(node):
@@ -91,7 +102,7 @@ def main():
             parser.error(str(error))
     else:
         result = dict(evidence="estático: declaraciones de identificadores literales y plantillas",
-                      controls=inventory())
+                      **inventory())
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return int(bool(result.get("findings")))
 
