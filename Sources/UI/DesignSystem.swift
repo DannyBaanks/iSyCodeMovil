@@ -72,8 +72,8 @@ public enum IysTheme: String, CaseIterable, Identifiable {
 
     public var accent: Color {
         switch self {
-        case .console: return .iys(dark: "E94560", light: "D12F4E")
-        case .premium: return .iys(dark: "9B5DE5", light: "7A3FC7")
+        case .console: return .iys(dark: "FF7891", light: "AD2045")
+        case .premium: return .iys(dark: "BD91FF", light: "7137B5")
         }
     }
 
@@ -172,27 +172,27 @@ public struct OCColor {
     public static let textFaint    = Color.iys(dark: "7A8490", light: "6E7684")
     public static let iconPrimary  = Color.iys(dark: "E0E0E0", light: "1B1B28")
     public static let iconMuted    = Color.iys(dark: "9AA3AD", light: "545C6B")
-    /// Ink that sits on a filled accent. Coral and violet both need light text.
-    public static let onAccent     = Color(hex: "F7F4EF")
+    /// Ink follows the luminance of the filled controls in each appearance.
+    public static let onAccent     = Color.iys(dark: "23131C", light: "FFFFFF")
 
     // Agent / Mode colors
     public static var agentBuild: Color { theme.accent }
-    public static let agentPlan    = Color(hex: "F799C6")
-    public static let agentExplore = Color(hex: "F3DA9B")
-    public static let agentReview  = Color(hex: "96E3A6")
-    public static let agentCustom  = Color(hex: "9E99F7")
+    public static let agentPlan    = Color.iys(dark: "F799C6", light: "902858")
+    public static let agentExplore = Color.iys(dark: "F3DA9B", light: "734A12")
+    public static let agentReview  = Color.iys(dark: "96E3A6", light: "245E3B")
+    public static let agentCustom  = Color.iys(dark: "9E99F7", light: "553D99")
 
     public static var agentBuildSoft: Color { theme.accent.opacity(0.10) }
-    public static let agentPlanSoft    = Color(hex: "F799C6", opacity: 0.08)
-    public static let agentExploreSoft = Color(hex: "F3DA9B", opacity: 0.08)
-    public static let agentReviewSoft  = Color(hex: "96E3A6", opacity: 0.08)
-    public static let agentCustomSoft  = Color(hex: "9E99F7", opacity: 0.08)
+    public static let agentPlanSoft    = agentPlan.opacity(0.08)
+    public static let agentExploreSoft = agentExplore.opacity(0.08)
+    public static let agentReviewSoft  = agentReview.opacity(0.08)
+    public static let agentCustomSoft  = agentCustom.opacity(0.08)
 
     public static var agentBuildBorder: Color { theme.accent.opacity(0.28) }
-    public static let agentPlanBorder    = Color(hex: "F799C6", opacity: 0.30)
-    public static let agentExploreBorder = Color(hex: "F3DA9B", opacity: 0.30)
-    public static let agentReviewBorder  = Color(hex: "96E3A6", opacity: 0.30)
-    public static let agentCustomBorder  = Color(hex: "9E99F7", opacity: 0.30)
+    public static let agentPlanBorder    = agentPlan.opacity(0.30)
+    public static let agentExploreBorder = agentExplore.opacity(0.30)
+    public static let agentReviewBorder  = agentReview.opacity(0.30)
+    public static let agentCustomBorder  = agentCustom.opacity(0.30)
 
     // Syntax & Diff
     public static let diffAddFg      = Color.iys(dark: "C4FFC0", light: "166534")
