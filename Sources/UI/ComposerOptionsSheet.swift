@@ -64,6 +64,8 @@ private struct ComposerOptionsSheet: View {
     let onModelTap: () -> Void
     let pick: (@escaping () -> Void) -> Void
     let coordinator: MultimodalComposerCoordinator
+    @Environment(\.dynamicTypeSize) private var textSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showMore = false
 
     var body: some View {
@@ -73,16 +75,32 @@ private struct ComposerOptionsSheet: View {
 
                 VStack(alignment: .leading, spacing: OCSpacing.md) {
                     sectionTitle("Cómo trabaja")
-                    // Four short modes fit a segmented control; "Personalizado" was cut to
-                    // "Personal…" on the iPhone, so it stays in the full agent picker.
-                    let segmentModes = availableModes.filter { $0 != .custom }
-                    if segmentModes.count > 1 {
-                        Picker("Modo", selection: $agentMode) {
-                            ForEach(segmentModes) { mode in
-                                Text(mode.displayName).tag(mode)
+                    if availableModes.count > 1 {
+                        OCFlowLayout(spacing: OCSpacing.sm, lineSpacing: OCSpacing.xs) {
+                            ForEach(availableModes.filter { $0 != .custom || agentMode == .custom }) { mode in
+                                Button {
+                                    guard mode != agentMode else { return }
+                                    OCHaptics.selection()
+                                    agentMode = mode
+                                } label: {
+                                    HStack(spacing: OCSpacing.xs) {
+                                        if agentMode == mode {
+                                            Image(systemName: "checkmark").accessibilityHidden(true)
+                                        }
+                                        Text(mode.displayName)
+                                    }
+                                    .font(.subheadline.weight(.medium))
+                                    .padding(.horizontal, OCSpacing.md)
+                                    .padding(.vertical, OCSpacing.xs)
+                                    .background(Capsule().fill(agentMode == mode ? OCColor.agentBuildSoft : OCColor.bgLayer1))
+                                    .frame(minHeight: 44)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(agentMode == mode ? .isSelected : [])
+                                .accessibilityIdentifier("composer-mode-\(mode.rawValue)")
                             }
                         }
-                        .pickerStyle(.segmented)
                     }
                     Toggle(isOn: $flowMode) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -108,7 +126,7 @@ private struct ComposerOptionsSheet: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     Button {
-                        withAnimation(OCMotion.smooth) { showMore.toggle() }
+                        withAnimation(reduceMotion ? nil : OCMotion.smooth) { showMore.toggle() }
                     } label: {
                         HStack {
                             sectionTitle("Más")
@@ -147,7 +165,19 @@ private struct ComposerOptionsSheet: View {
         .background(OCColor.bgDeep.ignoresSafeArea())
     }
 
-    private var attachTiles: some View {
+    @ViewBuilder private var attachTiles: some View {
+        if textSize.isAccessibilitySize {
+            VStack(alignment: .leading) {
+                optionRow(title: "Fotos", symbol: "photo") { pick { coordinator.showPhotosPicker = true } }
+                optionRow(title: "Cámara", symbol: "camera") { pick { coordinator.openCamera() } }
+                optionRow(title: "Archivo", symbol: "folder") { pick { coordinator.showFileImporter = true } }
+            }
+        } else {
+            attachmentGrid
+        }
+    }
+
+    private var attachmentGrid: some View {
         HStack(spacing: OCSpacing.md) {
             attachTile("Fotos", symbol: "photo.on.rectangle.angled") { coordinator.showPhotosPicker = true }
             attachTile("Cámara", symbol: "camera") { coordinator.openCamera() }
