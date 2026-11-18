@@ -25,7 +25,7 @@ private final class MockWDA: URLProtocol {
             let (status, data) = try handler(request)
             let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didReceive: data)
+            client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
@@ -59,7 +59,11 @@ final class WdaClientTests: XCTestCase {
         MockWDA.reset(handler)
     }
 
-    private func json(_ status: Int = 200, _ object: [String: Any]) -> (Int, Data) {
+    private func json(_ object: [String: Any]) -> (Int, Data) {
+        json(200, object)
+    }
+
+    private func json(_ status: Int, _ object: [String: Any]) -> (Int, Data) {
         (status, try! JSONSerialization.data(withJSONObject: object))
     }
 
@@ -165,7 +169,8 @@ final class WdaClientTests: XCTestCase {
             }
             return self.wdaError(404, "unknown command", "x")
         }
-        XCTAssertEqual(try await client.pageSource(), "<AppiumAUT><XCUIElementTypeApplication/></AppiumAUT>")
+        let xml = try await client.pageSource()
+        XCTAssertEqual(xml, "<AppiumAUT><XCUIElementTypeApplication/></AppiumAUT>")
     }
 
     // MARK: - Sesión
@@ -286,8 +291,8 @@ final class WdaClientTests: XCTestCase {
     func testTypeTextSplitsCharactersAndSubmitAppendsReturn() async throws {
         stubWithSession()
         try await client.typeText("hola", submit: true)
-        let body = try body(of: try XCTUnwrap(requests(to: "/session/S1/wda/keys").first))
-        XCTAssertEqual(body["value"] as? [String], ["h", "o", "l", "a", "\n"])
+        let firstBody = try body(of: try XCTUnwrap(requests(to: "/session/S1/wda/keys").first))
+        XCTAssertEqual(firstBody["value"] as? [String], ["h", "o", "l", "a", "\n"])
 
         try await client.typeText("ab")
         let second = try body(of: requests(to: "/session/S1/wda/keys")[1])
