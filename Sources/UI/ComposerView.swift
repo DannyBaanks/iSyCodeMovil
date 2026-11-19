@@ -683,7 +683,7 @@ public struct ModelPickerSheet: View {
     @State private var searchText = ""
     @State private var reasoningEffort: ReasoningEffort = ReasoningEffortSetting.current
 
-    public init(selectedModel: Binding<ModelInfo?>, models: [ModelInfo] = ModelInfo.demoModels) {
+    public init(selectedModel: Binding<ModelInfo?>, models: [ModelInfo] = []) {
         self._selectedModel = selectedModel
         self.models = models
     }
@@ -716,7 +716,7 @@ public struct ModelPickerSheet: View {
                                 ForEach(groupedModels[provider] ?? []) { model in
                                     ModelPickerRow(
                                         model: model,
-                                        isSelected: selectedModel?.id == model.id
+                                        isSelected: selectedModel.map { matches($0, model) } ?? false
                                     ) {
                                         selectedModel = model
                                         dismiss()
@@ -778,13 +778,18 @@ public struct ModelPickerSheet: View {
         .background(OCColor.bgDeep)
     }
 
+    private func matches(_ lhs: ModelInfo, _ rhs: ModelInfo) -> Bool {
+        lhs.id == rhs.id || (lhs.apiModelId != nil && lhs.apiModelId == rhs.apiModelId
+            && (lhs.route ?? lhs.provider) == (rhs.route ?? rhs.provider))
+    }
+
     private var groupedModels: [String: [ModelInfo]] {
         Dictionary(grouping: filteredModels, by: { $0.provider })
     }
 
     private var filteredModels: [ModelInfo] {
         var candidates = models.filter { $0.apiModelId != nil }
-        if let selectedModel, selectedModel.apiModelId != nil, !candidates.contains(where: { $0.id == selectedModel.id }) {
+        if let selectedModel, selectedModel.apiModelId != nil, !candidates.contains(where: { matches($0, selectedModel) }) {
             candidates.insert(selectedModel, at: 0)
         }
         if searchText.isEmpty { return candidates }

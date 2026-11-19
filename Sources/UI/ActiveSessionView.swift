@@ -251,7 +251,10 @@ public struct ActiveSessionView: View {
             AgentPickerSheet(selectedMode: $sessionState.agentMode, availableModes: availableModesForPicker)
         }
         .sheet(isPresented: $sessionState.showModelPicker) {
-            ModelPickerSheet(selectedModel: $sessionState.selectedModel, models: store.availableModels)
+            ModelPickerSheet(selectedModel: Binding(
+                get: { sessionState.selectedModel },
+                set: { if let model = $0 { store.setModel(model) } }
+            ), models: store.availableModels)
         }
         .sheet(isPresented: $showSandboxPanel) {
             SandboxPanelView()
