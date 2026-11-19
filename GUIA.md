@@ -181,3 +181,19 @@ renombrar y borrar no están en este adaptador.
   verificados contra el servidor real el 2026-09-18.
 - La terminal/PTY del OpenCode TUI **no** corre en iOS (límite de la
   plataforma, documentado en `docs/IOS_LIMITATIONS.md`); no hay imitación.
+
+## Inspección de controles con UI Doctor
+
+```bash
+python3 scripts/ui-doctor.py
+```
+
+El inspector lee el código Swift o una captura de accesibilidad guardada. Puedes usarlo con el teléfono desconectado. El inventario comienza con esta descripción:
+
+```json
+{"evidence": "estático: declaraciones de identificadores literales y plantillas"}
+```
+
+Cada entrada incluye el identificador, el archivo y la línea. Una misma vista puede tener varios identificadores o aparecer solo en una previsualización. Los candidatos a botón vacío requieren inspeccionar el código y su contexto.
+
+Para revisar una captura XML de WebDriverAgent, usa `python3 scripts/ui-doctor.py --snapshot pantalla.xml --expect chat-open-sidebar`. El archivo debe contener el elemento Application y su geometría. Usa un identificador que deba estar visible en esa pantalla. Una captura del teclado permite detectar controles completamente cubiertos. El informe incluye la huella del XML y los hallazgos. El código de salida 0 indica que las reglas ejecutadas no encontraron incidencias, 1 indica hallazgos y 2 indica que el archivo o los argumentos impidieron la inspección. Una sola captura no permite comprobar navegación, envío, movimiento ni recibos.
