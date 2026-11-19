@@ -84,6 +84,20 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
 
+  IysCodeMovilUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: IysCodeMovil
+    settings:
+      base:
+        TEST_TARGET_NAME: IysCodeMovil
+        PRODUCT_BUNDLE_IDENTIFIER: dev.iyscode.movil.uitests
+        PRODUCT_NAME: IysCodeMovilUITests
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   IysCodeMovil:
     build:
@@ -96,6 +110,7 @@ schemes:
       config: Debug
       targets:
         - IysCodeMovilTests
+        - IysCodeMovilUITests
     profile:
       config: Release
     analyze:

@@ -21,7 +21,13 @@ public struct ConnectionsView: View {
     @State private var showSandboxPanel = false
     @State private var showPairingImporter = false
     @State private var isActivatingChatGPT = false
-    @State private var chatGPTActivationFeedback: String?
+    private enum ActivationResult {
+        case activated([String])
+        case failed(String?)
+    }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var chatGPTActivationFeedback: ActivationResult?
     @AppStorage("connections.showAdvanced") private var showAdvanced = false
 
     public init() {}
@@ -48,14 +54,14 @@ public struct ConnectionsView: View {
             if !advancedInUse {
                 Section {
                     Button {
-                        withAnimation(OCMotion.smooth) { showAdvanced.toggle() }
+                        withAnimation(reduceMotion ? nil : OCMotion.smooth) { showAdvanced.toggle() }
                     } label: {
                         Label(showAdvanced ? "Ocultar opciones avanzadas" : "Opciones avanzadas",
                               systemImage: showAdvanced ? "chevron.up" : "gearshape.2")
                     }
                 } footer: {
                     if !showAdvanced {
-                        Text("Conectar tu computadora (ISyMCP, sandbox) o la VPN local. No hace falta para conversar.")
+                        Text("Vincula tu computadora o configura el control de este iPhone.")
                     }
                 }
             }
@@ -147,24 +153,20 @@ public struct ConnectionsView: View {
                 Button {
                     guard !isActivatingChatGPT else { return }
                     isActivatingChatGPT = true
-                    chatGPTActivationFeedback = "Consultando modelos disponibles…"
+                    chatGPTActivationFeedback = nil
                     Task {
                         let ok = await store.startSandbox(providerID: "chatgpt-oauth", apiKey: nil)
                         isActivatingChatGPT = false
                         if ok {
                             let models = ChatGPTOAuthStore.storedModelIDs()
-                            chatGPTActivationFeedback = models.isEmpty
-                                ? "Activado."
-                                : "Activado · Modelos: \(models.prefix(4).joined(separator: ", "))"
+                            chatGPTActivationFeedback = .activated(models)
                         } else {
-                            chatGPTActivationFeedback = store.sandboxSetupError
-                                ?? chatgptOAuth.lastDiscoveryError
-                                ?? "No se pudo activar ChatGPT OAuth."
+                            chatGPTActivationFeedback = .failed(store.sandboxSetupError ?? chatgptOAuth.lastDiscoveryError)
                         }
                     }
                 } label: {
                     HStack {
-                        Label("Activar ChatGPT Plus/Pro (OAuth)", systemImage: "bolt.fill")
+                        Label(isActivatingChatGPT ? "Consultando modelos…" : "Usar en el chat", systemImage: "bolt.fill")
                         if isActivatingChatGPT {
                             Spacer()
                             ProgressView()
@@ -173,9 +175,17 @@ public struct ConnectionsView: View {
                 }
                 .disabled(isActivatingChatGPT)
                 if let feedback = chatGPTActivationFeedback {
-                    Text(feedback)
-                        .font(OCTypography.meta)
-                        .foregroundStyle(store.sandboxSetupError != nil || chatgptOAuth.lastDiscoveryError != nil ? OCColor.danger : OCColor.success)
+                    switch feedback {
+                    case .activated(let models):
+                        Label("ChatGPT está listo para conversar.", systemImage: "checkmark.circle")
+                        if !models.isEmpty {
+                            DisclosureGroup("Modelos disponibles") {
+                                Text(models.joined(separator: ", ")).font(.footnote)
+                            }
+                        }
+                    case .failed(let detail):
+                        connectionIssue("No se pudo activar ChatGPT. Comprueba la conexión y vuelve a tocar Usar en el chat.", detail: detail)
+                    }
                 }
                 Button("Cerrar sesión ChatGPT", role: .destructive) {
                     chatGPTActivationFeedback = nil
@@ -185,7 +195,7 @@ public struct ConnectionsView: View {
                 Button {
                     chatgptOAuth.startDeviceLogin()
                 } label: {
-                    Label("Conectar ChatGPT Plus/Pro (OAuth)", systemImage: "person.badge.key")
+                    Label("Conectar mi cuenta de ChatGPT", systemImage: "person.badge.key")
                 }
             }
 
@@ -195,14 +205,25 @@ public struct ConnectionsView: View {
                     .foregroundStyle(OCColor.textSecondary)
             }
             if let err = chatgptOAuth.errorMessage {
-                Label(err, systemImage: "exclamationmark.circle")
-                    .font(OCTypography.meta)
-                    .foregroundStyle(OCColor.danger)
+                connectionIssue("Hubo un problema con la cuenta. Revisa el detalle para continuar.", detail: err)
             }
         } header: {
-            Text("ChatGPT Plus/Pro (OAuth)")
+            Text("Cuenta de ChatGPT")
         } footer: {
             Text("Inicia sesión con tu cuenta ChatGPT Plus o Pro usando el flujo de dispositivo de Codex para usar los modelos reales de tu cuenta con tu suscripción semanal sin pagar API key.")
+        }
+    }
+
+    private func connectionIssue(_ message: String, detail: String?) -> some View {
+        VStack(alignment: .leading, spacing: OCSpacing.sm) {
+            Label(message, systemImage: "exclamationmark.circle")
+                .font(.subheadline)
+                .foregroundColor(OCColor.textPrimary)
+            if let detail, !detail.isEmpty {
+                DisclosureGroup("Ver detalles") {
+                    Text(detail).font(.footnote).textSelection(.enabled)
+                }
+            }
         }
     }
 

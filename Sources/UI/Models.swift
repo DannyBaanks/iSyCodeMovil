@@ -417,9 +417,40 @@ public struct ModelInfo: Identifiable, Hashable, Sendable {
 
 // MARK: - Active Session State
 
+/// A composer observes only its own in-memory draft. Typing must not invalidate the timeline.
+@MainActor
+final class ConversationDraft: ObservableObject {
+    @Published var text = ""
+    var submittedText: String?
+
+    func receivedPrompt(_ prompt: String?) {
+        guard let submittedText,
+              submittedText.trimmingCharacters(in: .whitespacesAndNewlines) == prompt else { return }
+        if text == submittedText { text = "" }
+        self.submittedText = nil
+    }
+}
+
 @MainActor
 public final class ActiveSessionState: ObservableObject {
-    @Published public var currentProject: Project?
+    private var conversationDrafts: [String: ConversationDraft] = [:]
+
+    func draft(for session: Session) -> ConversationDraft {
+        if let existing = conversationDrafts[session.id] { return existing }
+        let draft = ConversationDraft()
+        conversationDrafts[session.id] = draft
+        return draft
+    }
+
+    @Published public var currentProject: Project? {
+        didSet {
+            if currentProject == nil {
+                conversationDrafts.removeAll()
+                attachmentGeneration = UUID()
+                attachmentDrafts.removeAll()
+            }
+        }
+    }
     @Published public var currentSession: Session?
     @Published public var timelineEvents: [TimelineEvent] = []
     @Published public var activeSurface: WorkSurface = .chat
@@ -427,7 +458,38 @@ public final class ActiveSessionState: ObservableObject {
     @Published public var selectedModel: ModelInfo?
     @Published public var isProcessing: Bool = false
     @Published public var composerText: String = ""
-    @Published public var composerAttachments: [Attachment] = []
+    enum AttachmentOwner: Hashable {
+        case landing
+        case conversation(project: String, session: String)
+
+        init(_ session: Session) {
+            self = .conversation(project: session.projectId, session: session.id)
+        }
+    }
+
+    @Published private var attachmentDrafts: [AttachmentOwner: [Attachment]] = [:]
+    private var attachmentGeneration = UUID()
+
+    /// Capture both the owner and the account generation when opening a picker.
+    /// A delayed Photos callback cannot append to a newly selected conversation.
+    func attachments(for owner: AttachmentOwner) -> Binding<[Attachment]> {
+        let generation = attachmentGeneration
+        return Binding(
+            get: { self.attachmentGeneration == generation ? self.attachmentDrafts[owner] ?? [] : [] },
+            set: { items in
+                guard self.attachmentGeneration == generation else { return }
+                self.attachmentDrafts[owner] = items.isEmpty ? nil : items
+            }
+        )
+    }
+
+    public var composerAttachments: [Attachment] {
+        get { currentSession.flatMap { attachmentDrafts[AttachmentOwner($0)] } ?? [] }
+        set {
+            guard let currentSession else { return }
+            attachments(for: AttachmentOwner(currentSession)).wrappedValue = newValue
+        }
+    }
     @Published public var showAgentPicker: Bool = false
     @Published public var showModelPicker: Bool = false
     @Published public var showAttachments: Bool = false
@@ -438,6 +500,9 @@ public final class ActiveSessionState: ObservableObject {
     public init() {}
 
     public func addEvent(_ event: TimelineEvent) {
+        if event.kind == .userPrompt, let id = currentSession?.id {
+            conversationDrafts[id]?.receivedPrompt(event.promptText)
+        }
         timelineEvents.append(event)
     }
 

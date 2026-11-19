@@ -1,0 +1,5 @@
+version: 1
+bundleID: dev.iyscode.movil
+product: IysCodeMovil
+displayName: ISyCode Móvil
+infoPath: Info.plist

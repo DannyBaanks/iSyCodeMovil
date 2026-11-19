@@ -633,6 +633,7 @@ public final class WorkbenchStore: ObservableObject {
             do {
                 try await backend.selectSession(session.id)
                 let events = try await backend.loadHistory(sessionID: session.id)
+                guard currentSessionID == session.id else { return }
                 var mergedEvents = events
                 for streamedEvent in sessionState.timelineEvents {
                     if let index = mergedEvents.firstIndex(where: { $0.id == streamedEvent.id }) {
@@ -672,7 +673,8 @@ public final class WorkbenchStore: ObservableObject {
             if backendMode == .native {
                 sessionState.pendingPermission = nil
             }
-            try? await backend.selectSession(session.id)
+            try await backend.selectSession(session.id)
+            guard currentSessionID == session.id else { return nil }
             return session
         } catch {
             addErrorEvent("No pude crear la conversación: \(error.localizedDescription)")
@@ -711,7 +713,9 @@ public final class WorkbenchStore: ObservableObject {
     
     public func sendPrompt(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let attachments = sessionState.composerAttachments
+        guard let session = sessionState.currentSession, currentSessionID == session.id else { return }
+        let owner = sessionState.attachments(for: .init(session))
+        let attachments = owner.wrappedValue
         guard (!trimmed.isEmpty || !attachments.isEmpty), !sessionState.isProcessing else { return }
 
         if attachments.contains(where: {
@@ -734,10 +738,7 @@ public final class WorkbenchStore: ObservableObject {
         let activeModelID = sessionState.selectedModel?.apiModelId ?? snapshot.modelName ?? configuredModelName
 
         sessionState.isProcessing = true
-        let runningID = currentSessionID
-        if let runningID {
-            runningSessionIDs.insert(runningID)
-        }
+        runningSessionIDs.insert(session.id)
         if backendMode == .remote {
             isProcessingRemote = true
         }
@@ -745,7 +746,8 @@ public final class WorkbenchStore: ObservableObject {
             native.flowMode = sessionState.flowMode
         }
 
-        let agent = sessionState.agentMode.rawValue.lowercased()
+        let agentMode = sessionState.agentMode
+        let agent = agentMode.rawValue.lowercased()
         let model = sessionState.selectedModel
 
         Task { [weak self] in
@@ -758,51 +760,49 @@ public final class WorkbenchStore: ObservableObject {
                     backendMode: self.backendMode
                 )
 
+                guard self.currentSessionID == session.id, self.sessionState.isProcessing,
+                      self.runningSessionIDs.contains(session.id) else {
+                    if self.currentSessionID != session.id { self.runningSessionIDs.remove(session.id) }
+                    return
+                }
                 if let blockedReason = prepared.blockedReason {
-                    await MainActor.run {
-                        self.sessionState.isProcessing = false
-                        if let runningID { self.runningSessionIDs.remove(runningID) }
-                        self.isProcessingRemote = false
-                        self.addErrorEvent("Adjunto no compatible con el proveedor actual:\n\(blockedReason)")
-                    }
+                    self.runningSessionIDs.remove(session.id)
+                    self.sessionState.isProcessing = false
+                    self.isProcessingRemote = false
+                    self.addErrorEvent("Adjunto no compatible con el proveedor actual:\n\(blockedReason)")
                     return
                 }
 
-                let sentAttachments: [Attachment] = attachments.map { item in
+                let sentAttachments = attachments.map { item in
                     var copy = item
                     copy.state = .sent
                     return copy
                 }
+                self.sessionState.addEvent(.userPrompt(effectivePrompt, attachments: sentAttachments, agentMode: agentMode))
 
-                await MainActor.run {
-                    let userEvent = TimelineEvent.userPrompt(
-                        effectivePrompt,
-                        attachments: sentAttachments,
-                        agentMode: self.sessionState.agentMode
-                    )
-                    self.sessionState.addEvent(userEvent)
-                    self.sessionState.composerAttachments.removeAll()
-                }
-
-                if prepared.parts.isEmpty && !attachments.isEmpty {
-                    let promptText = effectivePrompt + "\n" + prepared.fallbackPromptNotes.joined(separator: " ")
-                    try await backend.sendPrompt(promptText, agent: agent, model: model)
+                let text = prepared.parts.isEmpty && !attachments.isEmpty
+                    ? effectivePrompt + "\n" + prepared.fallbackPromptNotes.joined(separator: " ")
+                    : effectivePrompt
+                if let native = backend as? NativeSwiftBackend {
+                    try await native.sendPrompt(text, to: session.id, multimodalParts: prepared.parts, agent: agent, model: model)
+                } else if let remote = backend as? any RemoteBackend {
+                    let content = remotePromptText(text, parts: prepared.parts)
+                    try await remote.sendPrompt(sessionID: session.id, text: content, agent: agent,
+                                                modelProvider: model?.route ?? model?.provider, modelID: model?.apiModelId)
                 } else {
-                    try await backend.sendPrompt(effectivePrompt, multimodalParts: prepared.parts, agent: agent, model: model)
+                    try await backend.sendPrompt(text, multimodalParts: prepared.parts, agent: agent, model: model)
                 }
-            } catch is CancellationError {
-                await MainActor.run {
-                    self.sessionState.isProcessing = false
-                    if let runningID { self.runningSessionIDs.remove(runningID) }
-                    self.isProcessingRemote = false
-                    self.addSystemEvent("Stopped")
-                }
+                let sentIDs = Set(attachments.map(\.id))
+                owner.wrappedValue.removeAll { sentIDs.contains($0.id) }
             } catch {
-                await MainActor.run {
-                    self.sessionState.isProcessing = false
-                    if let runningID { self.runningSessionIDs.remove(runningID) }
-                    self.isProcessingRemote = false
-                    self.addErrorEvent("Prompt failed: \(error.localizedDescription)")
+                self.runningSessionIDs.remove(session.id)
+                guard self.currentSessionID == session.id else { return }
+                self.sessionState.isProcessing = false
+                self.isProcessingRemote = false
+                if error is CancellationError {
+                    self.addSystemEvent("Envío detenido")
+                } else {
+                    self.addErrorEvent("No se pudo enviar el mensaje: \(error.localizedDescription)")
                 }
             }
         }
@@ -1363,12 +1363,15 @@ public final class WorkbenchStore: ObservableObject {
     }
     
     public func removeAttachment(_ attachment: Attachment) {
-        sessionState.composerAttachments.removeAll { $0.id == attachment.id }
-        Task {
-            await ChatAttachmentManager.shared.removeStagedFile(for: attachment)
-        }
+        guard let session = sessionState.currentSession else { return }
+        removeAttachment(attachment, from: sessionState.attachments(for: .init(session)))
     }
-    
+
+    func removeAttachment(_ attachment: Attachment, from owner: Binding<[Attachment]>) {
+        owner.wrappedValue.removeAll { $0.id == attachment.id }
+        Task { await ChatAttachmentManager.shared.removeStagedFile(for: attachment) }
+    }
+
     public func saveAPIKeys(xai: String, openAI: String) async {
         await saveAPIKeys(values: ["xai": xai, "openai": openAI], selectedProviderID: "xai")
     }
@@ -1877,7 +1880,8 @@ extension WorkbenchStore {
 
     /// Ensures the native runtime is active and opens either the last active conversation or a new one.
     @discardableResult
-    public func openOrCreateConversation(preferNew: Bool = false, initialPrompt: String? = nil) async -> Bool {
+    public func openOrCreateConversation(preferNew: Bool = false, initialPrompt: String? = nil, landingAttachments: [Attachment] = []) async -> Bool {
+        let landing = sessionState.attachments(for: .landing)
         if backendMode == .unconfigured {
             let canUseConfigured = (configuredProviderID == "gus-local" && hasInstalledLocalModel)
                 || (configuredProviderID != nil && configuredProviderID != "gus-local" && hasSavedSelectedProviderKey)
@@ -1904,14 +1908,17 @@ extension WorkbenchStore {
         }
 
         sessionState.activeSurface = .chat
-        let hasAttachments = !sessionState.composerAttachments.isEmpty
         if let initialPrompt {
             let trimmed = initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty || hasAttachments {
+            let requestedIDs = Set(landingAttachments.map(\.id))
+            let selected = landing.wrappedValue.filter { requestedIDs.contains($0.id) }
+            guard selected.count == requestedIDs.count, selected.allSatisfy({ $0.state.isReady }),
+                  !sessionState.isProcessing, currentBackend != nil else { return false }
+            if !trimmed.isEmpty || !selected.isEmpty {
+                sessionState.composerAttachments.append(contentsOf: selected)
+                landing.wrappedValue.removeAll { requestedIDs.contains($0.id) }
                 sendPrompt(trimmed)
             }
-        } else if hasAttachments {
-            sendPrompt("")
         }
         return true
     }

@@ -35,13 +35,13 @@ public enum GUSContextualAction: String, Identifiable, Equatable, Sendable {
 
     public var title: String {
         switch self {
-        case .prepareCatalogCapability: return "Preparar capacidad"
-        case .applyRecommendedTools: return "Aplicar al constructor"
+        case .prepareCatalogCapability: return "Proponer importador CSV"
+        case .applyRecommendedTools: return "Revisar herramientas"
         case .explainPermissions: return "Explicar permisos"
         case .testWithSampleCSV: return "Probar con un archivo"
         case .viewAvailableTools: return "Ver herramientas"
         case .openBuilder: return "Ir a Construir agente"
-        case .dismissToScreen: return "Volver al constructor"
+        case .dismissToScreen: return "Volver"
         }
     }
 
@@ -58,12 +58,27 @@ public enum GUSContextualAction: String, Identifiable, Equatable, Sendable {
     }
 }
 
+private final class GUSAdvisorSession: ObservableObject {
+    @Published var questionInput = ""
+    @Published var exchanges: [GUSAdvisorExchange] = []
+    @Published var isRunningSample = false
+    @Published var statusBanner: String?
+}
+
+private struct BuilderToolProposal: Identifiable {
+    let id = UUID()
+    let contractID: String
+    let tools: [String]
+    let compositions: [L1ToolDefinition]
+}
+
 /// Floating contextual GUS button that sits non-intrusively over primary screens
 /// and opens the contextual GUS advisor sheet without losing navigation or builder state (Section 7).
 public struct GUSFloatingAdvisorButton: View {
     @EnvironmentObject private var router: AppShellRouter
     @ObservedObject private var contractStore = AgentContractStore.shared
     @State private var isPresented = false
+    @StateObject private var session = GUSAdvisorSession()
 
     public init() {}
 
@@ -102,7 +117,7 @@ public struct GUSFloatingAdvisorButton: View {
             }
             .padding(.leading, 8)
             .padding(.trailing, 13)
-            .frame(height: 40)
+            .frame(minHeight: 44)
             .background(
                 Capsule()
                     .fill(OCColor.bgBase.opacity(0.96))
@@ -117,7 +132,7 @@ public struct GUSFloatingAdvisorButton: View {
         .accessibilityLabel("Abrir asistente contextual GUS")
         .accessibilityIdentifier("gus-floating-button")
         .sheet(isPresented: $isPresented) {
-            GUSContextualSheet()
+            GUSContextualSheet(session: session)
                 .environmentObject(router)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -129,22 +144,30 @@ public struct GUSContextualSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var router: AppShellRouter
     @ObservedObject private var contractStore = AgentContractStore.shared
-    @State private var questionInput = ""
-    @State private var exchanges: [GUSAdvisorExchange] = []
-    @State private var isRunningSample = false
-    @State private var statusBanner: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @StateObject private var session: GUSAdvisorSession
+    @State private var proposal: BuilderToolProposal?
+    private let canMinimize: Bool
 
-    public init() {}
+    public init() {
+        _session = StateObject(wrappedValue: GUSAdvisorSession())
+        canMinimize = false
+    }
+
+    fileprivate init(session: GUSAdvisorSession) {
+        _session = StateObject(wrappedValue: session)
+        canMinimize = true
+    }
 
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 contextHeaderBanner
 
-                if let statusBanner {
+                if let statusBanner = session.statusBanner {
                     HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(OCColor.success)
+                        Image(systemName: "info.circle")
+                            .foregroundColor(OCColor.textSecondary)
                         Text(statusBanner)
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(OCColor.textPrimary)
@@ -152,14 +175,14 @@ public struct GUSContextualSheet: View {
                     }
                     .padding(.horizontal, OCSpacing.contentMargin)
                     .padding(.vertical, 8)
-                    .background(OCColor.success.opacity(0.12))
+                    .background(OCColor.bgBase)
                 }
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: OCSpacing.md) {
                         initialContextualCard
 
-                        ForEach(exchanges) { item in
+                        ForEach(session.exchanges) { item in
                             exchangeView(item)
                         }
                     }
@@ -175,10 +198,58 @@ public struct GUSContextualSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Listo") { dismiss() }
+                    Button(canMinimize ? "Minimizar" : "Cerrar") { dismiss() }
+                        .accessibilityIdentifier("gus-close")
                 }
             }
         }
+        .sheet(item: $proposal) { proposalReview($0) }
+    }
+
+    @ViewBuilder
+    private func proposalReview(_ proposal: BuilderToolProposal) -> some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: OCSpacing.md) {
+                    Text("Se añadirán al borrador. Podrás revisar sus permisos antes de usar el agente.")
+                        .font(.body)
+                    ForEach(proposal.tools + proposal.compositions.map(\.name), id: \.self) { name in
+                        Label(name, systemImage: "wrench.and.screwdriver")
+                            .font(.callout)
+                    }
+                    ForEach(AgentContract.computeRequiredScopes(l0Tools: proposal.tools, l1Tools: proposal.compositions)) { scope in
+                        VStack(alignment: .leading) {
+                            Text(scope.title).font(.headline)
+                            Text(scope.plainExplanation).font(.subheadline).foregroundColor(OCColor.textSecondary)
+                        }
+                    }
+                    Button("Añadir al agente") {
+                        guard var draft = contractStore.activeDraft, draft.contract.id == proposal.contractID else {
+                            session.statusBanner = "El borrador cambió. Vuelve a revisar las herramientas."
+                            self.proposal = nil
+                            return
+                        }
+                        draft.addTools(proposal.tools, compositions: proposal.compositions)
+                        let saved = contractStore.saveDraft(draft)
+                        session.statusBanner = saved ? "Borrador actualizado." : contractStore.lastError
+                        if saved {
+                            session.exchanges.append(GUSAdvisorExchange(gusResponse: "Tu borrador incluye " + (proposal.tools + proposal.compositions.map(\.name)).joined(separator: ", ") + "."))
+                        }
+                        self.proposal = nil
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("gus-apply-proposal")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(OCSpacing.contentMargin)
+            }
+            .navigationTitle("Herramientas propuestas")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { self.proposal = nil } }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 
     private var contextHeaderBanner: some View {
@@ -318,9 +389,9 @@ public struct GUSContextualSheet: View {
 
                 if let receipt = item.receiptPreview {
                     VStack(alignment: .leading, spacing: 4) {
-                        Label("Recibo verificado en este iPhone (Python pocketpy 2.2.0)", systemImage: "checkmark.seal.fill")
+                        Label("Recibo de ejecución", systemImage: "doc.text")
                             .font(.system(size: 11.5, weight: .semibold))
-                            .foregroundColor(OCColor.success)
+                            .foregroundColor(OCColor.textSecondary)
                         Text(receipt)
                             .font(OCTypography.codeSmall)
                             .foregroundColor(OCColor.textSecondary)
@@ -333,7 +404,7 @@ public struct GUSContextualSheet: View {
                 }
 
                 if !item.suggestedActions.isEmpty {
-                    actionChipsGrid(item.suggestedActions)
+                    actionChipsGrid(item.suggestedActions, goal: item.userQuestion)
                 }
             }
             .padding(OCSpacing.md)
@@ -344,15 +415,15 @@ public struct GUSContextualSheet: View {
         }
     }
 
-    private func actionChipsGrid(_ actions: [GUSContextualAction]) -> some View {
+    private func actionChipsGrid(_ actions: [GUSContextualAction], goal: String? = nil) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(actions) { action in
                     Button {
-                        performAction(action)
+                        performAction(action, goal: goal)
                     } label: {
                         HStack(spacing: 6) {
-                            if action == .testWithSampleCSV && isRunningSample {
+                            if action == .testWithSampleCSV && session.isRunningSample {
                                 ProgressView().controlSize(.mini)
                             } else {
                                 Image(systemName: action.symbol)
@@ -381,7 +452,7 @@ public struct GUSContextualSheet: View {
                         )
                     }
                     .buttonStyle(OCInteractiveButtonStyle())
-                    .disabled(isRunningSample)
+                    .disabled(session.isRunningSample)
                 }
             }
         }
@@ -393,7 +464,7 @@ public struct GUSContextualSheet: View {
                 .padding(.horizontal, OCSpacing.contentMargin)
 
             HStack(spacing: 8) {
-                TextField("Pregúntale a GUS sobre lo que estás construyendo…", text: $questionInput, axis: .vertical)
+                TextField("Pregúntale a GUS sobre lo que estás construyendo…", text: $session.questionInput, axis: .vertical)
                     .font(.system(size: 14.5))
                     .foregroundColor(OCColor.textPrimary)
                     .lineLimit(1...4)
@@ -404,15 +475,17 @@ public struct GUSContextualSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: OCRadius.r18).stroke(OCColor.borderBase, lineWidth: 1))
                     .onSubmit { submitQuestion() }
 
-                DictationMicrophoneButton(targetText: $questionInput)
+                DictationMicrophoneButton(targetText: $session.questionInput)
 
                 Button(action: submitQuestion) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 30))
-                        .foregroundColor(questionInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? OCColor.textFaint : IysThemePreferences.active.accent)
+                        .foregroundColor(session.questionInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? OCColor.textFaint : IysThemePreferences.active.accent)
                 }
                 .buttonStyle(.plain)
-                .disabled(questionInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityLabel("Preguntar a GUS")
+                .accessibilityIdentifier("gus-submit")
+                .disabled(session.questionInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(.horizontal, OCSpacing.contentMargin)
             .padding(.vertical, 10)
@@ -421,9 +494,9 @@ public struct GUSContextualSheet: View {
     }
 
     private func submitQuestion() {
-        let trimmed = questionInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = session.questionInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        questionInput = ""
+        session.questionInput = ""
         askGUS(trimmed)
     }
 
@@ -448,83 +521,57 @@ public struct GUSContextualSheet: View {
             actions = [.applyRecommendedTools, .prepareCatalogCapability, .testWithSampleCSV, .explainPermissions, .dismissToScreen]
         }
 
-        withAnimation(OCMotion.smooth) {
-            exchanges.append(GUSAdvisorExchange(userQuestion: q, gusResponse: response, suggestedActions: actions))
+        withAnimation(reduceMotion ? nil : OCMotion.smooth) {
+            session.exchanges.append(GUSAdvisorExchange(userQuestion: q, gusResponse: response, suggestedActions: actions))
         }
     }
 
-    private func performAction(_ action: GUSContextualAction) {
+    private func performAction(_ action: GUSContextualAction, goal: String?) {
         OCHaptics.selection()
         switch action {
-        case .prepareCatalogCapability:
-            var draft = contractStore.activeDraft ?? AgentBuilderDraft()
-            for tool in ["read_file", "python_eval", "write_file"] where !draft.contract.enabledL0Tools.contains(tool) {
-                draft.contract.enabledL0Tools.append(tool)
-            }
-            if !draft.contract.l1Tools.contains(where: { $0.name == L1ToolDefinition.sampleCatalogImporter.name }) {
-                draft.contract.l1Tools.append(.sampleCatalogImporter)
-            }
-            contractStore.saveDraft(draft)
-            Task {
-                try? await DynamicToolRegistry.shared.upsert(.sampleCatalogImporter)
-            }
-            withAnimation(OCMotion.smooth) {
-                statusBanner = "Capacidad 'importar_catalogo_csv' preparada y añadida a tu constructor."
-                exchanges.append(GUSAdvisorExchange(
-                    gusResponse: "¡Listo! Ya registré la capacidad compuesta `importar_catalogo_csv` (Python local + guardado con confirmación) en tu borrador del constructor. ¿Quieres probarla con datos de ejemplo ahora mismo?",
-                    suggestedActions: [.testWithSampleCSV, .explainPermissions, .dismissToScreen]
-                ))
-            }
-
-        case .applyRecommendedTools:
-            var draft = contractStore.activeDraft ?? AgentBuilderDraft()
-            let rec = AgentTemplateCatalog.recommendTools(forGoal: draft.contract.goal.isEmpty ? draft.contract.name : draft.contract.goal)
-            for t in rec.l0 where !draft.contract.enabledL0Tools.contains(t) {
-                draft.contract.enabledL0Tools.append(t)
-            }
-            for l1 in rec.l1 where !draft.contract.l1Tools.contains(where: { $0.name == l1.name }) {
-                draft.contract.l1Tools.append(l1)
-            }
-            contractStore.saveDraft(draft)
-            withAnimation(OCMotion.smooth) {
-                statusBanner = "Herramientas recomendadas aplicadas al constructor."
-            }
+        case .prepareCatalogCapability, .applyRecommendedTools:
+            let draft = contractStore.activeDraft ?? AgentBuilderDraft.forNewAgent()
+            if contractStore.activeDraft == nil { contractStore.saveDraft(draft) }
+            let rec = AgentTemplateCatalog.recommendTools(forGoal: goal ?? draft.contract.goal)
+            proposal = BuilderToolProposal(contractID: draft.contract.id,
+                                           tools: action == .prepareCatalogCapability ? ["read_file", "python_eval", "write_file"] : rec.l0,
+                                           compositions: action == .prepareCatalogCapability ? [.sampleCatalogImporter] : rec.l1)
 
         case .explainPermissions:
             let draft = contractStore.activeDraft ?? AgentBuilderDraft()
             let scopes = AgentContract.computeRequiredScopes(l0Tools: draft.contract.enabledL0Tools, l1Tools: draft.contract.l1Tools)
             let explanation = scopes.map { "• \($0.title): \($0.plainExplanation)" }.joined(separator: "\n")
-            withAnimation(OCMotion.smooth) {
-                exchanges.append(GUSAdvisorExchange(
+            withAnimation(reduceMotion ? nil : OCMotion.smooth) {
+                session.exchanges.append(GUSAdvisorExchange(
                     gusResponse: "Estos son los permisos efectivos que solicita tu agente (calculados automáticamente de sus herramientas L0 y L1, sin permisos ocultos):\n\n\(explanation)",
                     suggestedActions: [.testWithSampleCSV, .dismissToScreen]
                 ))
             }
 
         case .testWithSampleCSV:
-            guard !isRunningSample else { return }
-            isRunningSample = true
+            guard !session.isRunningSample else { return }
+            session.isRunningSample = true
             Task {
                 let sampleCSV = "sku,nombre,precio,stock\nA01,Café Orgánico 500g,185.50,12\nA02,Prensa Francesa,420.00,5\nA03,Muestra Gratis,0,20"
                 let script = L1ToolDefinition.sampleCatalogImporter.steps.first?.args["script"] ?? "print(INPUT_TEXT)"
                 let receipt = await PythonRuntimeService.shared.evaluate(script: script, inputText: sampleCSV, timeoutMs: 3000)
                 await MainActor.run {
-                    isRunningSample = false
-                    OCHaptics.success()
-                    withAnimation(OCMotion.smooth) {
-                        statusBanner = "Prueba en Python local completada en \(receipt.durationMs) ms."
-                        exchanges.append(GUSAdvisorExchange(
-                            gusResponse: "Ejecuté la validación del catálogo CSV directamente en este iPhone. Detectó 2 productos con precio válido y separó 'Muestra Gratis' como alerta de precio $0:",
-                            suggestedActions: [.dismissToScreen],
-                            receiptPreview: "Tiempo: \(receipt.durationMs) ms · Motor: \(receipt.runtimeVersion)\nSalida: \(receipt.stdout.trimmingCharacters(in: .whitespacesAndNewlines))"
+                    session.isRunningSample = false
+                    if receipt.succeeded { OCHaptics.success() } else { OCHaptics.error() }
+                    withAnimation(reduceMotion ? nil : OCMotion.smooth) {
+                        session.statusBanner = receipt.succeeded ? "Prueba terminada." : "No se pudo procesar la muestra."
+                        session.exchanges.append(GUSAdvisorExchange(
+                            gusResponse: receipt.succeeded ? "El intérprete procesó el CSV de ejemplo. Puedes consultar su salida." : "La prueba falló. Revisa el recibo o vuelve a intentarlo.",
+                            suggestedActions: receipt.succeeded ? [.dismissToScreen] : [.testWithSampleCSV, .dismissToScreen],
+                            receiptPreview: "Tiempo: \(receipt.durationMs) ms · Motor: \(receipt.runtimeVersion)\n\(receipt.error ?? receipt.stdout)"
                         ))
                     }
                 }
             }
 
         case .viewAvailableTools:
-            withAnimation(OCMotion.smooth) {
-                exchanges.append(GUSAdvisorExchange(
+            withAnimation(reduceMotion ? nil : OCMotion.smooth) {
+                session.exchanges.append(GUSAdvisorExchange(
                     gusResponse: """
                     Capacidades disponibles hoy en iSyCode Móvil:
                     • En este iPhone (L0): Archivos (`read_file`, `write_file`), Python ligero (`python_eval` con `csv`, `json`, `math`), Navegador integrado (`browser_*`), HTTP (`http_request`), Google (`gmail.*`, `googlecalendar.*`) y Control del iPhone (`iphone_*` WDA).
@@ -544,13 +591,26 @@ public struct GUSContextualSheet: View {
         }
     }
 
+    private func guidanceForStep(_ step: AgentBuilderStep) -> String {
+        switch step {
+        case .goal: return "Cuéntame una tarea que repites y qué resultado te gustaría obtener."
+        case .capabilities: return "Puedo proponer herramientas para ese objetivo. Revisa qué hacen antes de añadirlas al borrador."
+        case .customization: return "Elige dónde trabajará el agente. El teléfono puede procesar archivos locales y tu computadora necesita una conexión para recibir tareas."
+        case .authorizations: return "Revisemos qué datos podrá consultar el agente y qué acciones requieren tu confirmación."
+        case .liveTest: return "Prueba con datos de ejemplo. El recibo muestra la salida real y cuánto tardó."
+        case .saveAndExport: return "Revisa el objetivo, las herramientas y los permisos. El contrato exportado se puede inspeccionar en otro dispositivo."
+        }
+    }
+
     private var currentGuidance: (subtitle: String, body: String, actions: [GUSContextualAction], quickQuestions: [String]) {
         switch router.activeDestination {
         case .builder:
-            let draftName = contractStore.activeDraft?.contract.name ?? "tu agente"
+            let draft = contractStore.activeDraft
+            let draftName = draft?.contract.name ?? "tu agente"
+            let step = AgentBuilderStep(rawValue: draft?.currentStepIndex ?? 0) ?? .goal
             return (
-                subtitle: "Asistiendo en el Constructor · \(draftName)",
-                body: "Dime qué resultado quieres conseguir (por ejemplo, importar productos CSV de una tienda o analizar gastos). Puedo recomendarte qué herramientas activar, componer una capacidad L1 reutilizable y probarla con datos de ejemplo sin que salgas del constructor.",
+                subtitle: "\(draftName) · \(step.title)",
+                body: guidanceForStep(step),
                 actions: [.prepareCatalogCapability, .applyRecommendedTools, .explainPermissions, .testWithSampleCSV, .viewAvailableTools, .dismissToScreen],
                 quickQuestions: [
                     "Quiero que mi agente importe productos de una tienda",

@@ -4,12 +4,24 @@ import SwiftUI
 
 public struct ComposerView: View {
     @EnvironmentObject private var sessionState: ActiveSessionState
-    @EnvironmentObject private var store: WorkbenchStore
-    @StateObject private var mediaCoordinator = MultimodalComposerCoordinator()
-    @State private var draftText: String = ""
-    @FocusState private var isFocused: Bool
 
     public init() {}
+
+    public var body: some View {
+        if let session = sessionState.currentSession {
+            ConversationComposer(draft: sessionState.draft(for: session), attachments: sessionState.attachments(for: .init(session)))
+                .id(session.id)
+        }
+    }
+}
+
+private struct ConversationComposer: View {
+    @ObservedObject var draft: ConversationDraft
+    @Binding var attachments: [Attachment]
+    @EnvironmentObject private var sessionState: ActiveSessionState
+    @EnvironmentObject private var store: WorkbenchStore
+    @StateObject private var mediaCoordinator = MultimodalComposerCoordinator()
+    @FocusState private var isFocused: Bool
 
     public var body: some View {
         let runtime = store.runtimeSnapshot
@@ -35,12 +47,12 @@ public struct ComposerView: View {
                 .padding(.top, OCSpacing.xs)
 
             // Attachments preview row (photos, camera, PDF/docs with live state)
-            if !sessionState.composerAttachments.isEmpty {
+            if !attachments.isEmpty {
                 RichAttachmentsBar(
-                    attachments: sessionState.composerAttachments,
+                    attachments: attachments,
                     capabilityReport: capabilityReport,
                     onInspect: { mediaCoordinator.inspectingAttachment = $0 },
-                    onRemove: { store.removeAttachment($0) }
+                    onRemove: { store.removeAttachment($0, from: $attachments) }
                 )
                 .padding(.horizontal, OCSpacing.contentMargin)
                 .padding(.top, OCSpacing.xs)
@@ -58,26 +70,26 @@ public struct ComposerView: View {
                     onModelTap: { sessionState.showModelPicker = true }
                 )
 
-                // Input text — kept in local @State so keystrokes never fire
-                // ActiveSessionState.objectWillChange across the whole timeline.
                 TextField(
                     "",
-                    text: $draftText,
+                    text: $draft.text,
                     prompt: Text(composerPlaceholder)
                         .foregroundColor(OCColor.textFaint),
                     axis: .vertical
                 )
                 .font(OCTypography.body)
                 .foregroundColor(OCColor.textPrimary)
+                .accessibilityLabel("Mensaje")
+                .accessibilityIdentifier("chat-composer-input")
                 .focused($isFocused)
-                .lineLimit(1...8)
+                .lineLimit(1...5)
                 .submitLabel(.send)
                 .onSubmit { handleSend() }
                 .padding(.horizontal, OCSpacing.xs)
                 .padding(.vertical, OCSpacing.sm)
                 .frame(minHeight: 42)
 
-                DictationMicrophoneButton(targetText: $draftText) {
+                DictationMicrophoneButton(targetText: $draft.text) {
                     isFocused = true
                 }
 
@@ -131,23 +143,23 @@ public struct ComposerView: View {
             }
         }
         .onAppear {
-            if !sessionState.composerText.isEmpty && draftText.isEmpty {
-                draftText = sessionState.composerText
+            if !sessionState.composerText.isEmpty && draft.text.isEmpty {
+                draft.text = sessionState.composerText
                 sessionState.composerText = ""
             }
         }
         .onChange(of: sessionState.composerText) { incoming in
             if !incoming.isEmpty {
-                draftText = incoming
+                draft.text = incoming
                 sessionState.composerText = ""
             }
         }
         .multimodalComposerSupport(
             coordinator: mediaCoordinator,
-            attachments: $sessionState.composerAttachments,
+            attachments: $attachments,
             workspaceSheet: {
                 AnyView(
-                    AttachmentsSheet()
+                    AttachmentsSheet(attachments: $attachments)
                         .environmentObject(store)
                         .environmentObject(sessionState)
                 )
@@ -170,12 +182,12 @@ public struct ComposerView: View {
     }
 
     private func handleSend() {
-        guard !sessionState.isProcessing else { return }
-        let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || !sessionState.composerAttachments.isEmpty else { return }
+        guard !sessionState.isProcessing, canSend else { return }
+        let trimmed = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty || !attachments.isEmpty else { return }
         OCHaptics.sent()
-        let outgoing = draftText
-        draftText = ""
+        let outgoing = draft.text
+        draft.submittedText = outgoing
         isFocused = false
         NotificationCenter.default.post(name: .composerSend, object: outgoing)
     }
@@ -189,7 +201,13 @@ public struct ComposerView: View {
     }
 
     private var canSend: Bool {
-        !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !sessionState.composerAttachments.isEmpty
+        guard store.currentBackend != nil, !attachments.contains(where: {
+            switch $0.state {
+            case .preparing, .selected: return true
+            default: return false
+            }
+        }) else { return false }
+        return !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
     }
 
     private var composerPlaceholder: String {
@@ -205,6 +223,7 @@ public struct ComposerView: View {
 // MARK: - Send/Stop Button
 
 public struct SendStopButton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isProcessing: Bool
     let canSend: Bool
     let agentColor: Color
@@ -228,14 +247,16 @@ public struct SendStopButton: View {
                     .font(.system(size: iconSize, weight: .semibold))
                     .foregroundColor(iconColor)
             }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
         }
         .disabled(isProcessing ? false : !canSend)
         .frame(width: 44, height: 44)
         .fixedSize(horizontal: true, vertical: false)
         .contentShape(Rectangle())
         .accessibilityLabel(isProcessing ? "Detener" : "Enviar mensaje")
-        .animation(.easeInOut(duration: 0.15), value: isProcessing)
-        .animation(.easeInOut(duration: 0.15), value: canSend)
+        .animation(reduceMotion ? nil : OCMotion.snappy, value: isProcessing)
+        .animation(reduceMotion ? nil : OCMotion.snappy, value: canSend)
     }
 
     /// Disabled reads as disabled: a neutral gray disc, not a faded accent that looks
@@ -663,7 +684,7 @@ public struct ModelPickerSheet: View {
     @State private var searchText = ""
     @State private var reasoningEffort: ReasoningEffort = ReasoningEffortSetting.current
 
-    public init(selectedModel: Binding<ModelInfo?>, models: [ModelInfo] = ModelInfo.demoModels) {
+    public init(selectedModel: Binding<ModelInfo?>, models: [ModelInfo] = []) {
         self._selectedModel = selectedModel
         self.models = models
     }
@@ -696,7 +717,7 @@ public struct ModelPickerSheet: View {
                                 ForEach(groupedModels[provider] ?? []) { model in
                                     ModelPickerRow(
                                         model: model,
-                                        isSelected: selectedModel?.id == model.id
+                                        isSelected: selectedModel.map { matches($0, model) } ?? false
                                     ) {
                                         selectedModel = model
                                         dismiss()
@@ -758,13 +779,18 @@ public struct ModelPickerSheet: View {
         .background(OCColor.bgDeep)
     }
 
+    private func matches(_ lhs: ModelInfo, _ rhs: ModelInfo) -> Bool {
+        lhs.id == rhs.id || (lhs.apiModelId != nil && lhs.apiModelId == rhs.apiModelId
+            && (lhs.route ?? lhs.provider) == (rhs.route ?? rhs.provider))
+    }
+
     private var groupedModels: [String: [ModelInfo]] {
         Dictionary(grouping: filteredModels, by: { $0.provider })
     }
 
     private var filteredModels: [ModelInfo] {
         var candidates = models.filter { $0.apiModelId != nil }
-        if let selectedModel, selectedModel.apiModelId != nil, !candidates.contains(where: { $0.id == selectedModel.id }) {
+        if let selectedModel, selectedModel.apiModelId != nil, !candidates.contains(where: { matches($0, selectedModel) }) {
             candidates.insert(selectedModel, at: 0)
         }
         if searchText.isEmpty { return candidates }
@@ -872,20 +898,28 @@ public struct AttachmentsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: WorkbenchStore
     @EnvironmentObject private var sessionState: ActiveSessionState
+    private var owner: Binding<[Attachment]>?
+    private var attachments: [Attachment] {
+        get { owner?.wrappedValue ?? sessionState.composerAttachments }
+        nonmutating set {
+            if let owner { owner.wrappedValue = newValue }
+            else { sessionState.composerAttachments = newValue }
+        }
+    }
     @State private var manualName = ""
 
-    public init() {}
+    public init(attachments: Binding<[Attachment]>? = nil) { owner = attachments }
 
     public var body: some View {
         NavigationStack {
             Form {
-                Section("Current") {
-                    if sessionState.composerAttachments.isEmpty {
-                        Text("No attachments")
+                Section("Adjuntos") {
+                    if attachments.isEmpty {
+                        Text("Todavía no hay adjuntos")
                             .font(OCTypography.meta)
                             .foregroundColor(OCColor.textFaint)
                     } else {
-                        ForEach(sessionState.composerAttachments) { attachment in
+                        ForEach(attachments) { attachment in
                             HStack {
                                 Image(systemName: attachment.icon)
                                     .foregroundColor(OCColor.iconPrimary)
@@ -893,7 +927,7 @@ public struct AttachmentsSheet: View {
                                     .foregroundColor(OCColor.textPrimary)
                                 Spacer()
                                 Button {
-                                    sessionState.composerAttachments.removeAll { $0.id == attachment.id }
+                                    attachments.removeAll { $0.id == attachment.id }
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundColor(OCColor.textFaint)
@@ -904,9 +938,9 @@ public struct AttachmentsSheet: View {
                     }
                 }
 
-                Section("Workspace files") {
+                Section("Archivos del proyecto") {
                     if store.fileTree.isEmpty {
-                        Text("Loading workspace…")
+                        Text("Sin archivos disponibles")
                             .font(OCTypography.meta)
                             .foregroundColor(OCColor.textFaint)
                     } else {
@@ -969,7 +1003,7 @@ public struct AttachmentsSheet: View {
             path: path,
             icon: path == nil ? "text.quote" : "doc"
         )
-        sessionState.composerAttachments.append(attachment)
+        attachments.append(attachment)
         manualName = ""
     }
 }

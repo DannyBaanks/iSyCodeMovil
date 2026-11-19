@@ -640,6 +640,11 @@ public final class NativeSwiftBackend: WorkbenchBackend {
         model: ModelInfo?
     ) async throws {
         guard let sessionID = currentSessionIDStorage else { throw WorkbenchError.noSession }
+        try await sendPrompt(text, to: sessionID, multimodalParts: multimodalParts, agent: agent, model: model)
+    }
+
+    func sendPrompt(_ text: String, to sessionID: String, multimodalParts: [ModelMessage.ContentPart],
+                    agent: String?, model: ModelInfo?) async throws {
         if let requested = model?.apiModelId, providerModelIDs.contains(requested), requested != activeModelName {
             activeModelName = requested
             invalidateLoops()

@@ -10,6 +10,8 @@ public struct ChatSidebarView: View {
     let onClose: () -> Void
 
     @State private var sessionToRename: Session?
+    @State private var historyExpanded = false
+    @State private var toolsExpanded = false
     @State private var renameText = ""
     @State private var sessionToDelete: Session?
     @State private var showDeleteConfirm = false
@@ -30,14 +32,24 @@ public struct ChatSidebarView: View {
                 .padding(.horizontal, OCSpacing.lg)
                 .padding(.bottom, OCSpacing.md)
 
-            Divider().overlay(OCColor.borderMuted)
+            ScrollView {
+                VStack(alignment: .leading, spacing: OCSpacing.md) {
+                    DisclosureGroup(isExpanded: $historyExpanded) {
+                        conversationsSection
+                    } label: {
+                        Label("Conversaciones", systemImage: "bubble.left.and.bubble.right")
+                            .font(.headline)
+                            .frame(minHeight: 44)
+                    }
+                    .padding(.horizontal, OCSpacing.lg)
+                    .accessibilityIdentifier("sidebar-history")
 
-            conversationsSection
+                    destinationsSection
+                }
+                .padding(.bottom, OCSpacing.lg)
+            }
+            .refreshable { await store.refreshConversations() }
 
-            Divider().overlay(OCColor.borderMuted)
-
-            destinationsSection
-                .padding(.vertical, OCSpacing.sm)
         }
         .frame(maxHeight: .infinity)
         .background(OCColor.bgBase.ignoresSafeArea())
@@ -58,9 +70,9 @@ public struct ChatSidebarView: View {
 
     private var header: some View {
         HStack {
-            Text("ISYCODE")
+            Text("ISyCode")
                 .font(.system(.callout, design: .rounded, weight: .heavy))
-                .tracking(1.6)
+                .accessibilityAddTraits(.isHeader)
                 .foregroundColor(OCColor.textPrimary)
             Spacer()
             if showsCloseButton {
@@ -79,11 +91,8 @@ public struct ChatSidebarView: View {
 
     private var newConversationButton: some View {
         Button {
-            router.openConversations()
+            router.openNewConversation()
             onClose()
-            Task {
-                _ = await store.openOrCreateConversation(preferNew: true)
-            }
         } label: {
             HStack(spacing: OCSpacing.sm) {
                 Image(systemName: "plus.bubble.fill")
@@ -103,36 +112,23 @@ public struct ChatSidebarView: View {
     }
 
     private var conversationsSection: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 4) {
-                Text("CONVERSACIONES")
-                    .font(OCTypography.sectionLabel)
+        LazyVStack(alignment: .leading, spacing: 4) {
+            if store.sessions.isEmpty {
+                Text("Tus conversaciones aparecerán aquí.")
+                    .font(.footnote)
                     .foregroundColor(OCColor.textFaint)
                     .padding(.horizontal, OCSpacing.lg)
-                    .padding(.top, OCSpacing.md)
-                    .padding(.bottom, 4)
-
-                if store.sessions.isEmpty {
-                    Text("Tus conversaciones aparecerán aquí.")
-                        .font(.footnote)
-                        .foregroundColor(OCColor.textFaint)
-                        .padding(.horizontal, OCSpacing.lg)
-                        .padding(.vertical, OCSpacing.sm)
-                } else {
-                    ForEach(store.sessions) { session in
-                        conversationRow(session)
-                    }
+                    .padding(.vertical, OCSpacing.sm)
+            } else {
+                ForEach(store.sessions) { session in
+                    conversationRow(session)
                 }
             }
-            .padding(.bottom, OCSpacing.md)
-        }
-        .refreshable {
-            await store.refreshConversations()
         }
     }
 
     private func conversationRow(_ session: Session) -> some View {
-        let isActive = router.activeDestination == .chat && sessionState.currentSession?.id == session.id
+        let isActive = router.activeDestination == .chat && !router.showsNewConversation && sessionState.currentSession?.id == session.id
         return Button {
             router.openConversations()
             onClose()
@@ -184,59 +180,45 @@ public struct ChatSidebarView: View {
 
     private var destinationsSection: some View {
         VStack(spacing: 2) {
-            Button {
-                sessionState.currentSession = nil
-                router.openConversations()
-                onClose()
-            } label: {
-                let isHomeActive = router.activeDestination == .chat && sessionState.currentSession == nil
-                HStack(spacing: OCSpacing.md) {
-                    Image(systemName: "house.fill")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(isHomeActive ? IysThemePreferences.active.accent : OCColor.iconPrimary)
-                        .frame(width: 24)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Inicio")
-                            .font(.subheadline.weight(isHomeActive ? .semibold : .medium))
-                            .foregroundColor(OCColor.textPrimary)
-                        Text("Conversar, Construir, Agentes")
-                            .font(.caption2)
-                            .foregroundColor(OCColor.textFaint)
-                    }
-                    Spacer()
+            destinationButton(.myAgents, title: "Mis agentes", subtitle: nil)
+            destinationButton(.builder, title: "Crear agente", subtitle: nil)
+
+            DisclosureGroup(isExpanded: $toolsExpanded) {
+                actionRow(title: "Flujos grabados", symbol: "record.circle", tint: OCColor.iconPrimary) {
+                    router.openLearnAction()
                 }
-                .padding(.horizontal, OCSpacing.md)
-                .padding(.vertical, 8)
-                .frame(minHeight: 44)
-                .background(isHomeActive ? IysThemePreferences.active.accent.opacity(0.12) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
-                .contentShape(Rectangle())
+                actionRow(title: "Llavero", symbol: "key", tint: OCColor.iconPrimary) {
+                    router.openSecretVault()
+                }
+                destinationButton(.browser, title: "Navegador", subtitle: nil)
+                destinationButton(.projects, title: "Proyectos", subtitle: nil)
+                destinationButton(.google, title: "Google Workspace", subtitle: nil)
+            } label: {
+                Label("Herramientas", systemImage: "wrench.and.screwdriver")
+                    .font(.subheadline.weight(.medium))
+                    .frame(minHeight: 44)
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("sidebar-dest-home")
+            .padding(.horizontal, OCSpacing.md)
+            .accessibilityIdentifier("sidebar-tools")
 
-            destinationButton(.builder, title: "Construir agente", subtitle: "Plantillas y capacidades")
-            destinationButton(.myAgents, title: "Mis agentes", subtitle: "Contratos y pruebas")
-
-            // Were two 31–35 pt pills; now rows like the rest (44 pt targets, HIG).
-            actionRow(title: "Aprender acción", symbol: "record.circle", tint: IysThemePreferences.active.accent) {
-                router.openLearnAction()
+            actionRow(title: "Memoria", symbol: "books.vertical", tint: OCColor.iconPrimary) {
+                router.openGoogle(subtab: .memory)
             }
-            actionRow(title: "Llavero", symbol: "key.fill", tint: OCColor.warning) {
-                router.openSecretVault()
+            actionRow(title: "Actividad", symbol: "clock", tint: OCColor.iconPrimary) {
+                router.showActivitySheet = true
             }
-
-            destinationButton(.browser, title: "Navegador", subtitle: "Web integrada")
-            destinationButton(.google, title: "Google", subtitle: "Correo, agenda, Drive")
-            destinationButton(.projects, title: "Proyectos", subtitle: nil)
-            destinationButton(.connections, title: "Conexiones", subtitle: "iPhone, PC e ISyMCP")
+            destinationButton(.connections, title: "Conexiones", subtitle: nil)
+            actionRow(title: "Modelos", symbol: "cpu", tint: OCColor.iconPrimary) {
+                let runtime = store.runtimeSnapshot
+                router.openRuntimeSetup(track: runtime.isLocal ? .local : .connected, providerID: runtime.providerID)
+            }
             destinationButton(.settings, title: "Ajustes", subtitle: nil)
         }
         .padding(.horizontal, OCSpacing.sm)
     }
 
     private func destinationButton(_ destination: AppShellDestination, title: String, subtitle: String?) -> some View {
-        let isActive = router.activeDestination == destination
+        let isActive = router.activeDestination == destination && (destination != .google || router.googleSubtab == .google)
         return Button {
             switch destination {
             case .chat: router.openConversations()
@@ -275,6 +257,7 @@ public struct ChatSidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
         .accessibilityIdentifier("sidebar-dest-\(destination.rawValue)")
     }
 
@@ -340,19 +323,21 @@ private struct SidebarRenameSessionSheet: View {
 /// Modern 2026 Home Screen: highlights the 3 core actions (Conversar, Construir, Mis agentes),
 /// compact expandable system state, GUS contextual advisor, and quick prompt composer (Section 5).
 public struct ChatLandingView: View {
+    @EnvironmentObject private var sessionState: ActiveSessionState
+    private var landingAttachments: Binding<[Attachment]> { sessionState.attachments(for: .landing) }
     @EnvironmentObject private var store: WorkbenchStore
     @EnvironmentObject private var assistant: AssistantStore
     @EnvironmentObject private var router: AppShellRouter
     @ObservedObject private var contractStore = AgentContractStore.shared
     @ObservedObject private var isymcpStore = ISyMCPStore.shared
     @ObservedObject private var loopback = LoopbackDeviceSession.shared
-    @State private var draft = ""
+    @State private var showStartError = false
     @State private var sending = false
     @State private var showSystemDetails = false
     @State private var showGUSAssistant = false
     @StateObject private var mediaCoordinator = MultimodalComposerCoordinator()
     @FocusState private var isInputFocused: Bool
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showTools = false
     let onOpenSidebar: () -> Void
 
     public init(onOpenSidebar: @escaping () -> Void) {
@@ -370,11 +355,11 @@ public struct ChatLandingView: View {
                         activeAgentBanner(activeAgent)
                     }
 
-                    primaryThreeActionsGrid
+                    conversationActions
 
-                    compactSystemStatusCard(runtime: runtime)
+                    if showTools { compactSystemStatusCard(runtime: runtime) }
 
-                    suggestedPromptsSection
+                    if router.landingDraft.isEmpty { suggestedPromptsSection }
                 }
                 .padding(.horizontal, OCSpacing.contentMargin)
                 .padding(.top, OCSpacing.md)
@@ -441,6 +426,11 @@ public struct ChatLandingView: View {
                 }
             }
         }
+        .alert("No se pudo abrir la conversación", isPresented: $showStartError) {
+            Button("Volver al borrador") { isInputFocused = true }
+        } message: {
+            Text("Tu mensaje sigue en el compositor. Revisa la conexión y vuelve a enviarlo.")
+        }
         .sheet(isPresented: $showGUSAssistant) {
             GUSContextualSheet()
                 .environmentObject(router)
@@ -451,14 +441,10 @@ public struct ChatLandingView: View {
 
     private func heroHeader(runtime: RuntimeSelectionSnapshot) -> some View {
         VStack(alignment: .leading, spacing: OCSpacing.sm) {
-            Text("¿Qué quieres lograr hoy?")
+            Text("Nueva conversación")
                 .font(.title2.weight(.bold))
                 .foregroundColor(OCColor.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            Text("Conversa, construye un agente sin programar o administra los tuyos.")
-                .font(.subheadline)
-                .foregroundColor(OCColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
 
             OCFlowLayout(spacing: 8, lineSpacing: 8) {
                 assistantPill(runtime: runtime)
@@ -488,12 +474,12 @@ public struct ChatLandingView: View {
                 Text("Agente activo: \(agent.name)")
                     .font(.footnote.weight(.semibold))
                     .foregroundColor(OCColor.textPrimary)
-                Text("\(agent.enabledL0Tools.count) L0 · \(agent.l1Tools.count) L1 · \(agent.preferredBackend.shortLabel)")
+                Text("\(agent.enabledL0Tools.count + agent.l1Tools.count) herramientas · \(agent.preferredBackend.shortLabel)")
                     .font(.caption2)
                     .foregroundColor(OCColor.textFaint)
             }
             Spacer()
-            Button("Cambiar") {
+            Button("Desactivar") {
                 contractStore.activeAgentForSession = nil
             }
             .font(.caption.weight(.semibold))
@@ -503,54 +489,49 @@ public struct ChatLandingView: View {
         .ocCard(radius: OCRadius.r12, border: Color(hex: agent.accentHex).opacity(0.4))
     }
 
-    /// Two primary actions side by side (same height), then the secondary tools as one
-    /// grouped list. Five equally weighted cards with five colored borders gave the
-    /// screen no hierarchy, and "Aprender acción" wrapping made its card taller.
-    private var primaryThreeActionsGrid: some View {
-        VStack(spacing: OCSpacing.md) {
-            // At accessibility text sizes two columns hyphenate "Conver-sar": stack them.
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: OCSpacing.sm) { primaryCards }
-            } else {
-                HStack(spacing: OCSpacing.sm) { primaryCards }
-                    // Both cards take the taller one's height.
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            secondaryActionsGroup
-        }
-    }
-
-    @ViewBuilder private var primaryCards: some View {
-            primaryActionCard(
-                title: "Conversar",
-                subtitle: "Modelos y herramientas",
-                symbol: "bubble.left.and.bubble.right.fill",
-                tint: IysThemePreferences.active.accent,
-                id: "home-action-chat"
-            ) {
-                OCHaptics.light()
-                if let first = store.sessions.first {
-                    Task { await store.selectSession(first) }
-                } else {
-                    isInputFocused = true
+    private var conversationActions: some View {
+        VStack(alignment: .leading, spacing: OCSpacing.md) {
+            if let session = store.sessions.max(by: { $0.timestamp < $1.timestamp }) {
+                secondaryActionRow(
+                    title: "Retomar conversación",
+                    subtitle: session.title,
+                    symbol: "bubble.left",
+                    tint: IysThemePreferences.active.accent,
+                    id: "home-action-chat"
+                ) {
+                    OCHaptics.light()
+                    Task {
+                        await store.selectSession(session)
+                        router.openConversations()
+                    }
                 }
             }
 
-            primaryActionCard(
-                title: "Construir",
-                subtitle: "Crea un agente nuevo",
-                symbol: "hammer.fill",
-                tint: OCColor.info,
+            DisclosureGroup(isExpanded: $showTools) {
+                secondaryActionsGroup
+            } label: {
+                Label("Herramientas", systemImage: "wrench.and.screwdriver")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(OCColor.textPrimary)
+                    .frame(minHeight: 44)
+            }
+            .tint(OCColor.textSecondary)
+        }
+    }
+
+    private var secondaryActionsGroup: some View {
+        VStack(spacing: 0) {
+            secondaryActionRow(
+                title: "Crear agente",
+                subtitle: "Configura sus instrucciones y herramientas",
+                symbol: "hammer",
+                tint: OCColor.textSecondary,
                 id: "home-action-build"
             ) {
                 OCHaptics.light()
                 router.openBuilder()
             }
-    }
-
-private var secondaryActionsGroup: some View {
-        VStack(spacing: 0) {
+            Divider().overlay(OCColor.borderMuted).padding(.leading, 52)
             secondaryActionRow(
                 title: "Mis agentes",
                 subtitle: contractStore.agents.isEmpty
@@ -631,43 +612,6 @@ private var secondaryActionsGroup: some View {
         .accessibilityIdentifier(id)
     }
 
-    private func primaryActionCard(
-        title: String,
-        subtitle: String,
-        symbol: String,
-        tint: Color,
-        id: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: OCSpacing.sm) {
-                Image(systemName: symbol)
-                    .font(.callout.weight(.semibold))
-                    .foregroundColor(tint)
-                    .frame(minWidth: 38, minHeight: 38)
-                    .background(RoundedRectangle(cornerRadius: OCRadius.r10).fill(tint.opacity(0.16)))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.headline)
-                        .foregroundColor(OCColor.textPrimary)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundColor(OCColor.textSecondary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(OCSpacing.md)
-            // maxHeight .infinity + the row's fixedSize gives both cards the same height.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .ocCard(radius: OCRadius.r14, border: OCColor.borderMuted, background: OCColor.bgBase)
-        }
-        .buttonStyle(OCInteractiveButtonStyle())
-        .accessibilityIdentifier(id)
-    }
-
     private func compactSystemStatusCard(runtime: RuntimeSelectionSnapshot) -> some View {
         let backendLabel: String
         if store.sandboxLink != nil {
@@ -702,16 +646,16 @@ private var secondaryActionsGroup: some View {
                 .buttonStyle(.plain)
             }
 
-            OCFlowLayout(spacing: 12, lineSpacing: 4) {
-                Label(runtime.providerName, systemImage: "cpu")
-                Label("Python local", systemImage: "terminal")
-                Label(isymcpStore.isPaired ? "ISyMCP OK" : "Solo iPhone", systemImage: isymcpStore.isPaired ? "desktopcomputer" : "iphone")
-            }
-            .font(.caption2)
-            .foregroundColor(OCColor.textFaint)
-            .lineLimit(1)
-
             if showSystemDetails {
+                OCFlowLayout(spacing: 12, lineSpacing: 4) {
+                    Label(runtime.providerName, systemImage: "cpu")
+                    Label("Python local", systemImage: "terminal")
+                    Label(isymcpStore.isPaired ? "ISyMCP OK" : "Solo iPhone", systemImage: isymcpStore.isPaired ? "desktopcomputer" : "iphone")
+                }
+                .font(.caption2)
+                .foregroundColor(OCColor.textFaint)
+                .lineLimit(1)
+
                 Divider().overlay(OCColor.borderMuted)
                 VStack(alignment: .leading, spacing: 5) {
                     statusDetailRow("Modelo", value: runtime.modelName ?? runtime.providerName)
@@ -754,7 +698,8 @@ private var secondaryActionsGroup: some View {
         VStack(alignment: .leading, spacing: OCSpacing.sm) {
             ForEach(suggestedPrompts, id: \.text) { item in
                 Button {
-                    sendPrompt(item.text)
+                    router.landingDraft = item.text
+                    isInputFocused = true
                 } label: {
                     HStack(spacing: OCSpacing.md) {
                         Image(systemName: item.icon)
@@ -769,9 +714,8 @@ private var secondaryActionsGroup: some View {
                     }
                     .padding(.horizontal, OCSpacing.md)
                     .padding(.vertical, 10)
-                    .background(OCColor.bgBase.opacity(0.65))
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(sending)
@@ -815,9 +759,9 @@ private var secondaryActionsGroup: some View {
     }
 
     private var composerBar: some View {
-        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasAttachments = !store.sessionState.composerAttachments.isEmpty
-        let canSend = !trimmed.isEmpty || hasAttachments
+        let trimmed = router.landingDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasAttachments = !landingAttachments.wrappedValue.isEmpty
+        let canSend = (!trimmed.isEmpty || hasAttachments) && landingAttachments.wrappedValue.allSatisfy { $0.state.isReady }
         let runtime = store.runtimeSnapshot
         let capabilityReport = MultimodalProviderCompatibility.evaluate(
             providerID: store.sessionState.selectedModel?.route ?? runtime.providerID,
@@ -831,10 +775,10 @@ private var secondaryActionsGroup: some View {
 
             if hasAttachments {
                 RichAttachmentsBar(
-                    attachments: store.sessionState.composerAttachments,
+                    attachments: landingAttachments.wrappedValue,
                     capabilityReport: capabilityReport,
                     onInspect: { mediaCoordinator.inspectingAttachment = $0 },
-                    onRemove: { store.removeAttachment($0) }
+                    onRemove: { store.removeAttachment($0, from: landingAttachments) }
                 )
                 .padding(.horizontal, OCSpacing.contentMargin)
             }
@@ -853,7 +797,7 @@ private var secondaryActionsGroup: some View {
                     }
                 )
 
-                TextField("Pregunta lo que quieras…", text: $draft, axis: .vertical)
+                TextField("Pregunta lo que quieras…", text: $router.landingDraft, axis: .vertical)
                     .focused($isInputFocused)
                     .lineLimit(1...6)
                     .font(.subheadline)
@@ -863,7 +807,7 @@ private var secondaryActionsGroup: some View {
                     .onSubmit { send() }
                     .accessibilityIdentifier("chat-landing-input")
 
-                DictationMicrophoneButton(targetText: $draft) {
+                DictationMicrophoneButton(targetText: $router.landingDraft) {
                     isInputFocused = true
                 }
 
@@ -898,7 +842,8 @@ private var secondaryActionsGroup: some View {
         }
         .multimodalComposerSupport(
             coordinator: mediaCoordinator,
-            attachments: $store.sessionState.composerAttachments
+            attachments: landingAttachments,
+            workspaceSheet: { AnyView(AttachmentsSheet(attachments: landingAttachments).environmentObject(store)) }
         )
         .alert("Adjuntos", isPresented: Binding(
             get: { mediaCoordinator.statusError != nil },
@@ -911,10 +856,9 @@ private var secondaryActionsGroup: some View {
     }
 
     private func send() {
-        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasAttachments = !store.sessionState.composerAttachments.isEmpty
-        guard (!trimmed.isEmpty || hasAttachments), !sending else { return }
-        draft = ""
+        let trimmed = router.landingDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasAttachments = !landingAttachments.wrappedValue.isEmpty
+        guard (!trimmed.isEmpty || hasAttachments), landingAttachments.wrappedValue.allSatisfy({ $0.state.isReady }), !sending else { return }
         sendPrompt(trimmed.isEmpty ? "Analiza los archivos adjuntos." : trimmed)
     }
 
@@ -922,8 +866,15 @@ private var secondaryActionsGroup: some View {
         guard !sending else { return }
         sending = true
         isInputFocused = false
+        let originalDraft = router.landingDraft
+        let selectedAttachments = landingAttachments.wrappedValue
         Task {
-            _ = await store.openOrCreateConversation(preferNew: true, initialPrompt: prompt)
+            if await store.openOrCreateConversation(preferNew: true, initialPrompt: prompt, landingAttachments: selectedAttachments) {
+                router.showsNewConversation = false
+                if router.landingDraft == originalDraft { router.landingDraft = "" }
+            } else {
+                showStartError = true
+            }
             sending = false
         }
     }

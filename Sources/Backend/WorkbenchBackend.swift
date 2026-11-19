@@ -138,16 +138,19 @@ public extension WorkbenchBackend {
         agent: String?,
         model: ModelInfo?
     ) async throws {
-        // Default fallback for remote text-only backends: appends extracted document text segments if any.
-        let docBlocks = multimodalParts.compactMap { part -> String? in
-            guard part.kind == .documentText || part.kind == .text, let t = part.text, !t.isEmpty else { return nil }
-            return part.filename.map { "[Archivo adjunto: \($0)]\n\(t)" } ?? t
-        }
-        let combined = docBlocks.isEmpty ? text : ([text] + docBlocks).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let combined = remotePromptText(text, parts: multimodalParts)
         try await sendPrompt(combined, agent: agent, model: model)
     }
 }
 
 public extension WorkbenchBackend {
     var usesLiveModel: Bool { false }
+}
+
+func remotePromptText(_ text: String, parts: [ModelMessage.ContentPart]) -> String {
+    let docBlocks = parts.compactMap { part -> String? in
+        guard part.kind == .documentText || part.kind == .text, let t = part.text, !t.isEmpty else { return nil }
+        return part.filename.map { "[Archivo adjunto: \($0)]\n\(t)" } ?? t
+    }
+    return docBlocks.isEmpty ? text : ([text] + docBlocks).filter { !$0.isEmpty }.joined(separator: "\n\n")
 }

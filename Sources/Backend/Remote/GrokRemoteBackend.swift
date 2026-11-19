@@ -108,19 +108,9 @@ public final class GrokRemoteBackend: WorkbenchBackend, RemoteBackend {
     }
 
     public func sendPrompt(_ text: String, agent: String?, model: ModelInfo?) async throws {
-        guard let client, let pairing, pairing.profile.sessionPrompt, pairing.profile.textStreaming,
-              let selectedSessionID,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Self.unsupported }
-        let result = try await client.request(method: "session/prompt", params: .object([
-            "sessionId": .string(selectedSessionID),
-            "prompt": .array([.object(["type": .string("text"), "text": .string(text)])])
-        ]), timeout: nil)
-        if result.grokObject?["stopReason"]?.grokString == "refusal" {
-            continuation?.yield(.sessionError("Grok detuvo el turno."))
-        }
-        continuation?.yield(.sessionIdle(sessionID: selectedSessionID))
+        guard let id = selectedSessionID else { throw Self.unsupported }
+        try await sendPrompt(sessionID: id, text: text, agent: agent, modelProvider: model?.route, modelID: model?.apiModelId)
     }
-
     public func abort() async throws {
         guard let client, let pairing, pairing.profile.sessionCancel, let selectedSessionID else { return }
         try await client.notify(method: "session/cancel", params: .object(["sessionId": .string(selectedSessionID)]))
@@ -262,9 +252,18 @@ public final class GrokRemoteBackend: WorkbenchBackend, RemoteBackend {
         return RemoteSession(id: session.id, title: session.title, directory: pairing?.directory ?? "", updatedAt: session.timestamp, backendType: .grok)
     }
     public func sendPrompt(sessionID: String, text: String, agent: String?, modelProvider: String?, modelID: String?) async throws {
-        try await selectSession(sessionID)
-        try await sendPrompt(text, agent: nil, model: nil)
+        guard let client, let pairing, pairing.profile.sessionPrompt, pairing.profile.textStreaming,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Self.unsupported }
+        let result = try await client.request(method: "session/prompt", params: .object([
+            "sessionId": .string(sessionID),
+            "prompt": .array([.object(["type": .string("text"), "text": .string(text)])])
+        ]), timeout: nil)
+        if result.grokObject?["stopReason"]?.grokString == "refusal" {
+            continuation?.yield(.sessionError("Grok detuvo el turno."))
+        }
+        continuation?.yield(.sessionIdle(sessionID: sessionID))
     }
+
     public func abort(sessionID: String) async throws { try await abort() }
     public func replyPermission(sessionID: String, permissionID: String, response: String) async throws { throw Self.unsupported }
     public func messages(sessionID: String) async throws -> [RemoteMessage] { throw Self.unsupported }

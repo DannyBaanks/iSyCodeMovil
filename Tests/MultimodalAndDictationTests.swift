@@ -3,6 +3,31 @@ import XCTest
 @testable import IysCodeMovilCore
 
 final class MultimodalAndDictationTests: XCTestCase {
+    @MainActor
+    func testDelayedAttachmentCallbackStaysWithItsDraft() {
+        let state = ActiveSessionState()
+        let first = Session(id: "first", projectId: "project", title: "Primera")
+        let second = Session(id: "second", projectId: "project", title: "Segunda")
+        let document = Attachment(type: .context, name: "notas", icon: "doc")
+        let landing = state.attachments(for: .landing)
+        let originatingPicker = state.attachments(for: .init(first))
+        state.currentSession = second
+        originatingPicker.wrappedValue.append(document)
+
+        XCTAssertTrue(state.composerAttachments.isEmpty)
+        XCTAssertTrue(landing.wrappedValue.isEmpty)
+        state.currentSession = first
+        XCTAssertEqual(state.composerAttachments.map(\.id), [document.id])
+        landing.wrappedValue.append(document)
+        state.composerAttachments = []
+        XCTAssertEqual(landing.wrappedValue.map(\.id), [document.id])
+
+        state.currentProject = nil
+        originatingPicker.wrappedValue.append(document)
+        XCTAssertTrue(state.attachments(for: .init(first)).wrappedValue.isEmpty)
+        XCTAssertTrue(state.attachments(for: .landing).wrappedValue.isEmpty)
+    }
+
     func testFileImporterCopiesToStagingExtractsTextAndCleansUpSafely() async throws {
         let sourceDir = FileManager.default.temporaryDirectory.appendingPathComponent("src-\(UUID().uuidString)")
         let stagingDir = FileManager.default.temporaryDirectory.appendingPathComponent("stg-\(UUID().uuidString)")

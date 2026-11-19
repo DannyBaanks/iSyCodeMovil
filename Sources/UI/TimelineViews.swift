@@ -5,12 +5,14 @@ import SwiftUI
 public struct TimelineEventContainer: View {
     let event: TimelineEvent
     let showsSpeaker: Bool
+    let isLiveTail: Bool
     /// Set on the last answer of a finished turn: the prompt "Reintentar" sends again.
     let turnPrompt: String?
     @EnvironmentObject private var store: WorkbenchStore
 
-    public init(event: TimelineEvent, showsSpeaker: Bool = true, turnPrompt: String? = nil) {
+    public init(event: TimelineEvent, showsSpeaker: Bool = true, turnPrompt: String? = nil, isLiveTail: Bool = false) {
         self.event = event
+        self.isLiveTail = isLiveTail
         self.showsSpeaker = showsSpeaker
         self.turnPrompt = turnPrompt
     }
@@ -27,7 +29,7 @@ public struct TimelineEventContainer: View {
         case .userPrompt:
             UserPromptView(event: event, agentColor: agentColor)
         case .assistantText:
-            AssistantTextView(event: event, showsSpeaker: showsSpeaker, turnPrompt: turnPrompt)
+            AssistantTextView(event: event, showsSpeaker: showsSpeaker, turnPrompt: turnPrompt, isLiveTail: isLiveTail)
         case .toolCall, .toolResult:
             ToolCallView(event: event, agentColor: agentColor)
         case .diff:
@@ -110,6 +112,17 @@ public struct UserPromptView: View {
             .padding(.vertical, OCSpacing.md)
             .background(OCColor.bgLayer2)
             .clipShape(RoundedRectangle(cornerRadius: OCRadius.r22, style: .continuous))
+            .contextMenu {
+                if let text = event.promptText, !text.isEmpty {
+                    Button {
+                        UIPasteboard.general.string = text
+                        OCHaptics.light()
+                    } label: {
+                        Label("Copiar mensaje", systemImage: "doc.on.doc")
+                    }
+                    ShareLink(item: text) { Label("Compartir", systemImage: "square.and.arrow.up") }
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.top, OCSpacing.xl)
@@ -124,20 +137,17 @@ public struct AssistantTextView: View {
     /// Only the first assistant message of a turn carries the speaker row; the rest of
     /// the turn reads as one continuous answer.
     let showsSpeaker: Bool
+    let isLiveTail: Bool
     let turnPrompt: String?
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var store: WorkbenchStore
     @State private var copied = false
 
-    public init(event: TimelineEvent, showsSpeaker: Bool = true, turnPrompt: String? = nil) {
+    public init(event: TimelineEvent, showsSpeaker: Bool = true, turnPrompt: String? = nil, isLiveTail: Bool = false) {
         self.event = event
+        self.isLiveTail = isLiveTail
         self.showsSpeaker = showsSpeaker
         self.turnPrompt = turnPrompt
-    }
-
-    private var isLiveTail: Bool {
-        sessionState.isProcessing
-            && sessionState.timelineEvents.last(where: { $0.kind == .assistantText })?.id == event.id
     }
 
     private var speakerLabel: String {
@@ -222,7 +232,7 @@ public struct AssistantTextView: View {
                 } label: {
                     actionIcon("arrow.clockwise")
                 }
-                .disabled(sessionState.isProcessing)
+                .disabled(sessionState.isProcessing || !sessionState.composerAttachments.isEmpty)
                 .accessibilityLabel("Reintentar")
                 .accessibilityHint("Vuelve a enviar tu mensaje")
             }
@@ -235,7 +245,7 @@ public struct AssistantTextView: View {
         Image(systemName: symbol)
             .font(.footnote.weight(.medium))
             .foregroundColor(OCColor.iconMuted)
-            .frame(width: 36, height: 44)
+            .frame(width: 44, height: 44)
             .contentShape(Rectangle())
     }
 }
@@ -1204,12 +1214,11 @@ public struct ThinkingView: View {
 
     public var body: some View {
         HStack(spacing: OCSpacing.base) {
-            ProgressView()
-                .controlSize(.small)
-                .tint(agentColor)
-                .frame(width: 16, height: 16)
+            Image(systemName: "text.bubble")
+                .foregroundColor(agentColor)
+                .accessibilityHidden(true)
 
-            Text(event.statusLabel ?? "Working")
+            Text(event.statusLabel == "Thinking" ? "Razonamiento" : event.statusLabel ?? "Actividad")
                 .font(OCTypography.control)
                 .foregroundColor(OCColor.textSecondary)
 
@@ -1222,7 +1231,7 @@ public struct ThinkingView: View {
             }
         }
         .padding(.horizontal, 2)
-        .frame(height: 28)
+        .frame(minHeight: 28)
     }
 
     private func formatElapsed(_ interval: TimeInterval) -> String {
@@ -1611,10 +1620,11 @@ public struct SystemMessageView: View {
         if let text = event.assistantText {
             if text.hasPrefix("Error:") {
                 let raw = String(text.dropFirst("Error:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                let issue = ConversationIssue(raw)
                 OCUnifiedStateCard(
-                    kind: Self.classifyKind(raw),
-                    title: Self.friendlyTitle(raw),
-                    message: Self.friendlyMessage(raw),
+                    kind: issue == .offline ? .offline : (issue == .cancelled ? .cancelled : .error),
+                    title: issue.title,
+                    message: issue.message,
                     technicalDetail: raw
                 )
                 .padding(.vertical, OCSpacing.xs)
@@ -1628,51 +1638,7 @@ public struct SystemMessageView: View {
         }
     }
 
-    private static func classifyKind(_ raw: String) -> OCVisualStateKind {
-        let lower = raw.lowercased()
-        if lower.contains("offline") || lower.contains("internet") || lower.contains("connection") || lower.contains("timed out") || lower.contains("sin conexión") {
-            return .offline
-        }
-        if lower.contains("stopped") || lower.contains("cancel") {
-            return .cancelled
-        }
-        return .error
-    }
 
-    private static func friendlyTitle(_ raw: String) -> String {
-        let lower = raw.lowercased()
-        if lower.contains("model") && (lower.contains("cargar") || lower.contains("load") || lower.contains("404") || lower.contains("401")) {
-            return "No pudimos cargar los modelos"
-        }
-        if lower.contains("http") || lower.contains("network") || lower.contains("timed out") || lower.contains("offline") || lower.contains("conexión") {
-            return "Problema de conexión"
-        }
-        if lower.contains("unsupported feature") || lower.contains("no admite") {
-            return "Esta función no está disponible aquí"
-        }
-        // Whole words only: "ChatGPT OAuth" inside an unrelated message used to match "auth"
-        // and show a key/session error for an image refusal.
-        let words = Set(lower.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
-        if !words.isDisjoint(with: ["auth", "authentication", "unauthorized", "clave", "key", "401", "403"])
-            || lower.contains("api key") || lower.contains("autenticación") {
-            return "Revisa tu clave o sesión"
-        }
-        return "No pudimos completar la acción"
-    }
-
-    private static func friendlyMessage(_ raw: String) -> String {
-        let lower = raw.lowercased()
-        if lower.contains("model") {
-            return "No pudimos consultar o cargar los modelos. Revisa la conexión o vuelve a intentar."
-        }
-        if lower.contains("http") || lower.contains("network") || lower.contains("timed out") || lower.contains("conexión") {
-            return "Revisa tu conexión a internet o vuelve a intentarlo en unos segundos."
-        }
-        if lower.contains("auth") || lower.contains("clave") || lower.contains("401") || lower.contains("403") {
-            return "La sesión o clave del proveedor fue rechazada. Puedes actualizarla en Conexiones o Ajustes."
-        }
-        return "Ocurrió un inconveniente al ejecutar la operación. Puedes revisar los detalles técnicos abajo."
-    }
 }
 
 // MARK: - Tool Steps Carousel
