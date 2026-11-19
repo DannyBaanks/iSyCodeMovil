@@ -1620,10 +1620,11 @@ public struct SystemMessageView: View {
         if let text = event.assistantText {
             if text.hasPrefix("Error:") {
                 let raw = String(text.dropFirst("Error:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                let issue = ConversationIssue(raw)
                 OCUnifiedStateCard(
-                    kind: Self.classifyKind(raw),
-                    title: Self.friendlyTitle(raw),
-                    message: Self.friendlyMessage(raw),
+                    kind: issue == .offline ? .offline : (issue == .cancelled ? .cancelled : .error),
+                    title: issue.title,
+                    message: issue.message,
                     technicalDetail: raw
                 )
                 .padding(.vertical, OCSpacing.xs)
@@ -1637,51 +1638,7 @@ public struct SystemMessageView: View {
         }
     }
 
-    private static func classifyKind(_ raw: String) -> OCVisualStateKind {
-        let lower = raw.lowercased()
-        if lower.contains("offline") || lower.contains("internet") || lower.contains("connection") || lower.contains("timed out") || lower.contains("sin conexión") {
-            return .offline
-        }
-        if lower.contains("stopped") || lower.contains("cancel") {
-            return .cancelled
-        }
-        return .error
-    }
 
-    private static func friendlyTitle(_ raw: String) -> String {
-        let lower = raw.lowercased()
-        if lower.contains("model") && (lower.contains("cargar") || lower.contains("load") || lower.contains("404") || lower.contains("401")) {
-            return "No pudimos cargar los modelos"
-        }
-        if lower.contains("http") || lower.contains("network") || lower.contains("timed out") || lower.contains("offline") || lower.contains("conexión") {
-            return "Problema de conexión"
-        }
-        if lower.contains("unsupported feature") || lower.contains("no admite") {
-            return "Esta función no está disponible aquí"
-        }
-        // Whole words only: "ChatGPT OAuth" inside an unrelated message used to match "auth"
-        // and show a key/session error for an image refusal.
-        let words = Set(lower.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
-        if !words.isDisjoint(with: ["auth", "authentication", "unauthorized", "clave", "key", "401", "403"])
-            || lower.contains("api key") || lower.contains("autenticación") {
-            return "Revisa tu clave o sesión"
-        }
-        return "No pudimos completar la acción"
-    }
-
-    private static func friendlyMessage(_ raw: String) -> String {
-        let lower = raw.lowercased()
-        if lower.contains("model") {
-            return "No pudimos consultar o cargar los modelos. Revisa la conexión o vuelve a intentar."
-        }
-        if lower.contains("http") || lower.contains("network") || lower.contains("timed out") || lower.contains("conexión") {
-            return "Revisa tu conexión a internet o vuelve a intentarlo en unos segundos."
-        }
-        if lower.contains("auth") || lower.contains("clave") || lower.contains("401") || lower.contains("403") {
-            return "La sesión o clave del proveedor fue rechazada. Puedes actualizarla en Conexiones o Ajustes."
-        }
-        return "Ocurrió un inconveniente al ejecutar la operación. Puedes revisar los detalles técnicos abajo."
-    }
 }
 
 // MARK: - Tool Steps Carousel
