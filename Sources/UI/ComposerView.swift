@@ -9,7 +9,7 @@ public struct ComposerView: View {
 
     public var body: some View {
         if let session = sessionState.currentSession {
-            ConversationComposer(draft: sessionState.draft(for: session))
+            ConversationComposer(draft: sessionState.draft(for: session), attachments: sessionState.attachments(for: .init(session)))
                 .id(session.id)
         }
     }
@@ -17,6 +17,7 @@ public struct ComposerView: View {
 
 private struct ConversationComposer: View {
     @ObservedObject var draft: ConversationDraft
+    @Binding var attachments: [Attachment]
     @EnvironmentObject private var sessionState: ActiveSessionState
     @EnvironmentObject private var store: WorkbenchStore
     @StateObject private var mediaCoordinator = MultimodalComposerCoordinator()
@@ -46,12 +47,12 @@ private struct ConversationComposer: View {
                 .padding(.top, OCSpacing.xs)
 
             // Attachments preview row (photos, camera, PDF/docs with live state)
-            if !sessionState.composerAttachments.isEmpty {
+            if !attachments.isEmpty {
                 RichAttachmentsBar(
-                    attachments: sessionState.composerAttachments,
+                    attachments: attachments,
                     capabilityReport: capabilityReport,
                     onInspect: { mediaCoordinator.inspectingAttachment = $0 },
-                    onRemove: { store.removeAttachment($0) }
+                    onRemove: { store.removeAttachment($0, from: $attachments) }
                 )
                 .padding(.horizontal, OCSpacing.contentMargin)
                 .padding(.top, OCSpacing.xs)
@@ -155,10 +156,10 @@ private struct ConversationComposer: View {
         }
         .multimodalComposerSupport(
             coordinator: mediaCoordinator,
-            attachments: $sessionState.composerAttachments,
+            attachments: $attachments,
             workspaceSheet: {
                 AnyView(
-                    AttachmentsSheet()
+                    AttachmentsSheet(attachments: $attachments)
                         .environmentObject(store)
                         .environmentObject(sessionState)
                 )
@@ -183,7 +184,7 @@ private struct ConversationComposer: View {
     private func handleSend() {
         guard !sessionState.isProcessing, canSend else { return }
         let trimmed = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || !sessionState.composerAttachments.isEmpty else { return }
+        guard !trimmed.isEmpty || !attachments.isEmpty else { return }
         OCHaptics.sent()
         let outgoing = draft.text
         draft.submittedText = outgoing
@@ -200,13 +201,13 @@ private struct ConversationComposer: View {
     }
 
     private var canSend: Bool {
-        guard store.currentBackend != nil, !sessionState.composerAttachments.contains(where: {
+        guard store.currentBackend != nil, !attachments.contains(where: {
             switch $0.state {
             case .preparing, .selected: return true
             default: return false
             }
         }) else { return false }
-        return !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !sessionState.composerAttachments.isEmpty
+        return !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
     }
 
     private var composerPlaceholder: String {
@@ -897,20 +898,28 @@ public struct AttachmentsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: WorkbenchStore
     @EnvironmentObject private var sessionState: ActiveSessionState
+    private var owner: Binding<[Attachment]>?
+    private var attachments: [Attachment] {
+        get { owner?.wrappedValue ?? sessionState.composerAttachments }
+        nonmutating set {
+            if let owner { owner.wrappedValue = newValue }
+            else { sessionState.composerAttachments = newValue }
+        }
+    }
     @State private var manualName = ""
 
-    public init() {}
+    public init(attachments: Binding<[Attachment]>? = nil) { owner = attachments }
 
     public var body: some View {
         NavigationStack {
             Form {
-                Section("Current") {
-                    if sessionState.composerAttachments.isEmpty {
-                        Text("No attachments")
+                Section("Adjuntos") {
+                    if attachments.isEmpty {
+                        Text("Todavía no hay adjuntos")
                             .font(OCTypography.meta)
                             .foregroundColor(OCColor.textFaint)
                     } else {
-                        ForEach(sessionState.composerAttachments) { attachment in
+                        ForEach(attachments) { attachment in
                             HStack {
                                 Image(systemName: attachment.icon)
                                     .foregroundColor(OCColor.iconPrimary)
@@ -918,7 +927,7 @@ public struct AttachmentsSheet: View {
                                     .foregroundColor(OCColor.textPrimary)
                                 Spacer()
                                 Button {
-                                    sessionState.composerAttachments.removeAll { $0.id == attachment.id }
+                                    attachments.removeAll { $0.id == attachment.id }
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundColor(OCColor.textFaint)
@@ -929,9 +938,9 @@ public struct AttachmentsSheet: View {
                     }
                 }
 
-                Section("Workspace files") {
+                Section("Archivos del proyecto") {
                     if store.fileTree.isEmpty {
-                        Text("Loading workspace…")
+                        Text("Sin archivos disponibles")
                             .font(OCTypography.meta)
                             .foregroundColor(OCColor.textFaint)
                     } else {
@@ -994,7 +1003,7 @@ public struct AttachmentsSheet: View {
             path: path,
             icon: path == nil ? "text.quote" : "doc"
         )
-        sessionState.composerAttachments.append(attachment)
+        attachments.append(attachment)
         manualName = ""
     }
 }

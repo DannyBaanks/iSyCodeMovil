@@ -53,7 +53,7 @@ public final class OpenCodeRemoteBackend: WorkbenchBackend, RemoteBackend {
         
         if let provider, let modelID {
             try await client.sendPromptAsyncWithModel(
-                sessionID: currentSessionIDStorage!,
+                sessionID: sessionID,
                 text: text,
                 agent: agent,
                 modelProvider: provider,
@@ -61,7 +61,7 @@ public final class OpenCodeRemoteBackend: WorkbenchBackend, RemoteBackend {
             )
         } else {
             try await client.sendPromptAsync(
-                sessionID: currentSessionIDStorage!,
+                sessionID: sessionID,
                 text: text,
                 agent: agent
             )
@@ -343,27 +343,8 @@ public final class OpenCodeRemoteBackend: WorkbenchBackend, RemoteBackend {
     }
     
     public func sendPrompt(_ text: String, agent: String?, model: ModelInfo?) async throws {
-        let provider = model?.route ?? model?.provider
-        var modelID = model?.apiModelId
-        if let provider, let raw = modelID, raw.hasPrefix("\(provider)/") {
-            modelID = String(raw.dropFirst(provider.count + 1))
-        }
-        
-        if let provider, let modelID {
-            try await client.sendPromptAsyncWithModel(
-                sessionID: currentSessionIDStorage!,
-                text: text,
-                agent: agent,
-                modelProvider: provider,
-                modelID: modelID
-            )
-        } else {
-            try await client.sendPromptAsync(
-                sessionID: currentSessionIDStorage!,
-                text: text,
-                agent: agent
-            )
-        }
+        guard let id = currentSessionIDStorage else { throw WorkbenchError.noSession }
+        try await sendPrompt(sessionID: id, text: text, agent: agent, modelProvider: model?.route ?? model?.provider, modelID: model?.apiModelId)
     }
     
     public func abort() async throws {

@@ -323,6 +323,8 @@ private struct SidebarRenameSessionSheet: View {
 /// Modern 2026 Home Screen: highlights the 3 core actions (Conversar, Construir, Mis agentes),
 /// compact expandable system state, GUS contextual advisor, and quick prompt composer (Section 5).
 public struct ChatLandingView: View {
+    @EnvironmentObject private var sessionState: ActiveSessionState
+    private var landingAttachments: Binding<[Attachment]> { sessionState.attachments(for: .landing) }
     @EnvironmentObject private var store: WorkbenchStore
     @EnvironmentObject private var assistant: AssistantStore
     @EnvironmentObject private var router: AppShellRouter
@@ -758,8 +760,8 @@ public struct ChatLandingView: View {
 
     private var composerBar: some View {
         let trimmed = router.landingDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasAttachments = !store.sessionState.composerAttachments.isEmpty
-        let canSend = !trimmed.isEmpty || hasAttachments
+        let hasAttachments = !landingAttachments.wrappedValue.isEmpty
+        let canSend = (!trimmed.isEmpty || hasAttachments) && landingAttachments.wrappedValue.allSatisfy { $0.state.isReady }
         let runtime = store.runtimeSnapshot
         let capabilityReport = MultimodalProviderCompatibility.evaluate(
             providerID: store.sessionState.selectedModel?.route ?? runtime.providerID,
@@ -773,10 +775,10 @@ public struct ChatLandingView: View {
 
             if hasAttachments {
                 RichAttachmentsBar(
-                    attachments: store.sessionState.composerAttachments,
+                    attachments: landingAttachments.wrappedValue,
                     capabilityReport: capabilityReport,
                     onInspect: { mediaCoordinator.inspectingAttachment = $0 },
-                    onRemove: { store.removeAttachment($0) }
+                    onRemove: { store.removeAttachment($0, from: landingAttachments) }
                 )
                 .padding(.horizontal, OCSpacing.contentMargin)
             }
@@ -840,7 +842,8 @@ public struct ChatLandingView: View {
         }
         .multimodalComposerSupport(
             coordinator: mediaCoordinator,
-            attachments: $store.sessionState.composerAttachments
+            attachments: landingAttachments,
+            workspaceSheet: { AnyView(AttachmentsSheet(attachments: landingAttachments).environmentObject(store)) }
         )
         .alert("Adjuntos", isPresented: Binding(
             get: { mediaCoordinator.statusError != nil },
@@ -854,8 +857,8 @@ public struct ChatLandingView: View {
 
     private func send() {
         let trimmed = router.landingDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasAttachments = !store.sessionState.composerAttachments.isEmpty
-        guard (!trimmed.isEmpty || hasAttachments), !sending else { return }
+        let hasAttachments = !landingAttachments.wrappedValue.isEmpty
+        guard (!trimmed.isEmpty || hasAttachments), landingAttachments.wrappedValue.allSatisfy({ $0.state.isReady }), !sending else { return }
         sendPrompt(trimmed.isEmpty ? "Analiza los archivos adjuntos." : trimmed)
     }
 
@@ -864,8 +867,9 @@ public struct ChatLandingView: View {
         sending = true
         isInputFocused = false
         let originalDraft = router.landingDraft
+        let selectedAttachments = landingAttachments.wrappedValue
         Task {
-            if await store.openOrCreateConversation(preferNew: true, initialPrompt: prompt) {
+            if await store.openOrCreateConversation(preferNew: true, initialPrompt: prompt, landingAttachments: selectedAttachments) {
                 router.showsNewConversation = false
                 if router.landingDraft == originalDraft { router.landingDraft = "" }
             } else {

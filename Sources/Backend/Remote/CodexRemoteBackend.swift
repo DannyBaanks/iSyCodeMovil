@@ -99,17 +99,8 @@ public final class CodexRemoteBackend: WorkbenchBackend, RemoteBackend {
         selectedSessionID = sessionID
     }
     public func sendPrompt(_ text: String, agent: String?, model: ModelInfo?) async throws {
-        guard let client, let pairing, pairing.profile.turnStart, pairing.profile.textStreaming,
-              let selectedSessionID, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Self.unsupported }
-        var params: [String: CodexJSONValue] = [
-            "threadId": .string(selectedSessionID),
-            "input": .array([.object(["type": .string("text"), "text": .string(text)])])
-        ]
-        if model?.route == "codex", let modelID = model?.apiModelId {
-            params["model"] = .string(modelID)
-        }
-        _ = try await client.request(method: "turn/start", params: .object(params))
-        activeTurn = true
+        guard let id = selectedSessionID else { throw Self.unsupported }
+        try await sendPrompt(sessionID: id, text: text, agent: agent, modelProvider: model?.route, modelID: model?.apiModelId)
     }
     public func abort() async throws {
         guard let client, let pairing, pairing.profile.turnInterrupt, let selectedSessionID, activeTurn else { return }
@@ -299,7 +290,19 @@ public final class CodexRemoteBackend: WorkbenchBackend, RemoteBackend {
     public func healthCheck() async throws -> RemoteHealth { RemoteHealth(healthy: client != nil, version: pairing?.codexVersion ?? "unknown", backendType: .codex) }
     public func listSessions() async throws -> [RemoteSession] { try await listSessions(projectID: projectID).map { RemoteSession(id: $0.id, title: $0.title, directory: pairing?.directory ?? "", updatedAt: $0.timestamp, backendType: .codex) } }
     public func createSession(title: String) async throws -> RemoteSession { let s = try await createSession(projectID: projectID, title: title); return RemoteSession(id: s.id, title: s.title, directory: pairing?.directory ?? "", updatedAt: s.timestamp, backendType: .codex) }
-    public func sendPrompt(sessionID: String, text: String, agent: String?, modelProvider: String?, modelID: String?) async throws { try await selectSession(sessionID); try await sendPrompt(text, agent: nil, model: nil) }
+    public func sendPrompt(sessionID: String, text: String, agent: String?, modelProvider: String?, modelID: String?) async throws {
+        guard let client, let pairing, pairing.profile.turnStart, pairing.profile.textStreaming,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Self.unsupported }
+        var params: [String: CodexJSONValue] = [
+            "threadId": .string(sessionID),
+            "input": .array([.object(["type": .string("text"), "text": .string(text)])])
+        ]
+        if modelProvider == "codex", let modelID {
+            params["model"] = .string(modelID)
+        }
+        _ = try await client.request(method: "turn/start", params: .object(params))
+        activeTurn = true
+    }
     public func abort(sessionID: String) async throws { try await abort() }
     public func replyPermission(sessionID: String, permissionID: String, response: String) async throws { throw Self.unsupported }
     public func messages(sessionID: String) async throws -> [RemoteMessage] { throw Self.unsupported }
