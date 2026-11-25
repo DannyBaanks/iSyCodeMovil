@@ -57,7 +57,7 @@ public struct ThinkingShimmerView: View {
                 }
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(OCTypography.sectionLabel)
                     .foregroundColor(OCColor.textFaint)
             }
             .frame(minHeight: 44)

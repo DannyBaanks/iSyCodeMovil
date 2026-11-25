@@ -101,7 +101,7 @@ public struct ConnectionView: View {
                         }
                     } label: {
                         Text("Pegar")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .font(OCTypography.controlMono)
                             .foregroundColor(OCColor.textSecondary)
                             .padding(.horizontal, 10)
                             .frame(height: 28)
@@ -269,7 +269,7 @@ public struct ConnectionView: View {
     
     private func label(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .font(OCTypography.controlMonoStrong)
             .tracking(1.2)
             .foregroundColor(OCColor.textSecondary)
             .padding(.bottom, 8)
@@ -333,13 +333,13 @@ struct StoredPairingSection: View {
                             hasStored = false
                         }
                     }
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(OCTypography.controlMono)
                     .foregroundColor(Color.white.opacity(0.4))
                     Spacer()
                     Button("Usar otro enlace") {
                         showReconnectSheet = true
                     }
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(OCTypography.controlMono)
                     .foregroundColor(OCColor.agentBuild)
                 }
                 .padding(.horizontal, 12)
@@ -376,7 +376,7 @@ struct ReconnectSheet: View {
                         UIPasteboard.general.string = "npx --yes github:DannyBaanks/IysCodeMovil link"
                     } label: {
                         Text("Copiar")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .font(OCTypography.controlMono)
                             .foregroundColor(OCColor.textSecondary)
                             .padding(.horizontal, 10)
                             .frame(height: 28)
@@ -404,7 +404,7 @@ struct ReconnectSheet: View {
                         }
                     } label: {
                         Text("Pegar")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .font(OCTypography.controlMono)
                             .foregroundColor(OCColor.textSecondary)
                             .padding(.horizontal, 10)
                             .frame(height: 28)
@@ -470,7 +470,7 @@ struct ReconnectSheet: View {
     
     private func label(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .font(OCTypography.controlMonoStrong)
             .tracking(1.2)
             .foregroundColor(OCColor.textSecondary)
             .padding(.bottom, 8)
@@ -530,7 +530,7 @@ struct SandboxKeySheet: View {
                     }
                     .accessibilityLabel("Ver proveedores compatibles")
                 }
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(OCTypography.controlMonoStrong)
                     .tracking(1.2)
                     .foregroundColor(OCColor.textSecondary)
                     .padding(.bottom, 8)

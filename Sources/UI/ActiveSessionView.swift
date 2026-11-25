@@ -1497,7 +1497,7 @@ struct TerminalSurfaceView: View {
                     Text("·")
                         .foregroundColor(OCColor.textFaint)
                     Text(sessionState.currentProject?.path ?? "workspace")
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(OCTypography.controlMono)
                         .foregroundColor(OCColor.textFaint)
                         .lineLimit(1)
                         .truncationMode(.middle)

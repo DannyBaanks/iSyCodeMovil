@@ -48,7 +48,7 @@ struct NativeCapabilitySettingsView: View {
                                 Text(permission.title)
                                 if permission.changesData {
                                     Text("PIDE APROBACIÓN")
-                                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                        .font(OCTypography.controlMonoBold)
                                         .foregroundStyle(OCColor.warning)
                                 }
                             }

@@ -31,12 +31,12 @@ public struct GUSModelDownloadView: View {
             Text("Elige y descarga un modelo aprobado. Todos usan el mismo rol de GUS; solo cambia el modelo local. Los archivos no se incluyen en la app.")
                 .font(.system(size: 11, design: .monospaced)).foregroundColor(.secondary)
             Text("Las descargas pueden continuar con la app suspendida o la pantalla bloqueada. Si fuerzas el cierre desde el selector de apps, iOS cancela la transferencia; al volver podrás reintentar.")
-                .font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary)
+                .font(OCTypography.controlMono).foregroundColor(.secondary)
             Text("Ojo: los modelos pequeños pueden inventar datos (fechas, nombres, cifras). Úsalos para redactar, resumir o explicar, y verifica los hechos importantes.")
-                .font(.system(size: 10, design: .monospaced)).foregroundColor(.orange)
+                .font(OCTypography.controlMono).foregroundColor(.orange)
                 .fixedSize(horizontal: false, vertical: true)
             Text("GUS Local usa solo herramientas disponibles en iSyCode. Los cambios de archivos requieren aprobación y no hay fallback remoto.")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(OCTypography.controlMonoStrong)
                 .foregroundColor(IysThemePreferences.active.accent)
 
             privacyNotice
@@ -50,12 +50,12 @@ public struct GUSModelDownloadView: View {
                     Text("Mostrar modelos experimentales (\(experimentalModelCount))")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     Text("Más grandes o sin medir en iPhone. Pensados para equipos con más RAM.")
-                        .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                        .font(OCTypography.controlMono).foregroundColor(.secondary)
                 }
             }
             if showExperimental {
                 Text("Riesgo real y acotado: si no cabe, iOS cierra la app (sin dañar datos ni el teléfono). También puede calentarse y usar varios GB de almacenamiento. Si pasa, el informe de fallos dirá en qué fase y con cuánta memoria.")
-                    .font(.system(size: 9, design: .monospaced)).foregroundColor(.orange)
+                    .font(OCTypography.controlMono).foregroundColor(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
             familySections(showExperimental ? GUSModelManifest.all : recommendedModels)
@@ -64,7 +64,7 @@ public struct GUSModelDownloadView: View {
 
             Button { showCrashHistory = true } label: {
                 Label("Informes de fallos", systemImage: "stethoscope")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(OCTypography.controlMonoStrong)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -133,7 +133,7 @@ public struct GUSModelDownloadView: View {
                 Text("GUS Local · 100% en tu iPhone")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                 Text("La conversación se procesa íntegramente aquí: GUS Local no envía tus mensajes por internet ni a proveedores externos. Nadie fuera de este dispositivo recibe tus chats a través de GUS. Después de descargar el GGUF, puedes conversar sin conexión.")
-                    .font(.system(size: 9, design: .monospaced))
+                    .font(OCTypography.controlMono)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -151,7 +151,7 @@ public struct GUSModelDownloadView: View {
         DisclosureGroup(isExpanded: $isSharedContextExpanded) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Una nota breve que GUS Local consulta en tus conversaciones. Para recuperar detalles largos, activa la búsqueda de otros chats. El modelo puede proponer cambios, pero siempre te pedirá aprobación.")
-                    .font(.system(size: 9, design: .monospaced))
+                    .font(OCTypography.controlMono)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 TextEditor(text: Binding(
@@ -169,9 +169,9 @@ public struct GUSModelDownloadView: View {
                 Toggle(isOn: $searchConversationsEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Permitir buscar en otros chats")
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .font(OCTypography.controlMonoStrong)
                         Text("Solo devuelve fragmentos breves y solo está disponible con un modelo local.")
-                            .font(.system(size: 8, design: .monospaced)).foregroundColor(.secondary)
+                            .font(OCTypography.controlMono).foregroundColor(.secondary)
                     }
                 }
             }
@@ -182,7 +182,7 @@ public struct GUSModelDownloadView: View {
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                 Spacer()
                 Text("\(sharedContext.count)/500")
-                    .font(.system(size: 8, design: .monospaced)).foregroundColor(.secondary)
+                    .font(OCTypography.controlMono).foregroundColor(.secondary)
             }
         }
         .tint(IysThemePreferences.active.accent)
@@ -206,7 +206,7 @@ public struct GUSModelDownloadView: View {
                     Text(family).font(.system(size: 12, weight: .semibold, design: .monospaced))
                     Spacer()
                     Text("\(members.count) \(members.count == 1 ? "modelo" : "modelos")")
-                        .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                        .font(OCTypography.controlMono).foregroundColor(.secondary)
                 }
                 .contentShape(Rectangle())
             }
@@ -242,7 +242,7 @@ public struct GUSModelDownloadView: View {
     private var modelBackupControls: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("¿Reinstalaste la app? iOS borra sus datos al eliminarla o al reinstalarla con otro identificador. Guarda una copia de tus modelos en Archivos (fuera de la carpeta de ISyCode, p. ej. En mi iPhone › Descargas) e impórtala después: se verifica el SHA-256 y no se vuelve a descargar.")
-                .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                .font(OCTypography.controlMono).foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Button { showImporter = true } label: {
@@ -250,14 +250,14 @@ public struct GUSModelDownloadView: View {
                         if isImporting { ProgressView() }
                         Label("Importar desde Archivos", systemImage: "square.and.arrow.down")
                     }
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(OCTypography.controlMonoStrong)
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .disabled(isImporting)
                 Button { exportFiles = manager.installedModelFiles } label: {
                     Label("Guardar copia", systemImage: "square.and.arrow.up")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .font(OCTypography.controlMonoStrong)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
@@ -265,7 +265,7 @@ public struct GUSModelDownloadView: View {
             }
             if let importMessage {
                 Text(importMessage)
-                    .font(.system(size: 9, design: .monospaced))
+                    .font(OCTypography.controlMono)
                     .foregroundColor(IysThemePreferences.active.accent)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -313,9 +313,9 @@ public struct GUSModelDownloadView: View {
             Button { showCrashHistory = true } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     Label("La app se cerró inesperadamente la última vez", systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    Text(report.summary).font(.system(size: 9, design: .monospaced))
-                    Text("Toca para ver dónde y por qué.").font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                        .font(OCTypography.controlMonoBold)
+                    Text(report.summary).font(OCTypography.controlMono)
+                    Text("Toca para ver dónde y por qué.").font(OCTypography.controlMono).foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -330,7 +330,7 @@ public struct GUSModelDownloadView: View {
         let ram = ByteCountFormatter.string(fromByteCount: budget.physicalMemory, countStyle: .memory)
         let limit = ByteCountFormatter.string(fromByteCount: budget.appMemoryLimit, countStyle: .memory)
         return Text("Este equipo: \(ram) de RAM · la app puede usar ~\(limit) ahora. La recomendación se calcula con ese límite, no con el nombre del iPhone.")
-            .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+            .font(OCTypography.controlMono).foregroundColor(.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -356,7 +356,7 @@ public struct GUSModelDownloadView: View {
 
     private func badge(_ text: String, _ color: Color) -> some View {
         Text(text)
-            .font(.system(size: 8, weight: .semibold, design: .monospaced))
+            .font(OCTypography.controlMonoStrong)
             .padding(.horizontal, 5).padding(.vertical, 2)
             .background(color.opacity(0.15))
             .foregroundColor(color)
@@ -370,7 +370,7 @@ public struct GUSModelDownloadView: View {
                 .disabled(!bothDualModelsReady && !dualSmolEnabled)
 
             Text("Smol solo clasifica; Qwen sigue respondiendo. Es experimental y no garantiza estabilidad ni menor uso de memoria.")
-                .font(.system(size: 9, design: .monospaced))
+                .font(OCTypography.controlMono)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -380,7 +380,7 @@ public struct GUSModelDownloadView: View {
                     .map(\.modelName)
                     .joined(separator: " · ")
                 Text("Falta descargar y verificar: \(missing). Usa los botones de descarga de arriba.")
-                    .font(.system(size: 9, design: .monospaced))
+                    .font(OCTypography.controlMono)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -399,7 +399,7 @@ public struct GUSModelDownloadView: View {
                     Spacer()
                     Image(systemName: "arrow.triangle.2.circlepath")
                 }
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(OCTypography.controlMonoStrong)
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -431,7 +431,7 @@ public struct GUSModelDownloadView: View {
                     Text(manifest.modelName)
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     Text("\(manifest.parameterLabel) · \(manifest.byteCount / 1_000_000) MB")
-                        .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                        .font(OCTypography.controlMono).foregroundColor(.secondary)
                     HStack(spacing: 4) {
                         fitBadge(manifest)
                         evidenceBadge(manifest)
@@ -442,7 +442,7 @@ public struct GUSModelDownloadView: View {
                 Spacer(minLength: 0)
                 if manager.selectedModelID == manifest.id {
                     Label("Activo", systemImage: "checkmark.circle.fill")
-                        .font(.system(size: 9, design: .monospaced)).foregroundColor(IysThemePreferences.active.accent)
+                        .font(OCTypography.controlMono).foregroundColor(IysThemePreferences.active.accent)
                 }
             }
 
@@ -452,16 +452,16 @@ public struct GUSModelDownloadView: View {
                         Link("Fuente / revisión", destination: URL(string: "https://huggingface.co/\(manifest.repository)/tree/\(manifest.revision)")!)
                         Link("Licencia · \(manifest.licenseName)", destination: manifest.licenseURL)
                     }
-                    .font(.system(size: 9, design: .monospaced))
+                    .font(OCTypography.controlMono)
                     Text(manifest.attribution)
-                        .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                        .font(OCTypography.controlMono).foregroundColor(.secondary)
                     Text("SHA-256  \(manifest.sha256)")
-                        .font(.system(size: 8, design: .monospaced)).foregroundColor(.secondary)
+                        .font(OCTypography.controlMono).foregroundColor(.secondary)
                         .textSelection(.enabled)
                 }
                 .padding(.top, 5)
             }
-            .font(.system(size: 9, design: .monospaced))
+            .font(OCTypography.controlMono)
 
             stateControls(for: manifest)
         }
@@ -494,10 +494,10 @@ public struct GUSModelDownloadView: View {
                     Button("Cancelar") { manager.cancelDownload(modelID: manifest.id) }
                 }
             }
-            .font(.system(size: 10, design: .monospaced))
+            .font(OCTypography.controlMono)
         case .verifying:
             Label("Verificando tamaño y SHA-256…", systemImage: "checkmark.shield")
-                .font(.system(size: 10, design: .monospaced))
+                .font(OCTypography.controlMono)
         case .ready:
             HStack {
                 Button(manager.selectedModelID == manifest.id ? "Modelo seleccionado" : "Usar este modelo") {
@@ -510,12 +510,12 @@ public struct GUSModelDownloadView: View {
             }
             Button { benchmarkModel = manifest } label: {
                 Label("Benchmark en este iPhone", systemImage: "speedometer")
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(OCTypography.controlMono)
             }
             .buttonStyle(.bordered)
         case .failed(let error):
             Text(error.localizedDescription)
-                .font(.system(size: 9, design: .monospaced)).foregroundColor(.red)
+                .font(OCTypography.controlMono).foregroundColor(.red)
             Button("Reintentar") { Task { await manager.startDownload(modelID: manifest.id) } }
                 .buttonStyle(.bordered)
         }

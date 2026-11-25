@@ -569,11 +569,11 @@ public struct RichAttachmentsBar: View {
                         HStack(spacing: 4) {
                             if let size = item.formattedByteSize {
                                 Text(size)
-                                    .font(.system(size: 10.5))
+                                    .font(OCTypography.meta)
                                     .foregroundColor(OCColor.textFaint)
                             }
                             Text(item.state.badgeLabel)
-                                .font(.system(size: 10.5, weight: .medium))
+                                .font(OCTypography.pillLabel)
                                 .foregroundColor(stateColor(item))
                         }
                     }

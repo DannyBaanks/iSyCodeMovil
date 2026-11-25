@@ -16,7 +16,7 @@ public struct GUSCrashHistoryView: View {
             List {
                 Section {
                     Text("Se guarda en el iPhone qué estaba haciendo la app (fase, modelo, memoria, tokens) antes de cada paso riesgoso. Nunca se guarda el texto de tus mensajes ni de las respuestas.")
-                        .font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary)
+                        .font(OCTypography.controlMono).foregroundColor(.secondary)
                 }
                 if reports.isEmpty {
                     Text("Sin fallos registrados.")
@@ -52,9 +52,9 @@ public struct GUSCrashHistoryView: View {
                 Text(report.summary).font(.system(size: 11, weight: .semibold, design: .monospaced))
             }
             Text(report.createdAt.formatted(date: .abbreviated, time: .shortened))
-                .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                .font(OCTypography.controlMono).foregroundColor(.secondary)
             Text(report.likelyCause)
-                .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary).lineLimit(2)
+                .font(OCTypography.controlMono).foregroundColor(.secondary).lineLimit(2)
         }
     }
 
@@ -96,11 +96,11 @@ struct GUSCrashReportDetailView: View {
                         ForEach(Array(report.breadcrumbs.enumerated()), id: \.offset) { _, crumb in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("\(crumb.time.formatted(date: .omitted, time: .standard))  \(crumb.event)")
-                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .font(OCTypography.controlMonoStrong)
                                 Text("uso \(bytes(crumb.footprintBytes)) · libre \(bytes(crumb.availableBytes))"
                                      + (crumb.fields.isEmpty ? "" : " · " + crumb.fields.sorted { $0.key < $1.key }
                                         .map { "\($0.key)=\($0.value)" }.joined(separator: " ")))
-                                    .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                                    .font(OCTypography.controlMono).foregroundColor(.secondary)
                             }
                         }
                     }
@@ -108,7 +108,7 @@ struct GUSCrashReportDetailView: View {
                 if report.appleDiagnostic != nil {
                     Section("Diagnóstico de iOS") {
                         Text("Incluye el JSON de MetricKit con la pila de llamadas; va dentro del archivo exportado.")
-                            .font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary)
+                            .font(OCTypography.controlMono).foregroundColor(.secondary)
                     }
                 }
                 Section {
@@ -133,7 +133,7 @@ struct GUSCrashReportDetailView: View {
             Spacer()
             Text(value).textSelection(.enabled)
         }
-        .font(.system(size: 10, design: .monospaced))
+        .font(OCTypography.controlMono)
     }
 
     private func bytes(_ value: Int64) -> String {

@@ -34,7 +34,7 @@ private struct ConversationComposer: View {
             if store.gusDualSmolActive {
                 HStack {
                     Label("Dual-Smol · experimental", systemImage: "sparkles")
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .font(OCTypography.controlMonoStrong)
                         .foregroundColor(IysThemePreferences.active.accent)
                     Spacer(minLength: 0)
                 }
@@ -769,7 +769,7 @@ public struct ModelPickerSheet: View {
 
             if searchText.isEmpty {
                 Label("La sesión seguirá usando la configuración del host", systemImage: "info.circle")
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(OCTypography.controlMono)
                     .foregroundColor(OCColor.textFaint)
                     .multilineTextAlignment(.center)
             }

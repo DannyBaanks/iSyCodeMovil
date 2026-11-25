@@ -523,14 +523,14 @@ public struct AttachmentToken: View {
 
             if let size = attachment.formattedByteSize {
                 Text(size)
-                    .font(.system(size: 10))
+                    .font(OCTypography.meta)
                     .foregroundColor(OCColor.textFaint)
             }
 
             if let onRemove = onRemove {
                 Button(action: onRemove) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(OCTypography.sectionLabel)
                         .foregroundColor(OCColor.iconMuted)
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
@@ -1071,7 +1071,7 @@ public struct DiffHunkView: View {
                         .foregroundColor(OCColor.textSecondary)
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(OCTypography.sectionLabel)
                         .foregroundColor(OCColor.iconMuted)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }

@@ -27,7 +27,7 @@ public struct MobileHostPairingSection: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(OCColor.textPrimary)
                     Text(hostStore.credential == nil ? "PIN del escritorio, todavía sin sesiones" : "ISYCODE HOST")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .font(OCTypography.controlMonoStrong)
                         .tracking(0.8)
                         .foregroundColor(OCColor.textFaint)
                 }
@@ -114,7 +114,7 @@ public struct MobileHostPairingSection: View {
 
             if !hostStore.isPairing, !trimmedHostURL.isEmpty, pairingCode.count != 6 {
                 Text("Faltan \(6 - pairingCode.count) dígitos del PIN")
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(OCTypography.controlMono)
                     .foregroundColor(OCColor.textFaint)
             }
 
@@ -124,7 +124,7 @@ public struct MobileHostPairingSection: View {
                 Text("Puedes incluir una ruta base como /isycode. Los hosts remotos requieren HTTPS de confianza.")
                     .foregroundColor(OCColor.textFaint)
             }
-            .font(.system(size: 10, design: .monospaced))
+            .font(OCTypography.controlMono)
             .fixedSize(horizontal: false, vertical: true)
 
             if enteringNewCode {
@@ -167,7 +167,7 @@ public struct MobileHostPairingSection: View {
             connectionRow("Vence", value: credential.expirationDate?.formatted(date: .abbreviated, time: .shortened) ?? credential.expiresAt, icon: "clock")
 
             Label("Sesiones y ejecución remota: próximamente", systemImage: "sparkles")
-                .font(.system(size: 10, weight: .medium))
+                .font(OCTypography.pillLabel)
                 .foregroundColor(OCColor.textFaint)
                 .padding(.top, 2)
 
@@ -175,14 +175,14 @@ public struct MobileHostPairingSection: View {
                 Button("Olvidar en este iPhone", role: .destructive) {
                     Task { await hostStore.forgetCredential() }
                 }
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(OCTypography.controlMono)
                 .foregroundColor(OCColor.danger)
                 Spacer()
                 Button("Cambiar PIN") {
                     hostURL = credential.baseURL
                     enteringNewCode = true
                 }
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(OCTypography.controlMono)
                 .foregroundColor(OCColor.textSecondary)
             }
             .padding(.top, 2)
@@ -200,7 +200,7 @@ public struct MobileHostPairingSection: View {
                 .foregroundColor(OCColor.textSecondary)
             Spacer(minLength: 12)
             Text(value)
-                .font(.system(size: 10, design: .monospaced))
+                .font(OCTypography.controlMono)
                 .foregroundColor(OCColor.textFaint)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -209,7 +209,7 @@ public struct MobileHostPairingSection: View {
 
     private func statusBadge(_ label: String, isHealthy: Bool) -> some View {
         Text(label.uppercased())
-            .font(.system(size: 8, weight: .semibold, design: .monospaced))
+            .font(OCTypography.controlMonoStrong)
             .tracking(0.6)
             .foregroundColor(isHealthy ? OCColor.success : OCColor.warning)
             .padding(.horizontal, 8)

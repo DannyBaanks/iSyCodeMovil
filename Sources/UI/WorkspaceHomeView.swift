@@ -578,7 +578,7 @@ public struct WorkspaceHomeView: View {
                     Spacer(minLength: 0)
                     if let badge {
                         Text(badge)
-                            .font(.system(size: 10.5, weight: .semibold))
+                            .font(OCTypography.sectionLabel)
                             .foregroundColor(OCColor.warning)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
