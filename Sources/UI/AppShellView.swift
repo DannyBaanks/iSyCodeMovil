@@ -152,7 +152,7 @@ public struct AppShellView: View {
     private var regularShell: some View {
         NavigationSplitView {
             ChatSidebarView(showsCloseButton: false)
-                .navigationTitle("ISYCODE")
+                .navigationTitle("iSyCode")
         } detail: {
             NavigationStack {
                 destinationContent(showsSidebarButton: false)

@@ -123,7 +123,7 @@ public struct ProjectListContent: View {
         .refreshable {
             await store.refreshConversations()
         }
-        .navigationTitle("ISYCODE")
+        .navigationTitle("iSyCode")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {

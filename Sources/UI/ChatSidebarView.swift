@@ -114,9 +114,10 @@ public struct ChatSidebarView: View {
     private var conversationsSection: some View {
         LazyVStack(alignment: .leading, spacing: 4) {
             if store.sessions.isEmpty {
-                Text("Tus conversaciones aparecerán aquí.")
-                    .font(.footnote)
+                Text("Aún no hay conversaciones. Toca «Nueva conversación» para empezar.")
+                    .font(OCTypography.rowSecondary)
                     .foregroundColor(OCColor.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, OCSpacing.lg)
                     .padding(.vertical, OCSpacing.sm)
             } else {
