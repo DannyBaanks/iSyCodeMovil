@@ -14,7 +14,7 @@ public struct AppShellView: View {
     @State private var dragOffset: CGFloat = 0
     /// Set after a gesture release so the settle uses a spring carrying that velocity;
     /// the time-based drawer curve is for releases that did not involve a finger.
-    @State private var settleAnimation: Animation = OCMotion.drawer
+    @State private var settleAnimation: Animation? = OCMotion.drawer
 
     public init() {}
 
@@ -92,26 +92,36 @@ public struct AppShellView: View {
                 Color.black.opacity(0.42)
                     .ignoresSafeArea()
                     .accessibilityHidden(true)
-                    .onTapGesture { router.closeSidebar() }
+                    .onTapGesture { closeDrawer() }
                     .transition(.opacity)
             }
 
             if router.isSidebarOpen || dragOffset > 0 {
                 ChatSidebarView(showsCloseButton: true) {
-                    router.closeSidebar()
+                    closeDrawer()
                 }
                 .frame(width: sidebarWidth)
                 .offset(x: router.isSidebarOpen ? min(0, dragOffset) : (-sidebarWidth + min(sidebarWidth, dragOffset)))
                 .shadow(color: Color.black.opacity(0.35), radius: 14, x: 4, y: 0)
                 .accessibilityAddTraits(.isModal)
-                .accessibilityAction(.escape) { router.closeSidebar() }
+                .accessibilityAction(.escape) { closeDrawer() }
                 .transition(reduceMotion ? .identity : .move(edge: .leading))
             }
         }
         .simultaneousGesture(edgeSwipeGesture)
-        .animation(settleAnimation, value: router.isSidebarOpen)
+        .animation(reduceMotion ? nil : settleAnimation, value: router.isSidebarOpen)
         .onChange(of: router.isSidebarOpen) { if $0 { OCHaptics.light() } }
         .onChange(of: router.activeDestination) { _ in compactPath = NavigationPath() }
+    }
+
+    private func closeDrawer() {
+        settleAnimation = OCMotion.drawer
+        router.closeSidebar()
+    }
+
+    private func toggleDrawer() {
+        settleAnimation = OCMotion.drawer
+        router.toggleSidebar()
     }
 
     private var edgeSwipeGesture: some Gesture {
@@ -176,9 +186,9 @@ public struct AppShellView: View {
         switch router.activeDestination {
         case .chat:
             if sessionState.currentSession != nil && !router.showsNewConversation {
-                ActiveSessionView(onOpenSidebar: showsSidebarButton ? { router.toggleSidebar() } : nil)
+                ActiveSessionView(onOpenSidebar: showsSidebarButton ? { toggleDrawer() } : nil)
             } else {
-                ChatLandingView(onOpenSidebar: { router.toggleSidebar() })
+                ChatLandingView(onOpenSidebar: { toggleDrawer() })
             }
         case .builder:
             AgentBuilderView()
@@ -250,7 +260,7 @@ public struct AppShellView: View {
     private var sidebarLeadingToolbarItem: some ToolbarContent {
         ToolbarItem(placement: .navigationBarLeading) {
             Button {
-                router.toggleSidebar()
+                toggleDrawer()
             } label: {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 17, weight: .semibold))

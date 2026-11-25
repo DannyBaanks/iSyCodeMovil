@@ -313,7 +313,9 @@ public struct OCTypography {
     /// Kept for existing call sites: times, durations and counts. System face, fixed-width digits.
     public static let metaMono       = Font.system(.caption2, design: .default, weight: .regular).monospacedDigit()
     public static var control: Font { Font.system(.caption, design: bodyDesign, weight: .medium) }
-    public static let controlMono    = Font.system(.caption2, design: .monospaced, weight: .medium)
+    public static let controlMono       = Font.system(.caption2, design: .monospaced, weight: .medium)
+    public static let controlMonoStrong = Font.system(.caption2, design: .monospaced, weight: .semibold)
+    public static let controlMonoBold   = Font.system(.caption2, design: .monospaced, weight: .bold)
     public static let code           = Font.system(.footnote, design: .monospaced, weight: .regular)
     public static let codeSmall      = Font.system(.caption, design: .monospaced, weight: .regular)
     public static let sectionLabel   = Font.system(.caption2, design: .default, weight: .semibold)
