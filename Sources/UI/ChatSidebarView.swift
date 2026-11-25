@@ -105,7 +105,7 @@ public struct ChatSidebarView: View {
             .padding(.horizontal, OCSpacing.md)
             .frame(minHeight: 44)
             .background(IysThemePreferences.active.accent.gradient)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+            .clipShape(OCRoundedRect(OCRadius.r12))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("sidebar-new-conversation")
@@ -159,7 +159,7 @@ public struct ChatSidebarView: View {
             .padding(.horizontal, OCSpacing.md)
             .padding(.vertical, 9)
             .background(isActive ? IysThemePreferences.active.accent.opacity(0.14) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+            .clipShape(OCRoundedRect(OCRadius.r10))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -253,7 +253,7 @@ public struct ChatSidebarView: View {
             .padding(.vertical, 9)
             .frame(minHeight: 44)
             .background(isActive ? IysThemePreferences.active.accent.opacity(0.12) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+            .clipShape(OCRoundedRect(OCRadius.r10))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -586,7 +586,7 @@ public struct ChatLandingView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(tint)
                     .frame(width: 28, height: 28)
-                    .background(RoundedRectangle(cornerRadius: OCRadius.r8).fill(tint.opacity(0.14)))
+                    .background(OCRoundedRect(OCRadius.r8).fill(tint.opacity(0.14)))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
@@ -829,8 +829,8 @@ public struct ChatLandingView: View {
             }
             .padding(.leading, 4)
             .background(OCColor.bgBase)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r24))
-            .overlay(RoundedRectangle(cornerRadius: OCRadius.r24).stroke(OCColor.borderBase, lineWidth: 1))
+            .clipShape(OCRoundedRect(OCRadius.r24))
+            .overlay(OCRoundedRect(OCRadius.r24).stroke(OCColor.borderBase, lineWidth: 1))
             .padding(.horizontal, OCSpacing.contentMargin)
             .padding(.bottom, OCSpacing.sm)
         }

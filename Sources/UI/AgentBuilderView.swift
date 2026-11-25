@@ -272,8 +272,8 @@ public struct AgentBuilderView: View {
                     .foregroundColor(OCColor.textPrimary)
                     .padding(12)
                     .background(OCColor.bgBase)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
+                    .clipShape(OCRoundedRect(OCRadius.r12))
+                    .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
                     .accessibilityIdentifier("builder-goal-input")
 
                 Button {
@@ -304,7 +304,7 @@ public struct AgentBuilderView: View {
                     }
                     .padding(10)
                     .background(OCColor.bgBase)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                    .clipShape(OCRoundedRect(OCRadius.r10))
                 }
             }
 
@@ -326,7 +326,7 @@ public struct AgentBuilderView: View {
             VStack(alignment: .leading, spacing: OCSpacing.sm) {
                 HStack(spacing: OCSpacing.md) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: OCRadius.r10)
+                        OCRoundedRect(OCRadius.r10)
                             .fill(tint.opacity(0.16))
                             .frame(width: 44, height: 44)
                         Image(systemName: template.icon)
@@ -367,7 +367,7 @@ public struct AgentBuilderView: View {
                         }
                         .padding(8)
                         .background(OCColor.bgDeep)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                        .clipShape(OCRoundedRect(OCRadius.r8))
 
                         if !template.limitations.isEmpty {
                             Text("Alcance: \(template.limitations.joined(separator: " "))")
@@ -632,8 +632,8 @@ public struct AgentBuilderView: View {
                     .foregroundColor(OCColor.textPrimary)
                     .padding(12)
                     .background(OCColor.bgBase)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
+                    .clipShape(OCRoundedRect(OCRadius.r12))
+                    .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
             }
 
             VStack(alignment: .leading, spacing: OCSpacing.sm) {
@@ -646,8 +646,8 @@ public struct AgentBuilderView: View {
                     .foregroundColor(OCColor.textPrimary)
                     .padding(12)
                     .background(OCColor.bgBase)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
+                    .clipShape(OCRoundedRect(OCRadius.r12))
+                    .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
             }
 
             VStack(alignment: .leading, spacing: OCSpacing.sm) {
@@ -766,7 +766,7 @@ public struct AgentBuilderView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 46)
                 .background((draft.contract.localApprovalGrantedAt != nil ? OCColor.success : IysThemePreferences.active.accent).gradient)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                .clipShape(OCRoundedRect(OCRadius.r12))
             }
             .buttonStyle(OCInteractiveButtonStyle())
             .accessibilityIdentifier("builder-approve-scopes")
@@ -809,7 +809,7 @@ public struct AgentBuilderView: View {
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(OCColor.bgDeep)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                        .clipShape(OCRoundedRect(OCRadius.r8))
                 }
 
                 Button {
@@ -829,7 +829,7 @@ public struct AgentBuilderView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)
                     .background(IysThemePreferences.active.accent.gradient)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                    .clipShape(OCRoundedRect(OCRadius.r12))
                 }
                 .buttonStyle(OCInteractiveButtonStyle())
                 .disabled(isRunningTest)
@@ -857,11 +857,11 @@ public struct AgentBuilderView: View {
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(OCColor.bgDeep)
-                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                            .clipShape(OCRoundedRect(OCRadius.r8))
                     }
                     .padding(OCSpacing.md)
                     .background((passed ? OCColor.success : OCColor.danger).opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                    .clipShape(OCRoundedRect(OCRadius.r12))
                 }
             }
             .padding(OCSpacing.lg)
@@ -920,7 +920,7 @@ public struct AgentBuilderView: View {
             VStack(alignment: .leading, spacing: OCSpacing.md) {
                 HStack(spacing: 12) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: OCRadius.r12)
+                        OCRoundedRect(OCRadius.r12)
                             .fill(Color(hex: draft.contract.accentHex).opacity(0.18))
                             .frame(width: 48, height: 48)
                         Image(systemName: draft.contract.icon)
@@ -966,7 +966,7 @@ public struct AgentBuilderView: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 46)
                             .background(IysThemePreferences.active.accent.gradient)
-                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                            .clipShape(OCRoundedRect(OCRadius.r12))
                     }
                     .buttonStyle(OCInteractiveButtonStyle())
                     .accessibilityIdentifier("builder-save-agent")
@@ -986,8 +986,8 @@ public struct AgentBuilderView: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 46)
                             .background(OCColor.bgLayer1)
-                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                            .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
+                            .clipShape(OCRoundedRect(OCRadius.r12))
+                            .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
                     }
                     .buttonStyle(OCInteractiveButtonStyle())
                 }
@@ -1008,7 +1008,7 @@ public struct AgentBuilderView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 42)
                         .background(OCColor.agentBuildSoft)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                        .clipShape(OCRoundedRect(OCRadius.r10))
                 }
                 .buttonStyle(OCInteractiveButtonStyle())
             }
@@ -1037,7 +1037,7 @@ public struct AgentBuilderView: View {
                     .padding(.horizontal, 16)
                     .frame(height: 44)
                     .background(OCColor.bgLayer1)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                    .clipShape(OCRoundedRect(OCRadius.r12))
                 }
                 .buttonStyle(OCInteractiveButtonStyle())
             }
@@ -1062,7 +1062,7 @@ public struct AgentBuilderView: View {
                     .padding(.horizontal, 18)
                     .frame(height: 44)
                     .background(IysThemePreferences.active.accent.gradient)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                    .clipShape(OCRoundedRect(OCRadius.r12))
                 }
                 .buttonStyle(OCInteractiveButtonStyle())
                 .accessibilityIdentifier("builder-next-step")
@@ -1282,7 +1282,7 @@ public struct MyAgentsView: View {
         return VStack(alignment: .leading, spacing: OCSpacing.md) {
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: OCRadius.r12)
+                    OCRoundedRect(OCRadius.r12)
                         .fill(tint.opacity(0.16))
                         .frame(width: 46, height: 46)
                     Image(systemName: agent.icon)
@@ -1433,7 +1433,7 @@ public struct AgentContractInspectorSheet: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 44)
                             .background(IysThemePreferences.active.accent.gradient)
-                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                            .clipShape(OCRoundedRect(OCRadius.r12))
                     }
                     .buttonStyle(OCInteractiveButtonStyle())
 
@@ -1444,8 +1444,8 @@ public struct AgentContractInspectorSheet: View {
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(OCColor.bgBase)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                        .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
+                        .clipShape(OCRoundedRect(OCRadius.r12))
+                        .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
                 }
                 .padding(OCSpacing.contentMargin)
             }

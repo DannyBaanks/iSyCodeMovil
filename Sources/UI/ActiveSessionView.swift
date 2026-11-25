@@ -125,12 +125,12 @@ public struct ActiveSessionView: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
                             .background(IysThemePreferences.active.accent.gradient)
-                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                            .clipShape(OCRoundedRect(OCRadius.r8))
                     }
                     .padding(10)
                     .background(OCColor.bgBase)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
+                    .clipShape(OCRoundedRect(OCRadius.r12))
+                    .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, OCSpacing.contentMargin)
@@ -360,8 +360,8 @@ private struct CodexWorkspaceFoldersUnavailableView: View {
                 .padding(OCSpacing.lg)
                 .frame(maxWidth: 340)
                 .background(OCColor.bgBase)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-                .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
+                .clipShape(OCRoundedRect(OCRadius.r14))
+                .overlay(OCRoundedRect(OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
 
             Button {
                 UIPasteboard.general.string = path
@@ -856,9 +856,9 @@ private struct ChatActivityBar: View {
         .padding(.vertical, OCSpacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(OCColor.bgBase)
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+        .clipShape(OCRoundedRect(OCRadius.r12))
         .overlay {
-            RoundedRectangle(cornerRadius: OCRadius.r12)
+            OCRoundedRect(OCRadius.r12)
                 .stroke(statusColor.opacity(0.22), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
@@ -1329,7 +1329,7 @@ struct EmptyReviewView: View {
             .padding(.vertical, OCSpacing.base)
             .background(OCColor.agentBuild)
             .foregroundColor(OCColor.onAccent)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r24))
+            .clipShape(OCRoundedRect(OCRadius.r24))
         }
         .padding(OCSpacing.huge)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1551,8 +1551,8 @@ struct TerminalSurfaceView: View {
                 .padding(.horizontal, OCSpacing.lg)
                 .padding(.vertical, OCSpacing.md)
                 .background(OCColor.bgBase)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
+                .clipShape(OCRoundedRect(OCRadius.r12))
+                .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
                 .padding(OCSpacing.sm)
             }
         }
@@ -1690,7 +1690,7 @@ struct WorkSurfaceSwitcher: View {
                     .background(
                         selectedSurface == surface ? OCColor.bgLayer1 : Color.clear
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                    .clipShape(OCRoundedRect(OCRadius.r10))
                 }
                 .buttonStyle(.plain)
                 .frame(maxWidth: .infinity)

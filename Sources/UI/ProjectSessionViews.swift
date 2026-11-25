@@ -16,7 +16,7 @@ public struct ProjectRow: View {
         Button(action: onTap) {
             HStack(spacing: OCSpacing.lg) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: OCRadius.r8)
+                    OCRoundedRect(OCRadius.r8)
                         .fill((project.avatarColor ?? IysThemePreferences.active.accent).opacity(0.16))
                         .frame(width: 46, height: 46)
                     Image(systemName: "folder.fill")
@@ -53,8 +53,8 @@ public struct ProjectRow: View {
             }
             .padding(OCSpacing.lg)
             .background(isSelected ? IysThemePreferences.active.accent.opacity(0.09) : OCColor.bgBase)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-            .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(isSelected ? IysThemePreferences.active.accent.opacity(0.55) : OCColor.borderMuted, lineWidth: 1))
+            .clipShape(OCRoundedRect(OCRadius.r14))
+            .overlay(OCRoundedRect(OCRadius.r14).stroke(isSelected ? IysThemePreferences.active.accent.opacity(0.55) : OCColor.borderMuted, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -228,7 +228,7 @@ public struct SessionRow: View {
     public var body: some View {
         Button(action: onTap) {
             HStack(spacing: OCSpacing.base) {
-                RoundedRectangle(cornerRadius: OCRadius.r10)
+                OCRoundedRect(OCRadius.r10)
                     .fill(session.agentMode.color.opacity(0.14))
                     .overlay {
                         Image(systemName: "bubble.left.and.bubble.right.fill")
@@ -282,8 +282,8 @@ public struct SessionRow: View {
             .padding(OCSpacing.md)
             .frame(minHeight: 68)
             .background(isSelected ? IysThemePreferences.active.accent.opacity(0.09) : OCColor.bgBase)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-            .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(isSelected ? IysThemePreferences.active.accent.opacity(0.55) : OCColor.borderMuted, lineWidth: 1))
+            .clipShape(OCRoundedRect(OCRadius.r14))
+            .overlay(OCRoundedRect(OCRadius.r14).stroke(isSelected ? IysThemePreferences.active.accent.opacity(0.55) : OCColor.borderMuted, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -420,7 +420,7 @@ public struct SessionListView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 48)
                         .background(IysThemePreferences.active.accent.gradient)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+                        .clipShape(OCRoundedRect(OCRadius.r14))
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, OCSpacing.contentMargin)
@@ -474,7 +474,7 @@ public struct SessionListView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
                     .background(IysThemePreferences.active.accent.gradient)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+                    .clipShape(OCRoundedRect(OCRadius.r14))
             }
             .buttonStyle(.plain)
             .padding(.top, OCSpacing.sm)
@@ -817,13 +817,13 @@ private struct ThemeChoiceRow: View {
                             Circle().fill(theme.accent).frame(width: 5, height: 5)
                             Capsule().fill(Color.white.opacity(0.22)).frame(width: 27, height: 3)
                         }
-                        RoundedRectangle(cornerRadius: 4)
+                        RoundedRectangle(cornerRadius: OCRadius.r4)
                             .fill(theme.accent.opacity(0.14))
                             .frame(height: 12)
                             .overlay(alignment: .leading) {
                                 Capsule().fill(theme.accent).frame(width: 31, height: 3).padding(.leading, 5)
                             }
-                        RoundedRectangle(cornerRadius: 4)
+                        RoundedRectangle(cornerRadius: OCRadius.r4)
                             .fill(Color.white.opacity(0.07))
                             .frame(height: 12)
                             .overlay(alignment: .leading) {
@@ -833,7 +833,7 @@ private struct ThemeChoiceRow: View {
                     .padding(7)
                     .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
                     .background(theme.background)
-                    .clipShape(RoundedRectangle(cornerRadius: 9))
+                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
 
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
@@ -856,9 +856,9 @@ private struct ThemeChoiceRow: View {
             }
             .padding(8)
             .background(isSelected ? theme.accent.opacity(0.08) : OCColor.bgBase)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-            .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(isSelected ? theme.accent.opacity(0.55) : OCColor.borderMuted, lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+            .clipShape(OCRoundedRect(OCRadius.r14))
+            .overlay(OCRoundedRect(OCRadius.r14).stroke(isSelected ? theme.accent.opacity(0.55) : OCColor.borderMuted, lineWidth: 1))
+            .contentShape(OCRoundedRect(OCRadius.r14))
         }
         .buttonStyle(.plain)
     }
@@ -868,7 +868,7 @@ private struct ComingSoonThemeCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack {
-                RoundedRectangle(cornerRadius: 9)
+                RoundedRectangle(cornerRadius: OCRadius.r8)
                     .fill(Color.white.opacity(0.035))
                 Image(systemName: "plus")
                     .font(.system(size: 18, weight: .light))
@@ -888,8 +888,8 @@ private struct ComingSoonThemeCard: View {
         }
         .padding(8)
         .background(OCColor.bgBase.opacity(0.6))
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-        .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
+        .clipShape(OCRoundedRect(OCRadius.r14))
+        .overlay(OCRoundedRect(OCRadius.r14).stroke(OCColor.borderMuted, style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
         .accessibilityElement(children: .combine)
     }
 }

@@ -73,7 +73,7 @@ public struct GUSModelDownloadView: View {
         }
         .padding(12)
         .background(OCColor.bgBase)
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(IysThemePreferences.active.accent.opacity(0.35), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: OCRadius.r8).stroke(IysThemePreferences.active.accent.opacity(0.35), lineWidth: 1))
         .confirmationDialog("Eliminar modelo descargado", isPresented: Binding(
             get: { modelPendingDeletion != nil }, set: { if !$0 { modelPendingDeletion = nil } }
         ), titleVisibility: .visible) {
@@ -144,7 +144,7 @@ public struct GUSModelDownloadView: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(IysThemePreferences.active.accent.opacity(0.08))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(IysThemePreferences.active.accent.opacity(0.25), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: OCRadius.r8).stroke(IysThemePreferences.active.accent.opacity(0.25), lineWidth: 1))
     }
 
     private var sharedContextControls: some View {
@@ -163,8 +163,8 @@ public struct GUSModelDownloadView: View {
                     .frame(minHeight: 90, maxHeight: 150)
                     .padding(6)
                     .background(OCColor.bgBase)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(IysThemePreferences.active.accent.opacity(0.2), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r8).stroke(IysThemePreferences.active.accent.opacity(0.2), lineWidth: 1))
                     .accessibilityLabel("Contexto compartido para GUS Local")
                 Toggle(isOn: $searchConversationsEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -188,7 +188,7 @@ public struct GUSModelDownloadView: View {
         .tint(IysThemePreferences.active.accent)
         .padding(10)
         .background(OCColor.bgDeep)
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(IysThemePreferences.active.accent.opacity(0.2), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: OCRadius.r8).stroke(IysThemePreferences.active.accent.opacity(0.2), lineWidth: 1))
     }
 
     @ViewBuilder
@@ -213,7 +213,7 @@ public struct GUSModelDownloadView: View {
             .tint(IysThemePreferences.active.accent)
             .padding(10)
             .background(OCColor.bgDeep)
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(IysThemePreferences.active.accent.opacity(0.2), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: OCRadius.r8).stroke(IysThemePreferences.active.accent.opacity(0.2), lineWidth: 1))
         }
     }
 
@@ -272,7 +272,7 @@ public struct GUSModelDownloadView: View {
         }
         .padding(10)
         .background(OCColor.bgDeep)
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(IysThemePreferences.active.accent.opacity(0.2), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: OCRadius.r8).stroke(IysThemePreferences.active.accent.opacity(0.2), lineWidth: 1))
     }
 
     static func describe(_ summary: GUSModelDownloadManager.ImportSummary) -> String {
@@ -322,7 +322,7 @@ public struct GUSModelDownloadView: View {
             .buttonStyle(.plain)
             .padding(8)
             .background(Color.red.opacity(0.12))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.red.opacity(0.4), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: OCRadius.r8).stroke(Color.red.opacity(0.4), lineWidth: 1))
         }
     }
 
@@ -360,7 +360,7 @@ public struct GUSModelDownloadView: View {
             .padding(.horizontal, 5).padding(.vertical, 2)
             .background(color.opacity(0.15))
             .foregroundColor(color)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r4))
     }
 
     private var dualSmolControls: some View {
@@ -410,7 +410,7 @@ public struct GUSModelDownloadView: View {
         }
         .padding(10)
         .background(OCColor.bgDeep)
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(IysThemePreferences.active.accent.opacity(0.28), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: OCRadius.r8).stroke(IysThemePreferences.active.accent.opacity(0.28), lineWidth: 1))
     }
 
     private var bothDualModelsReady: Bool {
@@ -467,7 +467,7 @@ public struct GUSModelDownloadView: View {
         }
         .padding(10)
         .background(OCColor.bgDeep)
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(IysThemePreferences.active.accent.opacity(0.2), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: OCRadius.r8).stroke(IysThemePreferences.active.accent.opacity(0.2), lineWidth: 1))
     }
 
     @ViewBuilder

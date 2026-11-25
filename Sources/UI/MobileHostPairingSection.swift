@@ -14,7 +14,7 @@ public struct MobileHostPairingSection: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 15)
+                    RoundedRectangle(cornerRadius: OCRadius.r14)
                         .fill(accent.opacity(0.14))
                     Image(systemName: hostStore.credential == nil ? "link" : "checkmark.shield.fill")
                         .font(.system(size: 21, weight: .semibold))
@@ -52,14 +52,14 @@ public struct MobileHostPairingSection: View {
         }
         .padding(16)
         .background {
-            RoundedRectangle(cornerRadius: OCRadius.r18)
+            OCRoundedRect(OCRadius.r18)
                 .fill(LinearGradient(
                     colors: [OCColor.bgBase, accent.opacity(0.045)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 ))
         }
-        .overlay(RoundedRectangle(cornerRadius: OCRadius.r18).stroke(OCColor.borderBase, lineWidth: 1))
+        .overlay(OCRoundedRect(OCRadius.r18).stroke(OCColor.borderBase, lineWidth: 1))
     }
 
     private var pairingForm: some View {
@@ -106,7 +106,7 @@ public struct MobileHostPairingSection: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 46)
                 .background(accent.gradient)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                .clipShape(OCRoundedRect(OCRadius.r10))
             }
             .buttonStyle(.plain)
             .disabled(!canPair)
@@ -154,8 +154,8 @@ public struct MobileHostPairingSection: View {
         .padding(.horizontal, 12)
         .frame(height: 46)
         .background(OCColor.bgDeep.opacity(0.82))
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
-        .overlay(RoundedRectangle(cornerRadius: OCRadius.r10).stroke(OCColor.borderMuted, lineWidth: 1))
+        .clipShape(OCRoundedRect(OCRadius.r10))
+        .overlay(OCRoundedRect(OCRadius.r10).stroke(OCColor.borderMuted, lineWidth: 1))
     }
 
     private func pairedCard(_ credential: MobileHostCredential) -> some View {

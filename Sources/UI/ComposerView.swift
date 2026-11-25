@@ -126,10 +126,10 @@ private struct ConversationComposer: View {
             .padding(.bottom, OCSpacing.base)
         }
         .background(
-            RoundedRectangle(cornerRadius: OCRadius.r24)
+            OCRoundedRect(OCRadius.r24)
                 .fill(OCColor.bgBase.opacity(0.95))
                 .overlay(
-                    RoundedRectangle(cornerRadius: OCRadius.r24)
+                    OCRoundedRect(OCRadius.r24)
                         .stroke(OCColor.borderBase, lineWidth: 1)
                 )
                 .shadow(color: OCShadow.composer.color, radius: OCShadow.composer.radius, x: OCShadow.composer.x, y: OCShadow.composer.y)
@@ -327,8 +327,8 @@ public struct ComposerControlRow: View {
                         .foregroundColor(OCColor.iconPrimary)
                         .frame(width: 40, height: 40)
                         .background(OCColor.bgLayer1)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
-                        .overlay(RoundedRectangle(cornerRadius: OCRadius.r10).stroke(OCColor.borderMuted, lineWidth: 1))
+                        .clipShape(OCRoundedRect(OCRadius.r10))
+                        .overlay(OCRoundedRect(OCRadius.r10).stroke(OCColor.borderMuted, lineWidth: 1))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -400,10 +400,10 @@ public struct FlowPill: View {
             .padding(.vertical, 4)
             .frame(minHeight: 28)
             .background(
-                RoundedRectangle(cornerRadius: OCRadius.r14)
+                OCRoundedRect(OCRadius.r14)
                     .fill(isActive ? OCColor.warning.opacity(0.14) : OCColor.bgLayer1.opacity(0.5))
                     .overlay(
-                        RoundedRectangle(cornerRadius: OCRadius.r14)
+                        OCRoundedRect(OCRadius.r14)
                             .stroke(isActive ? OCColor.warning.opacity(0.55) : OCColor.borderMuted, lineWidth: 1)
                     )
             )
@@ -442,10 +442,10 @@ public struct AgentPill: View {
             .padding(.vertical, 4)
             .frame(minHeight: 28)
             .background(
-                RoundedRectangle(cornerRadius: OCRadius.r14)
+                OCRoundedRect(OCRadius.r14)
                     .fill(mode.softColor)
                     .overlay(
-                        RoundedRectangle(cornerRadius: OCRadius.r14)
+                        OCRoundedRect(OCRadius.r14)
                             .stroke(mode.borderColor, lineWidth: 1)
                     )
             )
@@ -490,10 +490,10 @@ public struct ModelPill: View {
             .frame(minHeight: 28)
             .frame(maxWidth: 260)
             .background(
-                RoundedRectangle(cornerRadius: OCRadius.r14)
+                OCRoundedRect(OCRadius.r14)
                     .fill(OCColor.bgLayer1.opacity(0.5))
                     .overlay(
-                        RoundedRectangle(cornerRadius: OCRadius.r14)
+                        OCRoundedRect(OCRadius.r14)
                             .stroke(OCColor.borderMuted, lineWidth: 1)
                     )
             )
@@ -541,10 +541,10 @@ public struct ModelPillPlaceholder: View {
             .padding(.vertical, 4)
             .frame(minHeight: 28)
             .background(
-                RoundedRectangle(cornerRadius: OCRadius.r14)
+                OCRoundedRect(OCRadius.r14)
                     .fill(OCColor.bgLayer1.opacity(0.3))
                     .overlay(
-                        RoundedRectangle(cornerRadius: OCRadius.r14)
+                        OCRoundedRect(OCRadius.r14)
                             .stroke(OCColor.borderMuted, lineWidth: 1)
                     )
             )
@@ -751,7 +751,7 @@ public struct ModelPickerSheet: View {
                 .foregroundColor(IysThemePreferences.active.accent)
                 .frame(width: 54, height: 54)
                 .background(IysThemePreferences.active.accent.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+                .clipShape(OCRoundedRect(OCRadius.r14))
 
             VStack(spacing: OCSpacing.xs) {
                 Text(searchText.isEmpty ? "Modelo del servidor" : "Sin resultados")

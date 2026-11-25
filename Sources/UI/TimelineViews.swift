@@ -393,9 +393,9 @@ private struct MarkdownCodeBlockView: View {
             }
         }
         .background(Color.black.opacity(0.22))
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+        .clipShape(OCRoundedRect(OCRadius.r12))
         .overlay(
-            RoundedRectangle(cornerRadius: OCRadius.r12)
+            OCRoundedRect(OCRadius.r12)
                 .stroke(OCColor.borderMuted, lineWidth: 0.75)
         )
     }
@@ -477,9 +477,9 @@ private struct MarkdownTableView: View {
             .padding(.vertical, 4)
         }
         .background(OCColor.bgBase)
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+        .clipShape(OCRoundedRect(OCRadius.r12))
         .overlay(
-            RoundedRectangle(cornerRadius: OCRadius.r12)
+            OCRoundedRect(OCRadius.r12)
                 .stroke(OCColor.borderMuted, lineWidth: 0.75)
         )
     }
@@ -504,7 +504,7 @@ public struct AttachmentToken: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: 22, height: 22)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r4))
             } else {
                 Image(systemName: attachment.icon)
                     .font(.system(size: 14, weight: .medium))
@@ -541,9 +541,9 @@ public struct AttachmentToken: View {
         .padding(.horizontal, OCSpacing.base)
         .frame(height: 28)
         .background(OCColor.bgLayer1)
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+        .clipShape(OCRoundedRect(OCRadius.r8))
         .overlay(
-            RoundedRectangle(cornerRadius: OCRadius.r8)
+            OCRoundedRect(OCRadius.r8)
                 .stroke(OCColor.borderBase, lineWidth: 1)
         )
     }
@@ -1387,7 +1387,7 @@ public struct PermissionView: View {
                 .padding(OCSpacing.base)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(OCColor.bgDeep)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                .clipShape(OCRoundedRect(OCRadius.r8))
             }
 
             DisclosureGroup("Detalles técnicos", isExpanded: $showTechnicalDetails) {
@@ -1420,7 +1420,7 @@ public struct PermissionView: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 44)
                             .background(OCColor.agentBuild)
-                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                            .clipShape(OCRoundedRect(OCRadius.r10))
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("permission-allow-once")
@@ -1432,9 +1432,9 @@ public struct PermissionView: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 44)
                             .background(OCColor.bgLayer1)
-                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                            .clipShape(OCRoundedRect(OCRadius.r10))
                             .overlay(
-                                RoundedRectangle(cornerRadius: OCRadius.r10)
+                                OCRoundedRect(OCRadius.r10)
                                     .stroke(OCColor.borderBase, lineWidth: 1)
                             )
                     }
@@ -1453,9 +1453,9 @@ public struct PermissionView: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 44)
                             .background(OCColor.bgLayer1)
-                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                            .clipShape(OCRoundedRect(OCRadius.r10))
                             .overlay(
-                                RoundedRectangle(cornerRadius: OCRadius.r10)
+                                OCRoundedRect(OCRadius.r10)
                                     .stroke(OCColor.borderBase, lineWidth: 1)
                             )
                     }
@@ -1560,9 +1560,9 @@ public struct QuestionView: View {
                         .padding(.horizontal, OCSpacing.base)
                         .frame(minHeight: 48)
                         .background(OCColor.bgLayer1.opacity(0.5))
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                        .clipShape(OCRoundedRect(OCRadius.r10))
                         .overlay(
-                            RoundedRectangle(cornerRadius: OCRadius.r10)
+                            OCRoundedRect(OCRadius.r10)
                                 .stroke(OCColor.borderBase, lineWidth: 1)
                         )
                     }
@@ -1581,9 +1581,9 @@ public struct QuestionView: View {
                         .textFieldStyle(.plain)
                         .padding(OCSpacing.base)
                         .background(OCColor.bgLayer1)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                        .clipShape(OCRoundedRect(OCRadius.r10))
                         .overlay(
-                            RoundedRectangle(cornerRadius: OCRadius.r10)
+                            OCRoundedRect(OCRadius.r10)
                                 .stroke(OCColor.borderBase, lineWidth: 1)
                         )
                         .lineLimit(3...6)
@@ -1597,7 +1597,7 @@ public struct QuestionView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 40)
                     .background(freeformText.isEmpty ? OCColor.bgLayer2 : OCColor.agentBuild)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                    .clipShape(OCRoundedRect(OCRadius.r10))
                     .disabled(freeformText.isEmpty)
                 }
             }
@@ -1723,9 +1723,9 @@ public struct ToolStepsCarouselView: View {
             .padding(OCSpacing.md)
             .frame(width: 168, alignment: .leading)
             .background(isSelected ? stateColor.opacity(0.10) : OCColor.bgBase)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+            .clipShape(OCRoundedRect(OCRadius.r12))
             .overlay(
-                RoundedRectangle(cornerRadius: OCRadius.r12)
+                OCRoundedRect(OCRadius.r12)
                     .stroke(isSelected ? stateColor.opacity(0.55) : OCColor.borderBase, lineWidth: 1)
             )
             .contentShape(Rectangle())

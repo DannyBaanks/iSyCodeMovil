@@ -530,7 +530,7 @@ public struct RichAttachmentsBar: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(OCColor.warning.opacity(0.10))
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                .clipShape(OCRoundedRect(OCRadius.r8))
             }
         }
     }
@@ -595,9 +595,9 @@ public struct RichAttachmentsBar: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(OCColor.bgLayer1)
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+        .clipShape(OCRoundedRect(OCRadius.r10))
         .overlay(
-            RoundedRectangle(cornerRadius: OCRadius.r10)
+            OCRoundedRect(OCRadius.r10)
                 .stroke(stateColor(item).opacity(0.35), lineWidth: 1)
         )
     }
@@ -614,7 +614,7 @@ public struct RichAttachmentsBar: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: 34, height: 34)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
             } else {
                 fallbackIconBox(item)
             }
@@ -626,7 +626,7 @@ public struct RichAttachmentsBar: View {
 
     private func fallbackIconBox(_ item: Attachment) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: OCRadius.r8)
                 .fill(OCColor.bgBase)
                 .frame(width: 34, height: 34)
             Image(systemName: item.icon)
@@ -662,7 +662,7 @@ public struct AttachmentInspectionModal: View {
                             .resizable()
                             .scaledToFit()
                             .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                            .clipShape(OCRoundedRect(OCRadius.r12))
                     }
                     #endif
 
@@ -898,7 +898,7 @@ public struct DictationLiveStatusBar: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(OCColor.bgLayer1)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+            .clipShape(OCRoundedRect(OCRadius.r10))
 
         case .recording(let elapsed, let level):
             VStack(alignment: .leading, spacing: OCSpacing.xs) {
@@ -933,7 +933,7 @@ public struct DictationLiveStatusBar: View {
             .padding(.horizontal, OCSpacing.md)
             .padding(.top, OCSpacing.sm)
             .background(OCColor.bgLayer1)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+            .clipShape(OCRoundedRect(OCRadius.r12))
 
         case .transcribing:
             HStack(spacing: 10) {
@@ -952,7 +952,7 @@ public struct DictationLiveStatusBar: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(OCColor.bgLayer1)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+            .clipShape(OCRoundedRect(OCRadius.r12))
 
         case .error(let reason):
             HStack(alignment: .top, spacing: 8) {
@@ -985,7 +985,7 @@ public struct DictationLiveStatusBar: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(OCColor.warning.opacity(0.10))
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+            .clipShape(OCRoundedRect(OCRadius.r10))
         }
     }
 

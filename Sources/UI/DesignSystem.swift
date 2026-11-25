@@ -269,6 +269,12 @@ public struct OCSpacing {
 
 // MARK: - Radius Tokens
 
+/// The one rounded rectangle of the app: continuous corners (the iOS squircle) at a
+/// token radius. Shape lock: build surfaces with this, never a bare RoundedRectangle.
+public func OCRoundedRect(_ radius: CGFloat) -> RoundedRectangle {
+    RoundedRectangle(cornerRadius: radius, style: .continuous)
+}
+
 public struct OCRadius {
     public static let r4: CGFloat  = 4
     private static var premium: Bool { IysThemePreferences.active == .premium }
@@ -935,7 +941,7 @@ public struct OCUnifiedStateCard: View {
         VStack(alignment: .leading, spacing: OCSpacing.md) {
             HStack(alignment: .top, spacing: OCSpacing.md) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: OCRadius.r10)
+                    OCRoundedRect(OCRadius.r10)
                         .fill(kind.tint.opacity(0.14))
                         .frame(width: 40, height: 40)
                     if kind == .loading || kind == .running {
@@ -992,7 +998,7 @@ public struct OCUnifiedStateCard: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(OCSpacing.sm)
                         .background(OCColor.bgDeep)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                        .clipShape(OCRoundedRect(OCRadius.r8))
                         .padding(.top, 4)
                 }
                 .font(.system(size: 12.5, weight: .medium))

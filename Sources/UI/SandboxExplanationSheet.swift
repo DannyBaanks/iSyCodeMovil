@@ -51,7 +51,7 @@ public struct SandboxExplanationSheet: View {
         VStack(alignment: .leading, spacing: OCSpacing.md) {
             HStack(spacing: OCSpacing.md) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: OCRadius.r14)
+                    OCRoundedRect(OCRadius.r14)
                         .fill(OCColor.agentBuildSoft)
                         .frame(width: 56, height: 56)
                     Image(systemName: "shippingbox.fill")
@@ -73,8 +73,8 @@ public struct SandboxExplanationSheet: View {
         .padding(OCSpacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(OCColor.bgBase)
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-        .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.agentBuildBorder, lineWidth: 1))
+        .clipShape(OCRoundedRect(OCRadius.r14))
+        .overlay(OCRoundedRect(OCRadius.r14).stroke(OCColor.agentBuildBorder, lineWidth: 1))
     }
 
     private func explanationRow(symbol: String, tint: Color, title: String, detail: String) -> some View {
@@ -84,7 +84,7 @@ public struct SandboxExplanationSheet: View {
                 .foregroundColor(tint)
                 .frame(width: 32, height: 32)
                 .background(tint.opacity(0.14))
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                .clipShape(OCRoundedRect(OCRadius.r10))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -99,7 +99,7 @@ public struct SandboxExplanationSheet: View {
         .padding(OCSpacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(OCColor.bgBase)
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-        .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
+        .clipShape(OCRoundedRect(OCRadius.r14))
+        .overlay(OCRoundedRect(OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
     }
 }
