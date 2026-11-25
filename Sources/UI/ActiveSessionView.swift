@@ -1319,7 +1319,7 @@ struct EmptyReviewView: View {
                     .multilineTextAlignment(.center)
             }
             
-            Button("Refresh") {
+            Button("Actualizar") {
                 if let sessionID = sessionState.currentSession?.id {
                     Task { await store.loadDiff(sessionID: sessionID) }
                 }
