@@ -254,7 +254,7 @@ public struct SendStopButton: View {
         .frame(width: 44, height: 44)
         .fixedSize(horizontal: true, vertical: false)
         .contentShape(Rectangle())
-        .accessibilityLabel(isProcessing ? "Detener" : "Enviar mensaje")
+        .accessibilityLabel(isProcessing ? "Detener" : "Enviar")
         .animation(reduceMotion ? nil : OCMotion.snappy, value: isProcessing)
         .animation(reduceMotion ? nil : OCMotion.snappy, value: canSend)
     }
@@ -533,7 +533,7 @@ public struct ModelPillPlaceholder: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(OCColor.iconMuted)
 
-                Text("Select model")
+                Text("Elegir modelo")
                     .font(OCTypography.modelPillLabel)
                     .foregroundColor(OCColor.textFaint)
             }

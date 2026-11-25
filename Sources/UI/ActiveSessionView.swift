@@ -307,16 +307,16 @@ public struct ActiveSessionView: View {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
         }
         .confirmationDialog(
-            "Disconnect?",
+            "¿Desconectar?",
             isPresented: $showDisconnectConfirm,
             titleVisibility: .visible
         ) {
-            Button("Disconnect", role: .destructive) {
+            Button("Desconectar", role: .destructive) {
                 Task { await store.disconnect() }
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancelar", role: .cancel) {}
         } message: {
-            Text("End the session and return to the connection screen.")
+            Text("Se termina la sesión y se vuelve a la pantalla de conexión.")
         }
     }
     
@@ -876,7 +876,7 @@ struct ConnectionLostBanner: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(OCColor.warning)
             
-            Text(isReconnecting ? "Reconnecting…" : "Connection lost")
+            Text(isReconnecting ? "Reconectando…" : "Conexión perdida")
                 .font(OCTypography.control)
                 .foregroundColor(OCColor.textPrimary)
             
@@ -886,7 +886,7 @@ struct ConnectionLostBanner: View {
                 ProgressView()
                     .scaleEffect(0.7)
             } else {
-                Button("Reconnect", action: onReconnect)
+                Button("Reconectar", action: onReconnect)
                     .font(OCTypography.controlMono)
                     .foregroundColor(OCColor.warning)
             }
@@ -1087,11 +1087,11 @@ struct EmptyFilesView: View {
                 .font(.system(size: 40, weight: .light))
                 .foregroundColor(OCColor.iconMuted)
             
-            Text("No files")
+            Text("Sin archivos")
                 .font(OCTypography.bodyStrong)
                 .foregroundColor(OCColor.textPrimary)
             
-            Text("This workspace has no visible files")
+            Text("Este espacio de trabajo no tiene archivos visibles")
                 .font(OCTypography.meta)
                 .foregroundColor(OCColor.textFaint)
         }
@@ -1307,13 +1307,13 @@ struct EmptyReviewView: View {
                 .foregroundColor(OCColor.iconMuted)
             
             VStack(spacing: OCSpacing.xs) {
-                Text("No Changes")
+                Text("Sin cambios")
                     .font(OCTypography.bodyStrong)
                     .foregroundColor(OCColor.textPrimary)
                 
                 Text(store.backendMode == .native
-                     ? "Diff runs on the linked desktop, not in the sandbox"
-                     : "No diff available for this session")
+                     ? "El diff corre en el escritorio enlazado, no en el sandbox"
+                     : "No hay diff disponible para esta sesión")
                     .font(OCTypography.meta)
                     .foregroundColor(OCColor.textFaint)
                     .multilineTextAlignment(.center)

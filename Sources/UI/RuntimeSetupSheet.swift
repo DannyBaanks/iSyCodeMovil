@@ -72,7 +72,7 @@ public struct RuntimeSetupSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cerrar") { dismiss() }
+                    Button("Listo") { dismiss() }
                         .accessibilityIdentifier("runtime-setup-close")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {

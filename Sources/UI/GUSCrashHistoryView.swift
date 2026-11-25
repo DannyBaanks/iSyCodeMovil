@@ -31,7 +31,7 @@ public struct GUSCrashHistoryView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } }
                 ToolbarItem(placement: .destructiveAction) {
-                    Button("Borrar", role: .destructive) { confirmClear = true }.disabled(reports.isEmpty)
+                    Button("Eliminar", role: .destructive) { confirmClear = true }.disabled(reports.isEmpty)
                 }
             }
             .confirmationDialog("¿Borrar todos los informes?", isPresented: $confirmClear, titleVisibility: .visible) {

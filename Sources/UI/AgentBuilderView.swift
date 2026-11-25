@@ -1454,7 +1454,7 @@ public struct AgentContractInspectorSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Cerrar") { dismiss() }
+                    Button("Listo") { dismiss() }
                 }
             }
         }

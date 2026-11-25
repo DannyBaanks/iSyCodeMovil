@@ -824,7 +824,7 @@ public struct ChatLandingView: View {
                 .disabled(!canSend || sending)
                 .padding(4)
                 .fixedSize(horizontal: true, vertical: false)
-                .accessibilityLabel("Enviar mensaje")
+                .accessibilityLabel("Enviar")
                 .accessibilityIdentifier("chat-landing-send")
             }
             .padding(.leading, 4)

@@ -40,7 +40,7 @@ public struct SandboxExplanationSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Entendido") { dismiss() }
+                    Button("Listo") { dismiss() }
                 }
             }
         }

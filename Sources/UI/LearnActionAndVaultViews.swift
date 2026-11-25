@@ -71,7 +71,7 @@ public struct LearnActionRecorderSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cerrar") { dismiss() }
+                    Button("Listo") { dismiss() }
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
