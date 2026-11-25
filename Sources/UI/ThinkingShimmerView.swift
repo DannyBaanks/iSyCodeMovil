@@ -57,7 +57,7 @@ public struct ThinkingShimmerView: View {
                 }
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(OCTypography.sectionLabel)
                     .foregroundColor(OCColor.textFaint)
             }
             .frame(minHeight: 44)
@@ -128,7 +128,7 @@ public struct AgentActivityDetailSheet: View {
                                     .padding(8)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(OCColor.bgDeep)
-                                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                                    .clipShape(OCRoundedRect(OCRadius.r8))
                             }
                         }
                         .padding(.vertical, 3)

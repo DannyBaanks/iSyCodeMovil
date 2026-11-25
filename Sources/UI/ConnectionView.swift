@@ -83,7 +83,7 @@ public struct ConnectionView: View {
                             .foregroundColor(OCColor.textPrimary)
                             .padding(.horizontal, 10)
                             .frame(height: 32)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(OCColor.borderBase, lineWidth: 1))
+                            .overlay(RoundedRectangle(cornerRadius: OCRadius.r8).stroke(OCColor.borderBase, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, 8)
@@ -101,7 +101,7 @@ public struct ConnectionView: View {
                         }
                     } label: {
                         Text("Pegar")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .font(OCTypography.controlMono)
                             .foregroundColor(OCColor.textSecondary)
                             .padding(.horizontal, 10)
                             .frame(height: 28)
@@ -121,7 +121,7 @@ public struct ConnectionView: View {
                     .scrollDismissesKeyboard(.interactively)
                     .padding(12)
                     .background(OCColor.bgBase)
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r10).stroke(OCColor.borderBase, lineWidth: 1))
+                    .overlay(OCRoundedRect(OCRadius.r10).stroke(OCColor.borderBase, lineWidth: 1))
                 
                 Button { connect() } label: {
                     HStack {
@@ -135,7 +135,7 @@ public struct ConnectionView: View {
                     .padding(.horizontal, 12)
                     .frame(height: 44)
                     .background(IysThemePreferences.active.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                    .clipShape(OCRoundedRect(OCRadius.r10))
                 }
                 .buttonStyle(.plain)
                 .disabled(store.isConnecting || pairingLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -146,8 +146,8 @@ public struct ConnectionView: View {
                     }
                     .padding(14)
                     .background(OCColor.bgBase.opacity(0.62))
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
+                    .clipShape(OCRoundedRect(OCRadius.r14))
+                    .overlay(OCRoundedRect(OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
                     .padding(.top, 10)
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -223,7 +223,7 @@ public struct ConnectionView: View {
     private func door(icon: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: OCRadius.r10)
                     .fill(IysThemePreferences.active.accent.opacity(0.14))
                     .overlay(
                         Image(systemName: icon)
@@ -269,7 +269,7 @@ public struct ConnectionView: View {
     
     private func label(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .font(OCTypography.controlMonoStrong)
             .tracking(1.2)
             .foregroundColor(OCColor.textSecondary)
             .padding(.bottom, 8)
@@ -287,8 +287,8 @@ public struct ConnectionView: View {
         .font(.system(size: 12.5, design: .monospaced))
         .padding(12)
         .background(OCColor.bgBase)
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
+        .clipShape(OCRoundedRect(OCRadius.r12))
+                .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
     }
 }
 
@@ -323,8 +323,8 @@ struct StoredPairingSection: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(OCColor.bgBase)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
+                .clipShape(OCRoundedRect(OCRadius.r12))
+                .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
                 
                 HStack {
                     Button("Olvidar") {
@@ -333,13 +333,13 @@ struct StoredPairingSection: View {
                             hasStored = false
                         }
                     }
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(OCTypography.controlMono)
                     .foregroundColor(Color.white.opacity(0.4))
                     Spacer()
                     Button("Usar otro enlace") {
                         showReconnectSheet = true
                     }
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(OCTypography.controlMono)
                     .foregroundColor(OCColor.agentBuild)
                 }
                 .padding(.horizontal, 12)
@@ -376,7 +376,7 @@ struct ReconnectSheet: View {
                         UIPasteboard.general.string = "npx --yes github:DannyBaanks/IysCodeMovil link"
                     } label: {
                         Text("Copiar")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .font(OCTypography.controlMono)
                             .foregroundColor(OCColor.textSecondary)
                             .padding(.horizontal, 10)
                             .frame(height: 28)
@@ -404,7 +404,7 @@ struct ReconnectSheet: View {
                         }
                     } label: {
                         Text("Pegar")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .font(OCTypography.controlMono)
                             .foregroundColor(OCColor.textSecondary)
                             .padding(.horizontal, 10)
                             .frame(height: 28)
@@ -438,7 +438,7 @@ struct ReconnectSheet: View {
                     .padding(.horizontal, 12)
                     .frame(height: 44)
                     .background(IysThemePreferences.active.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                    .clipShape(OCRoundedRect(OCRadius.r12))
                 }
                 .buttonStyle(.plain)
                 .disabled(store.isConnecting || pairingLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -470,7 +470,7 @@ struct ReconnectSheet: View {
     
     private func label(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .font(OCTypography.controlMonoStrong)
             .tracking(1.2)
             .foregroundColor(OCColor.textSecondary)
             .padding(.bottom, 8)
@@ -488,8 +488,8 @@ struct ReconnectSheet: View {
         .font(.system(size: 12.5, design: .monospaced))
         .padding(12)
         .background(OCColor.bgBase)
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
+        .clipShape(OCRoundedRect(OCRadius.r12))
+                .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
     }
 }
 
@@ -530,7 +530,7 @@ struct SandboxKeySheet: View {
                     }
                     .accessibilityLabel("Ver proveedores compatibles")
                 }
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(OCTypography.controlMonoStrong)
                     .tracking(1.2)
                     .foregroundColor(OCColor.textSecondary)
                     .padding(.bottom, 8)
@@ -596,7 +596,7 @@ struct SandboxKeySheet: View {
                     .padding(.horizontal, 12)
                     .frame(height: 44)
                     .background(IysThemePreferences.active.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                    .clipShape(OCRoundedRect(OCRadius.r12))
                 }
                 .buttonStyle(.plain)
                 .disabled(!canStartSandbox)
@@ -814,7 +814,7 @@ public struct PairingConfirmSheet: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 48)
                             .background(IysThemePreferences.active.accent)
-                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                            .clipShape(OCRoundedRect(OCRadius.r12))
                     }
                     .buttonStyle(.plain)
                     .disabled(store.isConnecting)

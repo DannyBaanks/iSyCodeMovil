@@ -269,6 +269,12 @@ public struct OCSpacing {
 
 // MARK: - Radius Tokens
 
+/// The one rounded rectangle of the app: continuous corners (the iOS squircle) at a
+/// token radius. Shape lock: build surfaces with this, never a bare RoundedRectangle.
+public func OCRoundedRect(_ radius: CGFloat) -> RoundedRectangle {
+    RoundedRectangle(cornerRadius: radius, style: .continuous)
+}
+
 public struct OCRadius {
     public static let r4: CGFloat  = 4
     private static var premium: Bool { IysThemePreferences.active == .premium }
@@ -307,7 +313,9 @@ public struct OCTypography {
     /// Kept for existing call sites: times, durations and counts. System face, fixed-width digits.
     public static let metaMono       = Font.system(.caption2, design: .default, weight: .regular).monospacedDigit()
     public static var control: Font { Font.system(.caption, design: bodyDesign, weight: .medium) }
-    public static let controlMono    = Font.system(.caption2, design: .monospaced, weight: .medium)
+    public static let controlMono       = Font.system(.caption2, design: .monospaced, weight: .medium)
+    public static let controlMonoStrong = Font.system(.caption2, design: .monospaced, weight: .semibold)
+    public static let controlMonoBold   = Font.system(.caption2, design: .monospaced, weight: .bold)
     public static let code           = Font.system(.footnote, design: .monospaced, weight: .regular)
     public static let codeSmall      = Font.system(.caption, design: .monospaced, weight: .regular)
     public static let sectionLabel   = Font.system(.caption2, design: .default, weight: .semibold)
@@ -672,16 +680,24 @@ public enum OCNavigation {
     public static let drawerWidth: CGFloat = 320
     public static let dismissGutter: CGFloat = 48
     public static let edgeActivation: CGFloat = 24
+    /// Projected travel (pt) past which a release commits the drawer.
+    public static let drawerCommitDistance: CGFloat = 72
+    /// A release faster than this (pt/s) commits regardless of distance.
+    public static let drawerFlickVelocity: CGFloat = 800
 }
 
 // MARK: - 2026 Motion, Haptics & Reusable State Primitives
 
-/// One curve for every movement, at three lengths. Muse (and most Lottie work) moves almost
-/// everything with the same cubic, ease-in-out (0.17, 0, 0.83, 1); when all motion shares a
-/// curve the app reads as calm instead of busy. Springs were three different feels.
+/// One curve for every time-driven movement, at three lengths. Entrances and state changes
+/// use a strong ease-out (0.23, 1, 0.32, 1) — nothing in the app eases in. Anything a finger
+/// releases settles with `drawerSpring` instead, so it carries the gesture velocity.
 public enum OCMotion {
     public static let drawer = Animation.timingCurve(0.20, 0.75, 0.25, 1, duration: 0.25)
-    public static let curve = (x1: 0.17, y1: 0.0, x2: 0.83, y2: 1.0)
+    /// Critically damped spring for the drawer release; callers seed it with release velocity.
+    public static func drawerSpring(velocity: Double) -> Animation {
+        .interpolatingSpring(mass: 1, stiffness: 460, damping: 32, initialVelocity: velocity)
+    }
+    public static let curve = (x1: 0.23, y1: 1.0, x2: 0.32, y2: 1.0)
     public static func timed(_ duration: Double) -> Animation {
         .timingCurve(curve.x1, curve.y1, curve.x2, curve.y2, duration: duration)
     }
@@ -927,7 +943,7 @@ public struct OCUnifiedStateCard: View {
         VStack(alignment: .leading, spacing: OCSpacing.md) {
             HStack(alignment: .top, spacing: OCSpacing.md) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: OCRadius.r10)
+                    OCRoundedRect(OCRadius.r10)
                         .fill(kind.tint.opacity(0.14))
                         .frame(width: 40, height: 40)
                     if kind == .loading || kind == .running {
@@ -984,7 +1000,7 @@ public struct OCUnifiedStateCard: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(OCSpacing.sm)
                         .background(OCColor.bgDeep)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                        .clipShape(OCRoundedRect(OCRadius.r8))
                         .padding(.top, 4)
                 }
                 .font(.system(size: 12.5, weight: .medium))

@@ -21,7 +21,7 @@ struct SandboxStatusBar: View {
                     .font(OCTypography.metaMono)
                     .foregroundColor(link.phase == "active" ? OCColor.textFaint : OCColor.warning)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(OCTypography.sectionLabel)
                     .foregroundColor(OCColor.iconMuted)
             }
             .padding(.horizontal, OCSpacing.contentMargin)

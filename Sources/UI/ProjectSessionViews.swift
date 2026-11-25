@@ -16,7 +16,7 @@ public struct ProjectRow: View {
         Button(action: onTap) {
             HStack(spacing: OCSpacing.lg) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: OCRadius.r8)
+                    OCRoundedRect(OCRadius.r8)
                         .fill((project.avatarColor ?? IysThemePreferences.active.accent).opacity(0.16))
                         .frame(width: 46, height: 46)
                     Image(systemName: "folder.fill")
@@ -53,8 +53,8 @@ public struct ProjectRow: View {
             }
             .padding(OCSpacing.lg)
             .background(isSelected ? IysThemePreferences.active.accent.opacity(0.09) : OCColor.bgBase)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-            .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(isSelected ? IysThemePreferences.active.accent.opacity(0.55) : OCColor.borderMuted, lineWidth: 1))
+            .clipShape(OCRoundedRect(OCRadius.r14))
+            .overlay(OCRoundedRect(OCRadius.r14).stroke(isSelected ? IysThemePreferences.active.accent.opacity(0.55) : OCColor.borderMuted, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -123,7 +123,7 @@ public struct ProjectListContent: View {
         .refreshable {
             await store.refreshConversations()
         }
-        .navigationTitle("ISYCODE")
+        .navigationTitle("iSyCode")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -228,7 +228,7 @@ public struct SessionRow: View {
     public var body: some View {
         Button(action: onTap) {
             HStack(spacing: OCSpacing.base) {
-                RoundedRectangle(cornerRadius: OCRadius.r10)
+                OCRoundedRect(OCRadius.r10)
                     .fill(session.agentMode.color.opacity(0.14))
                     .overlay {
                         Image(systemName: "bubble.left.and.bubble.right.fill")
@@ -282,8 +282,8 @@ public struct SessionRow: View {
             .padding(OCSpacing.md)
             .frame(minHeight: 68)
             .background(isSelected ? IysThemePreferences.active.accent.opacity(0.09) : OCColor.bgBase)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-            .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(isSelected ? IysThemePreferences.active.accent.opacity(0.55) : OCColor.borderMuted, lineWidth: 1))
+            .clipShape(OCRoundedRect(OCRadius.r14))
+            .overlay(OCRoundedRect(OCRadius.r14).stroke(isSelected ? IysThemePreferences.active.accent.opacity(0.55) : OCColor.borderMuted, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -420,7 +420,7 @@ public struct SessionListView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 48)
                         .background(IysThemePreferences.active.accent.gradient)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+                        .clipShape(OCRoundedRect(OCRadius.r14))
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, OCSpacing.contentMargin)
@@ -474,7 +474,7 @@ public struct SessionListView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
                     .background(IysThemePreferences.active.accent.gradient)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+                    .clipShape(OCRoundedRect(OCRadius.r14))
             }
             .buttonStyle(.plain)
             .padding(.top, OCSpacing.sm)
@@ -817,13 +817,13 @@ private struct ThemeChoiceRow: View {
                             Circle().fill(theme.accent).frame(width: 5, height: 5)
                             Capsule().fill(Color.white.opacity(0.22)).frame(width: 27, height: 3)
                         }
-                        RoundedRectangle(cornerRadius: 4)
+                        RoundedRectangle(cornerRadius: OCRadius.r4)
                             .fill(theme.accent.opacity(0.14))
                             .frame(height: 12)
                             .overlay(alignment: .leading) {
                                 Capsule().fill(theme.accent).frame(width: 31, height: 3).padding(.leading, 5)
                             }
-                        RoundedRectangle(cornerRadius: 4)
+                        RoundedRectangle(cornerRadius: OCRadius.r4)
                             .fill(Color.white.opacity(0.07))
                             .frame(height: 12)
                             .overlay(alignment: .leading) {
@@ -833,7 +833,7 @@ private struct ThemeChoiceRow: View {
                     .padding(7)
                     .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
                     .background(theme.background)
-                    .clipShape(RoundedRectangle(cornerRadius: 9))
+                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
 
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
@@ -849,16 +849,16 @@ private struct ThemeChoiceRow: View {
                     .foregroundColor(OCColor.textPrimary)
                     .lineLimit(1)
                 Text(theme.subtitle)
-                    .font(.system(size: 9))
+                    .font(OCTypography.meta)
                     .foregroundColor(OCColor.textFaint)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, minHeight: 26, alignment: .topLeading)
             }
             .padding(8)
             .background(isSelected ? theme.accent.opacity(0.08) : OCColor.bgBase)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-            .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(isSelected ? theme.accent.opacity(0.55) : OCColor.borderMuted, lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+            .clipShape(OCRoundedRect(OCRadius.r14))
+            .overlay(OCRoundedRect(OCRadius.r14).stroke(isSelected ? theme.accent.opacity(0.55) : OCColor.borderMuted, lineWidth: 1))
+            .contentShape(OCRoundedRect(OCRadius.r14))
         }
         .buttonStyle(.plain)
     }
@@ -868,7 +868,7 @@ private struct ComingSoonThemeCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack {
-                RoundedRectangle(cornerRadius: 9)
+                RoundedRectangle(cornerRadius: OCRadius.r8)
                     .fill(Color.white.opacity(0.035))
                 Image(systemName: "plus")
                     .font(.system(size: 18, weight: .light))
@@ -881,15 +881,15 @@ private struct ComingSoonThemeCard: View {
                 .foregroundColor(OCColor.textSecondary)
                 .lineLimit(1)
             Text("Más temas llegarán pronto")
-                .font(.system(size: 9))
+                .font(OCTypography.meta)
                 .foregroundColor(OCColor.textFaint)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, minHeight: 26, alignment: .topLeading)
         }
         .padding(8)
         .background(OCColor.bgBase.opacity(0.6))
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-        .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
+        .clipShape(OCRoundedRect(OCRadius.r14))
+        .overlay(OCRoundedRect(OCRadius.r14).stroke(OCColor.borderMuted, style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
         .accessibilityElement(children: .combine)
     }
 }
@@ -969,6 +969,7 @@ struct APIKeysView: View {
 // Indicador "running" de sesion: punto con pulso (antes era un segundo punto
 // estatico identico al de agentMode, indistinguible a la vista).
 struct PulsingDot: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulsing = false
     
     func body(content: Content) -> some View {
@@ -976,6 +977,18 @@ struct PulsingDot: ViewModifier {
             .scaleEffect(pulsing ? 1.4 : 1.0)
             .opacity(pulsing ? 0.55 : 1.0)
             .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                    pulsing = true
+                }
+            }
+            .onDisappear {
+                // Stop the repeatForever loop when the dot leaves the hierarchy.
+                withAnimation(nil) { pulsing = false }
+            }
+            .onChange(of: reduceMotion) { reduced in
+                withAnimation(nil) { pulsing = false }
+                guard !reduced else { return }
                 withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
                     pulsing = true
                 }

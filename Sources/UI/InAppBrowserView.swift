@@ -85,8 +85,8 @@ public struct InAppBrowserView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(OCColor.bgLayer1)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
+                .clipShape(OCRoundedRect(OCRadius.r12))
+                .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
 
             if !urlDraft.isEmpty {
                 Button {

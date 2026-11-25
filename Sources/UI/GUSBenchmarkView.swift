@@ -25,14 +25,14 @@ public struct GUSBenchmarkView: View {
                 Section {
                     Text(manifest.modelName).font(.system(size: 12, weight: .semibold, design: .monospaced))
                     Text("Protocolo v\(GUSBenchmark.protocolVersion): 4 tareas fijas, decodificación greedy, contexto 2K. Mide carga, prefill, generación, memoria pico y temperatura. El informe no contiene texto de prompts ni respuestas.")
-                        .font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary)
+                        .font(OCTypography.controlMono).foregroundColor(.secondary)
                     Text("Para una medición limpia, no tengas GUS respondiendo con otro modelo al mismo tiempo. Si iOS cierra la app, al volver podrás exportar el resultado como KILLED: también es un dato útil.")
-                        .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                        .font(OCTypography.controlMono).foregroundColor(.secondary)
                 }
 
                 if let killed {
                     Section("Corrida anterior interrumpida") {
-                        Text(killed.error ?? "iOS terminó la app.").font(.system(size: 10, design: .monospaced))
+                        Text(killed.error ?? "iOS terminó la app.").font(OCTypography.controlMono)
                         exportButtons(killed)
                     }
                 }
@@ -62,15 +62,15 @@ public struct GUSBenchmarkView: View {
                         ForEach(report.tasks, id: \.id) { task in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("\(task.passed ? "✓" : "✗") \(task.id)")
-                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .font(OCTypography.controlMonoStrong)
                                 Text(String(format: "prefill %.1f tok/s · gen %.1f tok/s · %d→%d tok · %@",
                                             task.prefillTokensPerSecond, task.generationTokensPerSecond,
                                             task.promptTokens, task.generatedTokens, task.template))
-                                    .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                                    .font(OCTypography.controlMono).foregroundColor(.secondary)
                             }
                         }
                         if let error = report.error {
-                            Text(error).font(.system(size: 9, design: .monospaced)).foregroundColor(.red)
+                            Text(error).font(OCTypography.controlMono).foregroundColor(.red)
                         }
                         exportButtons(report)
                     }
@@ -110,7 +110,7 @@ public struct GUSBenchmarkView: View {
             Spacer()
             Text(value)
         }
-        .font(.system(size: 10, design: .monospaced))
+        .font(OCTypography.controlMono)
     }
 
     private func bytes(_ value: Int64) -> String {

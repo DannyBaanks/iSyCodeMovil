@@ -146,7 +146,7 @@ public struct ConsoleView: View {
         }
         .padding(12)
         .background(Color.orange.opacity(0.10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.45), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: OCRadius.r8).stroke(Color.orange.opacity(0.45), lineWidth: 1))
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
     }

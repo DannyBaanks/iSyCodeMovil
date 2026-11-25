@@ -302,7 +302,7 @@ public struct GUSContextualSheet: View {
         return VStack(alignment: .leading, spacing: OCSpacing.md) {
             HStack(spacing: 10) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: OCRadius.r10)
+                    OCRoundedRect(OCRadius.r10)
                         .fill(IysThemePreferences.active.accent.opacity(0.15))
                         .frame(width: 36, height: 36)
                     Image(systemName: "sparkles")
@@ -347,7 +347,7 @@ public struct GUSContextualSheet: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
                         .background(OCColor.bgDeep)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                        .clipShape(OCRoundedRect(OCRadius.r10))
                     }
                     .buttonStyle(OCInteractiveButtonStyle())
                 }
@@ -368,7 +368,7 @@ public struct GUSContextualSheet: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(IysThemePreferences.active.userSurface)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+                        .clipShape(OCRoundedRect(OCRadius.r14))
                 }
             }
 
@@ -399,7 +399,7 @@ public struct GUSContextualSheet: View {
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(OCColor.bgDeep)
-                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                            .clipShape(OCRoundedRect(OCRadius.r8))
                     }
                 }
 
@@ -410,8 +410,8 @@ public struct GUSContextualSheet: View {
             .padding(OCSpacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(IysThemePreferences.active.assistantSurface)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-            .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderBase, lineWidth: 1))
+            .clipShape(OCRoundedRect(OCRadius.r14))
+            .overlay(OCRoundedRect(OCRadius.r14).stroke(OCColor.borderBase, lineWidth: 1))
         }
     }
 
@@ -471,8 +471,8 @@ public struct GUSContextualSheet: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
                     .background(OCColor.bgBase)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r18))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r18).stroke(OCColor.borderBase, lineWidth: 1))
+                    .clipShape(OCRoundedRect(OCRadius.r18))
+                    .overlay(OCRoundedRect(OCRadius.r18).stroke(OCColor.borderBase, lineWidth: 1))
                     .onSubmit { submitQuestion() }
 
                 DictationMicrophoneButton(targetText: $session.questionInput)

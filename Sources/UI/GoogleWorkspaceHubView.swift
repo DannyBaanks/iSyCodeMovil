@@ -150,7 +150,7 @@ public struct GoogleWorkspaceHubView: View {
             .accessibilityLabel("Cerrar aviso")
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(OCColor.agentBuildSoft))
+        .background(RoundedRectangle(cornerRadius: OCRadius.r10).fill(OCColor.agentBuildSoft))
         .padding(.horizontal, OCSpacing.contentMargin)
         .padding(.bottom, 6)
     }

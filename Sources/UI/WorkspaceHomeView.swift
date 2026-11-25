@@ -147,7 +147,7 @@ public struct WorkspaceHomeView: View {
             .accessibilityLabel("Cerrar aviso")
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: OCRadius.r12).fill(OCColor.agentBuildSoft))
+        .background(OCRoundedRect(OCRadius.r12).fill(OCColor.agentBuildSoft))
     }
 
     @ViewBuilder
@@ -180,8 +180,8 @@ public struct WorkspaceHomeView: View {
                         .background(Capsule().fill(OCColor.warning))
                 }
                 .padding(OCSpacing.md)
-                .background(RoundedRectangle(cornerRadius: OCRadius.r14).fill(OCColor.warning.opacity(0.12)))
-                .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.warning.opacity(0.4), lineWidth: 1))
+                .background(OCRoundedRect(OCRadius.r14).fill(OCColor.warning.opacity(0.12)))
+                .overlay(OCRoundedRect(OCRadius.r14).stroke(OCColor.warning.opacity(0.4), lineWidth: 1))
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("home-pending-confirmation")
@@ -211,8 +211,8 @@ public struct WorkspaceHomeView: View {
                         .background(Capsule().fill(OCColor.warning))
                 }
                 .padding(OCSpacing.md)
-                .background(RoundedRectangle(cornerRadius: OCRadius.r14).fill(OCColor.warning.opacity(0.12)))
-                .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.warning.opacity(0.4), lineWidth: 1))
+                .background(OCRoundedRect(OCRadius.r14).fill(OCColor.warning.opacity(0.12)))
+                .overlay(OCRoundedRect(OCRadius.r14).stroke(OCColor.warning.opacity(0.4), lineWidth: 1))
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("home-pending-permission")
@@ -268,8 +268,8 @@ public struct WorkspaceHomeView: View {
                     .foregroundColor(OCColor.textPrimary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: OCRadius.r12).fill(OCColor.bgLayer1))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
+                    .background(OCRoundedRect(OCRadius.r12).fill(OCColor.bgLayer1))
+                    .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
                     .submitLabel(.send)
                     .onSubmit { submitQuickPrompt() }
                     .accessibilityIdentifier("home-quick-prompt")
@@ -335,11 +335,11 @@ public struct WorkspaceHomeView: View {
         .padding(OCSpacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: OCRadius.r22)
+            OCRoundedRect(OCRadius.r22)
                 .fill(OCColor.bgBase)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: OCRadius.r22)
+            OCRoundedRect(OCRadius.r22)
                 .stroke(IysThemePreferences.active.accent.opacity(0.28), lineWidth: 1)
         )
         .accessibilityIdentifier("home-continue-card")
@@ -466,8 +466,8 @@ public struct WorkspaceHomeView: View {
             .padding(OCSpacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(OCColor.bgLayer1)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-            .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
+            .clipShape(OCRoundedRect(OCRadius.r14))
+            .overlay(OCRoundedRect(OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)
@@ -578,7 +578,7 @@ public struct WorkspaceHomeView: View {
                     Spacer(minLength: 0)
                     if let badge {
                         Text(badge)
-                            .font(.system(size: 10.5, weight: .semibold))
+                            .font(OCTypography.sectionLabel)
                             .foregroundColor(OCColor.warning)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)

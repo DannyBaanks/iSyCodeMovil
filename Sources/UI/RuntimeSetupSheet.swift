@@ -72,7 +72,7 @@ public struct RuntimeSetupSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cerrar") { dismiss() }
+                    Button("Listo") { dismiss() }
                         .accessibilityIdentifier("runtime-setup-close")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -135,9 +135,9 @@ public struct RuntimeSetupSheet: View {
                     .padding(OCSpacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(isSelected ? IysThemePreferences.active.accent : OCColor.bgBase)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
+                    .clipShape(OCRoundedRect(OCRadius.r14))
                     .overlay(
-                        RoundedRectangle(cornerRadius: OCRadius.r14)
+                        OCRoundedRect(OCRadius.r14)
                             .stroke(isSelected ? IysThemePreferences.active.accent : OCColor.borderMuted, lineWidth: 1)
                     )
                 }
@@ -190,7 +190,7 @@ public struct RuntimeSetupSheet: View {
                 .padding(.horizontal, OCSpacing.xl)
                 .frame(height: 48)
                 .background(canStartLocal ? IysThemePreferences.active.accent : OCColor.textFaint)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                .clipShape(OCRoundedRect(OCRadius.r12))
             }
             .buttonStyle(.plain)
             .disabled(!canStartLocal)
@@ -264,9 +264,9 @@ public struct RuntimeSetupSheet: View {
                         .padding(OCSpacing.md)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(isSelected ? IysThemePreferences.active.accent.opacity(0.10) : OCColor.bgBase)
-                        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                        .clipShape(OCRoundedRect(OCRadius.r12))
                         .overlay(
-                            RoundedRectangle(cornerRadius: OCRadius.r12)
+                            OCRoundedRect(OCRadius.r12)
                                 .stroke(isSelected ? IysThemePreferences.active.accent : OCColor.borderMuted, lineWidth: 1)
                         )
                     }
@@ -286,7 +286,7 @@ public struct RuntimeSetupSheet: View {
                 }
                 .padding(OCSpacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: OCRadius.r12).fill(OCColor.info.opacity(0.10)))
+                .background(OCRoundedRect(OCRadius.r12).fill(OCColor.info.opacity(0.10)))
             }
 
             if selectedCloudProviderID == "chatgpt-oauth" {
@@ -356,8 +356,8 @@ public struct RuntimeSetupSheet: View {
                     .focused($keyFocused)
                     .padding(OCSpacing.md)
                     .background(OCColor.bgBase)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
+                    .clipShape(OCRoundedRect(OCRadius.r12))
+                    .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
                     .accessibilityIdentifier("runtime-api-key-field")
 
                     Link(destination: selectedCloudProvider.apiKeyURL) {
@@ -388,7 +388,7 @@ public struct RuntimeSetupSheet: View {
                 .padding(.horizontal, OCSpacing.xl)
                 .frame(height: 48)
                 .background(canStartSelectedCloud ? IysThemePreferences.active.accent : OCColor.textFaint)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+                .clipShape(OCRoundedRect(OCRadius.r12))
             }
             .buttonStyle(.plain)
             .disabled(!canStartSelectedCloud)
@@ -469,7 +469,7 @@ public struct RuntimeSetupSheet: View {
         }
         .padding(OCSpacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: OCRadius.r12).fill(OCColor.danger.opacity(0.10)))
+        .background(OCRoundedRect(OCRadius.r12).fill(OCColor.danger.opacity(0.10)))
         .accessibilityIdentifier("runtime-setup-error")
     }
 

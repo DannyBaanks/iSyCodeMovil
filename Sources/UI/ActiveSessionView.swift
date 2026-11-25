@@ -125,12 +125,12 @@ public struct ActiveSessionView: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
                             .background(IysThemePreferences.active.accent.gradient)
-                            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r8))
+                            .clipShape(OCRoundedRect(OCRadius.r8))
                     }
                     .padding(10)
                     .background(OCColor.bgBase)
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                    .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
+                    .clipShape(OCRoundedRect(OCRadius.r12))
+                    .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderMuted, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, OCSpacing.contentMargin)
@@ -307,16 +307,16 @@ public struct ActiveSessionView: View {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
         }
         .confirmationDialog(
-            "Disconnect?",
+            "¿Desconectar?",
             isPresented: $showDisconnectConfirm,
             titleVisibility: .visible
         ) {
-            Button("Disconnect", role: .destructive) {
+            Button("Desconectar", role: .destructive) {
                 Task { await store.disconnect() }
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancelar", role: .cancel) {}
         } message: {
-            Text("End the session and return to the connection screen.")
+            Text("Se termina la sesión y se vuelve a la pantalla de conexión.")
         }
     }
     
@@ -360,8 +360,8 @@ private struct CodexWorkspaceFoldersUnavailableView: View {
                 .padding(OCSpacing.lg)
                 .frame(maxWidth: 340)
                 .background(OCColor.bgBase)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r14))
-                .overlay(RoundedRectangle(cornerRadius: OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
+                .clipShape(OCRoundedRect(OCRadius.r14))
+                .overlay(OCRoundedRect(OCRadius.r14).stroke(OCColor.borderMuted, lineWidth: 1))
 
             Button {
                 UIPasteboard.general.string = path
@@ -856,9 +856,9 @@ private struct ChatActivityBar: View {
         .padding(.vertical, OCSpacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(OCColor.bgBase)
-        .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
+        .clipShape(OCRoundedRect(OCRadius.r12))
         .overlay {
-            RoundedRectangle(cornerRadius: OCRadius.r12)
+            OCRoundedRect(OCRadius.r12)
                 .stroke(statusColor.opacity(0.22), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
@@ -876,7 +876,7 @@ struct ConnectionLostBanner: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(OCColor.warning)
             
-            Text(isReconnecting ? "Reconnecting…" : "Connection lost")
+            Text(isReconnecting ? "Reconectando…" : "Conexión perdida")
                 .font(OCTypography.control)
                 .foregroundColor(OCColor.textPrimary)
             
@@ -886,7 +886,7 @@ struct ConnectionLostBanner: View {
                 ProgressView()
                     .scaleEffect(0.7)
             } else {
-                Button("Reconnect", action: onReconnect)
+                Button("Reconectar", action: onReconnect)
                     .font(OCTypography.controlMono)
                     .foregroundColor(OCColor.warning)
             }
@@ -1087,11 +1087,11 @@ struct EmptyFilesView: View {
                 .font(.system(size: 40, weight: .light))
                 .foregroundColor(OCColor.iconMuted)
             
-            Text("No files")
+            Text("Sin archivos")
                 .font(OCTypography.bodyStrong)
                 .foregroundColor(OCColor.textPrimary)
             
-            Text("This workspace has no visible files")
+            Text("Este espacio de trabajo no tiene archivos visibles")
                 .font(OCTypography.meta)
                 .foregroundColor(OCColor.textFaint)
         }
@@ -1307,19 +1307,19 @@ struct EmptyReviewView: View {
                 .foregroundColor(OCColor.iconMuted)
             
             VStack(spacing: OCSpacing.xs) {
-                Text("No Changes")
+                Text("Sin cambios")
                     .font(OCTypography.bodyStrong)
                     .foregroundColor(OCColor.textPrimary)
                 
                 Text(store.backendMode == .native
-                     ? "Diff runs on the linked desktop, not in the sandbox"
-                     : "No diff available for this session")
+                     ? "El diff corre en el escritorio enlazado, no en el sandbox"
+                     : "No hay diff disponible para esta sesión")
                     .font(OCTypography.meta)
                     .foregroundColor(OCColor.textFaint)
                     .multilineTextAlignment(.center)
             }
             
-            Button("Refresh") {
+            Button("Actualizar") {
                 if let sessionID = sessionState.currentSession?.id {
                     Task { await store.loadDiff(sessionID: sessionID) }
                 }
@@ -1329,7 +1329,7 @@ struct EmptyReviewView: View {
             .padding(.vertical, OCSpacing.base)
             .background(OCColor.agentBuild)
             .foregroundColor(OCColor.onAccent)
-            .clipShape(RoundedRectangle(cornerRadius: OCRadius.r24))
+            .clipShape(OCRoundedRect(OCRadius.r24))
         }
         .padding(OCSpacing.huge)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1497,7 +1497,7 @@ struct TerminalSurfaceView: View {
                     Text("·")
                         .foregroundColor(OCColor.textFaint)
                     Text(sessionState.currentProject?.path ?? "workspace")
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(OCTypography.controlMono)
                         .foregroundColor(OCColor.textFaint)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -1551,8 +1551,8 @@ struct TerminalSurfaceView: View {
                 .padding(.horizontal, OCSpacing.lg)
                 .padding(.vertical, OCSpacing.md)
                 .background(OCColor.bgBase)
-                .clipShape(RoundedRectangle(cornerRadius: OCRadius.r12))
-                .overlay(RoundedRectangle(cornerRadius: OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
+                .clipShape(OCRoundedRect(OCRadius.r12))
+                .overlay(OCRoundedRect(OCRadius.r12).stroke(OCColor.borderBase, lineWidth: 1))
                 .padding(OCSpacing.sm)
             }
         }
@@ -1690,7 +1690,7 @@ struct WorkSurfaceSwitcher: View {
                     .background(
                         selectedSurface == surface ? OCColor.bgLayer1 : Color.clear
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: OCRadius.r10))
+                    .clipShape(OCRoundedRect(OCRadius.r10))
                 }
                 .buttonStyle(.plain)
                 .frame(maxWidth: .infinity)
