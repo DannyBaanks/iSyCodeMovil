@@ -969,6 +969,7 @@ struct APIKeysView: View {
 // Indicador "running" de sesion: punto con pulso (antes era un segundo punto
 // estatico identico al de agentMode, indistinguible a la vista).
 struct PulsingDot: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulsing = false
     
     func body(content: Content) -> some View {
@@ -976,6 +977,18 @@ struct PulsingDot: ViewModifier {
             .scaleEffect(pulsing ? 1.4 : 1.0)
             .opacity(pulsing ? 0.55 : 1.0)
             .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                    pulsing = true
+                }
+            }
+            .onDisappear {
+                // Stop the repeatForever loop when the dot leaves the hierarchy.
+                withAnimation(nil) { pulsing = false }
+            }
+            .onChange(of: reduceMotion) { reduced in
+                withAnimation(nil) { pulsing = false }
+                guard !reduced else { return }
                 withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
                     pulsing = true
                 }

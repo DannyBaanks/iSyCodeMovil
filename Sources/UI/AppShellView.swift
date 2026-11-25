@@ -12,6 +12,9 @@ public struct AppShellView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var compactPath = NavigationPath()
     @State private var dragOffset: CGFloat = 0
+    /// Set after a gesture release so the settle uses a spring carrying that velocity;
+    /// the time-based drawer curve is for releases that did not involve a finger.
+    @State private var settleAnimation: Animation = OCMotion.drawer
 
     public init() {}
 
@@ -106,7 +109,7 @@ public struct AppShellView: View {
             }
         }
         .simultaneousGesture(edgeSwipeGesture)
-        .animation(reduceMotion ? nil : OCMotion.drawer, value: router.isSidebarOpen)
+        .animation(settleAnimation, value: router.isSidebarOpen)
         .onChange(of: router.isSidebarOpen) { if $0 { OCHaptics.light() } }
         .onChange(of: router.activeDestination) { _ in compactPath = NavigationPath() }
     }
@@ -128,12 +131,18 @@ public struct AppShellView: View {
                     dragOffset = 0
                     return
                 }
-                let threshold: CGFloat = 72
+                // Commit by distance OR projected momentum: a fast flick from 10 px away must
+                // open/close just like a slow 80 pt drag (appllama motion law: finger → spring).
+                let threshold: CGFloat = OCNavigation.drawerCommitDistance
+                let projected = value.predictedEndTranslation.width
                 if router.isSidebarOpen {
-                    if value.translation.width < -threshold {
+                    if projected < -threshold || value.velocity.width < -OCNavigation.drawerFlickVelocity {
+                        settleAnimation = reduceMotion ? nil : OCMotion.drawerSpring(velocity: Double(value.velocity.width) / 100)
                         router.closeSidebar()
                     }
-                } else if compactPath.isEmpty && value.startLocation.x < OCNavigation.edgeActivation && value.translation.width > threshold {
+                } else if compactPath.isEmpty && value.startLocation.x < OCNavigation.edgeActivation
+                            && (projected > threshold || value.velocity.width > OCNavigation.drawerFlickVelocity) {
+                    settleAnimation = reduceMotion ? nil : OCMotion.drawerSpring(velocity: Double(value.velocity.width) / 100)
                     router.isSidebarOpen = true
                 }
                 dragOffset = 0
